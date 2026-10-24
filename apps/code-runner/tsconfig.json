@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // The Workers runtime globals. `cf workers types` would generate these plus a
+    // binding interface, but that file is ~600KB of workerd declarations that
+    // churn with every runtime release — and this Worker declares its two
+    // bindings by hand in src/index.ts, so there is nothing left to generate.
+    "types": ["@cloudflare/workers-types"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts", "vitest.container.config.ts"]
+}

@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="fsky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e8f5e9"/>
+      <stop offset="30%" stop-color="#c8e6c9"/>
+      <stop offset="60%" stop-color="#a5d6a7"/>
+      <stop offset="100%" stop-color="#388e3c" stop-opacity="0.3"/>
+    </linearGradient>
+    <radialGradient id="flight" cx="50%" cy="20%" r="60%">
+      <stop offset="0%" stop-color="#fff9c4" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#c8e6c9" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#fsky)"/>
+  <rect width="1920" height="1080" fill="url(#flight)"/>
+  <!-- Far trees -->
+  <polygon points="50,1080 150,300 250,1080" fill="#2e7d32" opacity="0.3"/>
+  <polygon points="180,1080 320,250 460,1080" fill="#388e3c" opacity="0.35"/>
+  <polygon points="400,1080 520,280 640,1080" fill="#2e7d32" opacity="0.3"/>
+  <polygon points="580,1080 720,220 860,1080" fill="#43a047" opacity="0.35"/>
+  <polygon points="780,1080 900,300 1020,1080" fill="#2e7d32" opacity="0.3"/>
+  <polygon points="960,1080 1100,240 1240,1080" fill="#388e3c" opacity="0.35"/>
+  <polygon points="1180,1080 1300,290 1420,1080" fill="#2e7d32" opacity="0.3"/>
+  <polygon points="1360,1080 1500,260 1640,1080" fill="#43a047" opacity="0.35"/>
+  <polygon points="1560,1080 1700,310 1840,1080" fill="#2e7d32" opacity="0.3"/>
+  <polygon points="1760,1080 1880,280 1920,500 1920,1080" fill="#388e3c" opacity="0.3"/>
+  <!-- Mid trees -->
+  <polygon points="0,1080 80,400 160,1080" fill="#1b5e20" opacity="0.5"/>
+  <polygon points="120,1080 240,350 360,1080" fill="#2e7d32" opacity="0.55"/>
+  <polygon points="300,1080 450,380 600,1080" fill="#1b5e20" opacity="0.5"/>
+  <polygon points="520,1080 660,340 800,1080" fill="#2e7d32" opacity="0.55"/>
+  <polygon points="720,1080 880,360 1040,1080" fill="#1b5e20" opacity="0.5"/>
+  <polygon points="960,1080 1100,330 1240,1080" fill="#2e7d32" opacity="0.55"/>
+  <polygon points="1160,1080 1300,370 1440,1080" fill="#1b5e20" opacity="0.5"/>
+  <polygon points="1380,1080 1520,350 1660,1080" fill="#2e7d32" opacity="0.55"/>
+  <polygon points="1580,1080 1740,380 1900,1080" fill="#1b5e20" opacity="0.5"/>
+  <!-- Near trees -->
+  <polygon points="-20,1080 100,450 220,1080" fill="#0d3010" opacity="0.7"/>
+  <polygon points="160,1080 320,400 480,1080" fill="#1b4332" opacity="0.75"/>
+  <polygon points="420,1080 580,430 740,1080" fill="#0d3010" opacity="0.7"/>
+  <polygon points="700,1080 860,410 1020,1080" fill="#1b4332" opacity="0.75"/>
+  <polygon points="960,1080 1120,440 1280,1080" fill="#0d3010" opacity="0.7"/>
+  <polygon points="1220,1080 1380,420 1540,1080" fill="#1b4332" opacity="0.75"/>
+  <polygon points="1480,1080 1640,430 1800,1080" fill="#0d3010" opacity="0.7"/>
+  <polygon points="1720,1080 1880,410 1920,500 1920,1080" fill="#1b4332" opacity="0.7"/>
+  <!-- Light rays -->
+  <polygon points="900,0 950,1080 1000,0" fill="#fff9c4" opacity="0.06"/>
+  <polygon points="700,0 730,1080 760,0" fill="#fff9c4" opacity="0.04"/>
+  <polygon points="1100,0 1140,1080 1180,0" fill="#fff9c4" opacity="0.05"/>
+  <!-- Ground -->
+  <rect x="0" y="900" width="1920" height="180" fill="#1b5e20" opacity="0.4"/>
+</svg>

@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /spaces
+Disallow: /settings
+Disallow: /api/
+Disallow: /_serverFn/
+
+Sitemap: https://orbmeet.com/sitemap.xml

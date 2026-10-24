@@ -1,0 +1,11 @@
+[Unit]
+Description=Orb Meet host and container firewall
+Before=docker.service
+After=network-pre.target
+Wants=network-pre.target
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/orbmeet-firewall
+RemainAfterExit=yes
+[Install]
+WantedBy=multi-user.target

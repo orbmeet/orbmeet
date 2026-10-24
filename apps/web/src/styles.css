@@ -1,0 +1,118 @@
+@import "@orbmeet/ui/theme.css";
+
+/*
+ * Global document normalization only. Component styling belongs in StyleX;
+ * this file remains the single CSS entry so Vite has a deterministic asset
+ * for the StyleX compiler to append to.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/*
+ * Appearance. Every colour token is `light-dark(<light>, <dark>)`, so the
+ * theme is this one property. No attribute: follow the device. The attribute
+ * is set before first paint from the viewer's choice (app/appearance).
+ */
+html {
+  color-scheme: light dark;
+}
+
+html[data-appearance="light"] {
+  color-scheme: light;
+}
+
+html[data-appearance="dark"] {
+  color-scheme: dark;
+}
+
+html {
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+  tab-size: 4;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/*
+ * The meeting room follows the appearance like every other page. Only the
+ * board keeps to light: it pins its own `color-scheme` (synced-whiteboard).
+ */
+body.meet-route {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+button,
+input,
+optgroup,
+select,
+textarea {
+  margin: 0;
+  font: inherit;
+  color: inherit;
+}
+
+button,
+[role="button"],
+a[href],
+input,
+select,
+textarea,
+summary {
+  touch-action: manipulation;
+}
+
+button,
+select {
+  text-transform: none;
+}
+
+button,
+input:where([type="button"], [type="reset"], [type="submit"]) {
+  appearance: button;
+}
+
+img,
+svg,
+video,
+canvas,
+audio,
+iframe,
+embed,
+object {
+  display: block;
+  vertical-align: middle;
+}
+
+img,
+video {
+  max-width: 100%;
+  height: auto;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/*
+ * iOS Safari zooms the page into a focused control whose text is below 16px,
+ * and a zoomed meeting room no longer fits its window. This rule covers
+ * controls nothing else sizes. A control StyleX gives a font size wins over an
+ * element selector, so each of those says 16px under a finger itself:
+ * `fontSize: { default: …, [env.touch]: text.base }`.
+ */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
+}

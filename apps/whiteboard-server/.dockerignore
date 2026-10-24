@@ -1,0 +1,21 @@
+# exclude files that should not be copied into the Docker image.
+# NOTE: a leading-glob pattern like "*.test.ts" only matches the context root in
+# .dockerignore (Go filepath.Match — "*" does not cross "/"), so nested files
+# such as src/lib/foo.test.ts were silently slipping into the image. Use "**/".
+node_modules
+.git
+.gitignore
+**/*.md
+**/*.test.ts
+**/*.spec.ts
+tests/
+__tests__/
+coverage/
+.env
+.env.*
+**/*.local
+**/.DS_Store
+# client-only source — not needed in the server container
+src/web/
+src/overrides/
+src/components/

@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="awbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#667eea"/>
+      <stop offset="50%" stop-color="#764ba2"/>
+      <stop offset="100%" stop-color="#f093fb"/>
+    </linearGradient>
+    <linearGradient id="aww1" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#667eea" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#764ba2" stop-opacity="0.4"/>
+    </linearGradient>
+    <linearGradient id="aww2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#764ba2" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#f093fb" stop-opacity="0.3"/>
+    </linearGradient>
+    <linearGradient id="aww3" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#f093fb" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#667eea" stop-opacity="0.25"/>
+    </linearGradient>
+    <radialGradient id="awglow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="white" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#awbg)"/>
+  <rect width="1920" height="1080" fill="url(#awglow)"/>
+  <!-- Wave layers -->
+  <path d="M0,400 C320,300 640,500 960,380 C1280,260 1600,450 1920,350 L1920,700 C1600,600 1280,750 960,650 C640,550 320,700 0,600 Z" fill="url(#aww1)"/>
+  <path d="M0,500 C320,420 640,580 960,480 C1280,380 1600,550 1920,450 L1920,800 C1600,720 1280,850 960,760 C640,670 320,800 0,720 Z" fill="url(#aww2)"/>
+  <path d="M0,600 C320,530 640,650 960,570 C1280,490 1600,640 1920,560 L1920,900 C1600,830 1280,920 960,850 C640,780 320,880 0,820 Z" fill="url(#aww3)"/>
+  <!-- Circular accents -->
+  <circle cx="300" cy="250" r="150" fill="white" opacity="0.04"/>
+  <circle cx="1600" cy="800" r="200" fill="white" opacity="0.05"/>
+  <circle cx="960" cy="540" r="100" fill="white" opacity="0.03"/>
+  <!-- Small dots -->
+  <circle cx="200" cy="300" r="4" fill="white" opacity="0.2"/>
+  <circle cx="500" cy="200" r="3" fill="white" opacity="0.15"/>
+  <circle cx="800" cy="150" r="5" fill="white" opacity="0.2"/>
+  <circle cx="1100" cy="180" r="3" fill="white" opacity="0.15"/>
+  <circle cx="1400" cy="250" r="4" fill="white" opacity="0.2"/>
+  <circle cx="1700" cy="150" r="3" fill="white" opacity="0.15"/>
+  <circle cx="350" cy="700" r="4" fill="white" opacity="0.15"/>
+  <circle cx="650" cy="750" r="3" fill="white" opacity="0.2"/>
+  <circle cx="950" cy="700" r="5" fill="white" opacity="0.15"/>
+  <circle cx="1250" cy="680" r="3" fill="white" opacity="0.2"/>
+  <circle cx="1550" cy="720" r="4" fill="white" opacity="0.15"/>
+  <circle cx="1800" cy="660" r="3" fill="white" opacity="0.2"/>
+</svg>

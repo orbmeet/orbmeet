@@ -1,0 +1,33 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
+  // `cloudflare:workers`, `cloudflare:test` and friends are runtime modules,
+  // not packages.
+  "ignoreDependencies": ["cloudflare"],
+  "workspaces": {
+    "apps/web": {
+      // public/open-in-browser.js is loaded by its page, not imported.
+      "entry": ["src/worker-entry.ts", "scripts/*.mjs", "e2e/*.ts", "service-worker/sw.ts", "public/open-in-browser.js"]
+    },
+    "apps/whiteboard-server": {
+      // Installed in the image (mupdf-tools), not from npm.
+      "ignoreBinaries": ["mutool"]
+    },
+    "infra/ops": {
+      // The jq the nodes run node/ship-logs.jq with, which its tests run on
+      // the operator's machine: a system tool, like ssh and rsync.
+      "ignoreBinaries": ["jq"]
+    },
+    "packages/whiteboard-client": {
+      // tldraw's own editor package, which the tldraw contract tests read as
+      // shipped (src/editor/tldraw-contract.test.ts); the board imports it
+      // only through tldraw.
+      "ignoreDependencies": ["@tldraw/editor"]
+    },
+    "apps/code-runner": {
+      "entry": ["src/index.ts", "cloudflare.config.ts", "wrangler.config.ts"],
+      // `cf dev` runs this Worker through the wrangler delegate (the only one
+      // with Containers), and the generated worker types import from it.
+      "ignoreDependencies": ["wrangler"]
+    }
+  }
+}

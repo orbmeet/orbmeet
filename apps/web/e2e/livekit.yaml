@@ -1,0 +1,23 @@
+# The smoke-test LiveKit (started by playwright.config.ts). It runs on host
+# networking so its webhook can reach the Vite dev server over loopback, but
+# only on loopback and on ports no production LiveKit uses: a media node's own
+# LiveKit holds 7880-7885.
+port: 17880
+bind_addresses:
+  - 127.0.0.1
+rtc:
+  tcp_port: 17881
+  udp_port: 17882
+  node_ip: 127.0.0.1
+  use_external_ip: false
+  # Both ends live on loopback, which ICE skips unless asked.
+  enable_loopback_candidate: true
+  ips:
+    includes:
+      - 127.0.0.1/32
+keys:
+  e2ekey: e2e-livekit-secret-0123456789abcdef
+webhook:
+  api_key: e2ekey
+  urls:
+    - http://127.0.0.1:13000/api/livekit/webhook

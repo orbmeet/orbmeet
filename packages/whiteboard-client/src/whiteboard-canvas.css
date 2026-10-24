@@ -1,0 +1,62 @@
+/* The desk. `--wb-document-bg` is published by both React wrappers from the
+   `surface.board` token, and the toolbar and page rail read the same
+   variable, so the chrome that sits on the desk cannot drift from it.
+
+   The literal below is the one remaining copy of that colour, and it exists
+   only because a static stylesheet cannot name a hashed StyleX variable. It is
+   unreachable in practice — every mount publishes the property — and
+   `styles.contract.test.ts` fails if it stops matching `surface.board`. */
+.whiteboard-document .tl-background {
+  background-color: var(--wb-document-bg, #e8e8ec) !important;
+}
+
+/* iOS Safari: prevent content shift / rubber-banding on scroll */
+.whiteboard-document .tl-canvas {
+  overscroll-behavior: none;
+  background: var(--wb-document-bg, #e8e8ec);
+}
+
+/* Typed text is Source Serif 4, loaded under tldraw's own `tldraw_draw` name
+   (engine-asset-urls.ts). Until it arrives, fall back to a serif, not
+   tldraw's sans-serif, so text doesn't change genre when the face lands. */
+.whiteboard-document .tl-container {
+  --tl-font-draw: "tldraw_draw", Georgia, "Times New Roman", serif;
+}
+
+.whiteboard-document .tl-laser-scribble {
+  overflow: visible;
+}
+
+/* ============================================================
+   Overlay controls anchored to the whiteboard pane
+   (not the full browser viewport)
+   ============================================================ */
+
+/* A touch on a board control must land on the <button>, never on its icon.
+
+   tldraw cancels every touchstart within 10px of the window's left or right
+   edge — fingertip radius included — to stop iOS Safari's swipe-back gesture,
+   and that cancellation also suppresses the tap's click. To compensate it
+   calls `.click()` itself, but only when the touch target *is* a BUTTON. The
+   tool palette sits 8px from the left edge, so a finger landing on a tool's
+   icon (an <svg>) was silently swallowed while the same finger on the
+   button's padding worked: "switching to the laser works only sometimes".
+
+   With the descendants out of hit-testing the target is always the button:
+   at the edge tldraw clicks it, elsewhere the browser does — once, either
+   way. `pointer-events` is inherited, so this reaches every nested icon.
+   A descendant rule because the icons are arbitrary markup; there is no one
+   element StyleX props could be put on. */
+.whiteboard-document button * {
+  pointer-events: none;
+}
+
+/* KaTeX centres display math on its own line, which is wrong inside a
+   sentence — the equation belongs where the author typed it. A descendant
+   rule for the same reason as the one above: KaTeX owns the generated child
+   markup, so there is no element where StyleX props can be applied. */
+.orbmeet-inline-math .katex-display {
+  display: inline-block;
+  margin: 0;
+  text-align: inherit;
+}

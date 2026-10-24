@@ -1,0 +1,28 @@
+{
+  "name": "@orbmeet/transcription-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx --env-file=.env src/main.ts dev",
+    "start": "node dist/main.js start",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@deepgram/sdk": "5.14.0",
+    "@livekit/agents": "1.9.1",
+    "@livekit/protocol": "1.52.1",
+    "@livekit/rtc-node": "1.1.0",
+    "@orbmeet/caption-protocol": "workspace:*",
+    "@orbmeet/primitives": "workspace:*",
+    "livekit-server-sdk": "catalog:",
+    "valibot": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsx": "^4.23.15",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="msky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0a1628"/>
+      <stop offset="35%" stop-color="#1a3a5c"/>
+      <stop offset="65%" stop-color="#4a90b8"/>
+      <stop offset="85%" stop-color="#8ec5d6"/>
+      <stop offset="100%" stop-color="#d4eef7"/>
+    </linearGradient>
+    <linearGradient id="mtn1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a2a4a"/>
+      <stop offset="100%" stop-color="#2a4a6a"/>
+    </linearGradient>
+    <linearGradient id="mtn2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2a4a6a"/>
+      <stop offset="100%" stop-color="#3a6a8a"/>
+    </linearGradient>
+    <linearGradient id="mtn3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4a7a9a"/>
+      <stop offset="100%" stop-color="#6a9ab8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#msky)"/>
+  <polygon points="0,1080 300,420 600,650 900,350 1200,550 1500,400 1920,600 1920,1080" fill="url(#mtn1)" opacity="0.9"/>
+  <polygon points="0,1080 200,600 500,750 800,520 1100,700 1400,580 1700,650 1920,550 1920,1080" fill="url(#mtn2)" opacity="0.7"/>
+  <polygon points="0,1080 150,780 450,850 750,750 1050,830 1350,770 1650,820 1920,760 1920,1080" fill="url(#mtn3)" opacity="0.5"/>
+  <polygon points="900,350 870,355 880,340" fill="#e8f0f8" opacity="0.6"/>
+</svg>

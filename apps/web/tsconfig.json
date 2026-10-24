@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.d.ts"],
+  "exclude": ["node_modules", "dist", "src/overrides"],
+  "compilerOptions": {
+    "types": [
+      "./.cloudflare/types/index.d.ts",
+      "@cloudflare/vitest-plugin/types",
+      "node",
+      "vite/client"
+    ],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "orbmeet",
+  "private": true,
+  "packageManager": "pnpm@12.4.1",
+  "type": "module",
+  "engines": {
+    "node": ">=24.22.1"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @orbmeet/web --filter @orbmeet/whiteboard-server dev",
+    "orbmeet": "node apps/cli/bin/orbmeet.ts",
+    "ops": "node infra/ops/src/main.ts",
+    "build": "pnpm -r --if-present build",
+    "knip": "knip --no-progress",
+    "check": "pnpm lint && pnpm typecheck && pnpm knip && pnpm --filter @orbmeet/db check && pnpm test && pnpm build",
+    "lint": "pnpm --filter @orbmeet/web types && oxlint --disable-nested-config --deny-warnings",
+    "lint:fix": "oxlint --disable-nested-config --fix",
+    "typecheck": "tsc --noEmit && pnpm -r typecheck",
+    "test": "pnpm -r --if-present test",
+    "e2e": "pnpm --filter @orbmeet/web e2e"
+  },
+  "devDependencies": {
+    "@stylexjs/eslint-plugin": "0.19.1",
+    "@tanstack/eslint-plugin-query": "5.104.1",
+    "@tanstack/eslint-plugin-router": "1.162.0",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "eslint-plugin-drizzle": "^0.2.3",
+    "knip": "^6.39.0",
+    "oxlint": "^1.86.0",
+    "oxlint-tsgolint": "^7.0.2003",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vitest": "catalog:"
+  }
+}

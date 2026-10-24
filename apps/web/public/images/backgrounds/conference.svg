@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="cfwall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#eceff1"/>
+      <stop offset="100%" stop-color="#cfd8dc"/>
+    </linearGradient>
+    <radialGradient id="cflight" cx="50%" cy="10%" r="60%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#cfd8dc" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cffloor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#90a4ae"/>
+      <stop offset="100%" stop-color="#78909c"/>
+    </linearGradient>
+    <linearGradient id="cftable" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#546e7a"/>
+      <stop offset="100%" stop-color="#455a64"/>
+    </linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#cfwall)"/>
+  <rect width="1920" height="1080" fill="url(#cflight)"/>
+  <!-- Floor -->
+  <rect x="0" y="700" width="1920" height="380" fill="url(#cffloor)"/>
+  <line x1="0" y1="700" x2="1920" y2="700" stroke="#b0bec5" stroke-width="2"/>
+  <!-- Accent wall panel -->
+  <rect x="500" y="50" width="920" height="500" rx="8" fill="#546e7a" opacity="0.1"/>
+  <!-- Screen/monitor -->
+  <rect x="700" y="100" width="520" height="300" rx="8" fill="#263238" opacity="0.15"/>
+  <rect x="720" y="120" width="480" height="260" rx="4" fill="#37474f" opacity="0.1"/>
+  <!-- Ceiling lights -->
+  <rect x="300" y="20" width="200" height="8" rx="4" fill="#ffffff" opacity="0.8"/>
+  <rect x="860" y="20" width="200" height="8" rx="4" fill="#ffffff" opacity="0.8"/>
+  <rect x="1420" y="20" width="200" height="8" rx="4" fill="#ffffff" opacity="0.8"/>
+  <!-- Conference table -->
+  <ellipse cx="960" cy="720" rx="450" ry="80" fill="url(#cftable)"/>
+  <ellipse cx="960" cy="715" rx="440" ry="75" fill="#607d8b" opacity="0.3"/>
+  <!-- Chairs (represented as simple shapes) -->
+  <ellipse cx="600" cy="680" rx="40" ry="25" fill="#455a64" opacity="0.4"/>
+  <ellipse cx="750" cy="650" rx="40" ry="25" fill="#455a64" opacity="0.4"/>
+  <ellipse cx="900" cy="640" rx="40" ry="25" fill="#455a64" opacity="0.4"/>
+  <ellipse cx="1020" cy="640" rx="40" ry="25" fill="#455a64" opacity="0.4"/>
+  <ellipse cx="1170" cy="650" rx="40" ry="25" fill="#455a64" opacity="0.4"/>
+  <ellipse cx="1320" cy="680" rx="40" ry="25" fill="#455a64" opacity="0.4"/>
+  <!-- Side windows -->
+  <rect x="50" y="120" width="250" height="400" rx="6" fill="#b3e5fc" opacity="0.2" stroke="#b0bec5" stroke-width="6"/>
+  <line x1="175" y1="120" x2="175" y2="520" stroke="#b0bec5" stroke-width="3"/>
+  <line x1="50" y1="320" x2="300" y2="320" stroke="#b0bec5" stroke-width="3"/>
+  <rect x="1620" y="120" width="250" height="400" rx="6" fill="#b3e5fc" opacity="0.2" stroke="#b0bec5" stroke-width="6"/>
+  <line x1="1745" y1="120" x2="1745" y2="520" stroke="#b0bec5" stroke-width="3"/>
+  <line x1="1620" y1="320" x2="1870" y2="320" stroke="#b0bec5" stroke-width="3"/>
+  <!-- Plant -->
+  <rect x="1750" y="580" width="30" height="60" rx="4" fill="#795548" opacity="0.5"/>
+  <circle cx="1765" cy="560" r="40" fill="#4caf50" opacity="0.3"/>
+  <circle cx="1750" cy="550" r="30" fill="#66bb6a" opacity="0.25"/>
+  <circle cx="1780" cy="555" r="25" fill="#43a047" opacity="0.2"/>
+</svg>

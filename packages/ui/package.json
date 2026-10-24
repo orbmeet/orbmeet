@@ -1,0 +1,36 @@
+{
+  "name": "@orbmeet/ui",
+  "private": true,
+  "type": "module",
+  "sideEffects": [
+    "./src/theme.css",
+    "./src/tokens/*.ts"
+  ],
+  "exports": {
+    "./gradient-hash": "./src/react/gradient-hash.ts",
+    "./react": "./src/react/index.ts",
+    "./react/*": "./src/react/*.tsx",
+    "./styles/*": "./src/styles/*.ts",
+    "./tokens/*": "./src/tokens/*.ts",
+    "./theme.css": "./src/theme.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@base-ui/react": "catalog:",
+    "@stylexjs/stylex": "catalog:",
+    "lucide-react": "catalog:",
+    "react": "catalog:"
+  },
+  "devDependencies": {
+    "@stylexjs/unplugin": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "jsdom": "catalog:",
+    "react-dom": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

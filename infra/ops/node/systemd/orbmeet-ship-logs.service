@@ -1,0 +1,8 @@
+[Unit]
+Description=Send this node's logs to Axiom
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/orbmeet-ship-logs
+TimeoutStartSec=50

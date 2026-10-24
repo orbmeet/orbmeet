@@ -1,0 +1,30 @@
+{
+  "name": "@orbmeet/whiteboard-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/ensure-dev-config.mjs && node --watch --env-file=.env src/index.ts",
+    "start": "node --env-file-if-exists=.env src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "1.1.0",
+    "@earendil-works/pi-ai": "1.1.0",
+    "@orbmeet/primitives": "workspace:*",
+    "@orbmeet/whiteboard-core": "workspace:*",
+    "@tldraw/sync-core": "catalog:",
+    "@tldraw/tlschema": "catalog:",
+    "@tldraw/utils": "catalog:",
+    "@valibot/to-json-schema": "catalog:",
+    "aws4fetch": "catalog:",
+    "valibot": "catalog:",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/ws": "^8.18.2",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "name": "@orbmeet/whiteboard-client",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./react": "./src/whiteboard-react.tsx",
+    "./recorder": "./src/recorder.ts",
+    "./viewport-insets": "./src/camera/viewport-insets.ts",
+    "./styles.css": "./src/whiteboard-canvas.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "peerDependencies": {
+    "react": ">=19.3.0 <20",
+    "react-dom": ">=19.3.0 <20"
+  },
+  "devDependencies": {
+    "@stylexjs/unplugin": "catalog:",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "jsdom": "catalog:",
+    "oxc-transform-react": "catalog:",
+    "react-dom": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "dependencies": {
+    "@base-ui/react": "catalog:",
+    "@orbmeet/primitives": "workspace:*",
+    "@orbmeet/ui": "workspace:*",
+    "@orbmeet/whiteboard-core": "workspace:*",
+    "@stylexjs/stylex": "catalog:",
+    "@tiptap/core": "3.31.4",
+    "@tiptap/pm": "3.31.4",
+    "@tldraw/assets": "catalog:",
+    "@tldraw/state": "catalog:",
+    "@tldraw/sync": "catalog:",
+    "@tldraw/sync-core": "catalog:",
+    "@tldraw/tlschema": "catalog:",
+    "asciimath2tex": "^1.5.0",
+    "katex": "0.19.0",
+    "lucide-react": "catalog:",
+    "pdf-lib": "^1.17.1",
+    "tldraw": "catalog:",
+    "valibot": "catalog:"
+  }
+}

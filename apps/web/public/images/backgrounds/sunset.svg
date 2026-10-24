@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="sssky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a0533"/>
+      <stop offset="20%" stop-color="#4a1942"/>
+      <stop offset="40%" stop-color="#c2185b"/>
+      <stop offset="55%" stop-color="#e65100"/>
+      <stop offset="70%" stop-color="#ff6f00"/>
+      <stop offset="85%" stop-color="#ffab00"/>
+      <stop offset="100%" stop-color="#fff176"/>
+    </linearGradient>
+    <radialGradient id="sssun" cx="50%" cy="78%" r="20%">
+      <stop offset="0%" stop-color="#fff9c4" stop-opacity="1"/>
+      <stop offset="30%" stop-color="#ffcc02" stop-opacity="0.7"/>
+      <stop offset="60%" stop-color="#ff6f00" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#e65100" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sswater" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e65100" stop-opacity="0.6"/>
+      <stop offset="30%" stop-color="#bf360c" stop-opacity="0.5"/>
+      <stop offset="60%" stop-color="#4a1942" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#1a0533" stop-opacity="0.8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#sssky)"/>
+  <!-- Clouds -->
+  <ellipse cx="300" cy="200" rx="200" ry="40" fill="#c2185b" opacity="0.3"/>
+  <ellipse cx="350" cy="190" rx="150" ry="30" fill="#e91e63" opacity="0.2"/>
+  <ellipse cx="1400" cy="250" rx="250" ry="45" fill="#ad1457" opacity="0.25"/>
+  <ellipse cx="1450" cy="240" rx="180" ry="35" fill="#c2185b" opacity="0.2"/>
+  <ellipse cx="800" cy="300" rx="160" ry="30" fill="#e91e63" opacity="0.15"/>
+  <!-- Sun -->
+  <circle cx="960" cy="750" r="120" fill="url(#sssun)"/>
+  <circle cx="960" cy="750" r="60" fill="#fff9c4" opacity="0.9"/>
+  <!-- Horizon line -->
+  <rect x="0" y="780" width="1920" height="300" fill="url(#sswater)"/>
+  <!-- Sun reflection on water -->
+  <rect x="880" y="780" width="160" height="300" fill="#fff9c4" opacity="0.1"/>
+  <rect x="920" y="780" width="80" height="300" fill="#ffcc02" opacity="0.08"/>
+  <!-- Water ripples -->
+  <ellipse cx="400" cy="850" rx="200" ry="4" fill="#ff6f00" opacity="0.15"/>
+  <ellipse cx="700" cy="900" rx="150" ry="3" fill="#e65100" opacity="0.12"/>
+  <ellipse cx="1200" cy="870" rx="180" ry="4" fill="#ff6f00" opacity="0.13"/>
+  <ellipse cx="1500" cy="920" rx="160" ry="3" fill="#e65100" opacity="0.1"/>
+  <!-- Silhouette birds -->
+  <path d="M600,400 Q610,390 620,400 Q630,390 640,400" fill="none" stroke="#1a0533" stroke-width="2" opacity="0.5"/>
+  <path d="M650,380 Q658,372 666,380 Q674,372 682,380" fill="none" stroke="#1a0533" stroke-width="2" opacity="0.4"/>
+  <path d="M1250,350 Q1260,340 1270,350 Q1280,340 1290,350" fill="none" stroke="#1a0533" stroke-width="2" opacity="0.45"/>
+</svg>

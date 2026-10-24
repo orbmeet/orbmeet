@@ -1,0 +1,83 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "infra/ops"
+
+# One version for every dependency more than one workspace package declares.
+# Packages refer to it as `catalog:`; a bump is one edit here.
+catalog:
+  aws4fetch: "^1.0.20"
+  "@base-ui/react": "^1.8.0"
+  cf: "1.0.0-beta.12"
+  "@cloudflare/config": "0.23.0"
+  drizzle-orm: "1.0.0-rc.4"
+  jose: "6.2.12"
+  jsdom: "^30.1.1"
+  livekit-server-sdk: "^2.19.1"
+  lucide-react: "^1.50.0"
+  oxc-transform-react: "^0.152.0"
+  react: "^19.3.0"
+  react-dom: "^19.3.0"
+  "@stylexjs/stylex": "0.19.1"
+  "@stylexjs/unplugin": "0.19.1"
+  tldraw: "5.5.2"
+  "@tldraw/assets": "5.5.2"
+  "@tldraw/state": "5.5.2"
+  "@tldraw/store": "5.5.2"
+  "@tldraw/sync": "5.5.2"
+  "@tldraw/sync-core": "5.5.2"
+  "@tldraw/tlschema": "5.5.2"
+  "@tldraw/utils": "5.5.2"
+  "@tldraw/validate": "5.5.2"
+  "@types/node": "^26.6.4"
+  "@types/react": "^19.3.0"
+  "@types/react-dom": "^19.3.0"
+  typescript: "7.0.2"
+  valibot: "^1.5.0"
+  "@valibot/to-json-schema": "^1.8.0"
+  "@vitejs/plugin-react": "^6.1.1"
+  vitest: "^4.1.11"
+
+# Build scripts that are explicitly allowed to run at install time.
+# Everything else is blocked by default for supply-chain safety.
+allowBuilds:
+  '@ffmpeg-installer/darwin-arm64': true
+  '@ffmpeg-installer/darwin-x64': true
+  '@ffmpeg-installer/linux-arm': true
+  '@ffmpeg-installer/linux-arm64': true
+  '@ffmpeg-installer/linux-ia32': true
+  '@ffmpeg-installer/linux-x64': true
+  '@ffmpeg-installer/win32-ia32': true
+  '@ffmpeg-installer/win32-x64': true
+  # Its only install script is a no-op `preinstall` echo.
+  '@google/genai': false
+  '@livekit/local-inference': true
+  esbuild: true
+  protobufjs: true
+  sharp: true
+  workerd: true
+
+# GHSA-cp6q-959q-f8rh: @tiptap/core's mergeAttributes() turns an own __proto__
+# key into inherited executable DOM attributes. Our own pins are on the patched
+# line, but tldraw resolves its `^3.12.1` range to a vulnerable copy, so the
+# whole tree is held to the fix.
+overrides:
+  '@tiptap/core@<3.30.4': '>=3.30.4'
+  '@tiptap/pm@<3.30.4': '>=3.30.4'
+  # The sha-pinned v2 Vite plugin pins @cloudflare/config 0.22.0 exactly; left
+  # alone, its worker-config types diverge from the 0.23.x this repo imports,
+  # and the plugin `config` customizer fails to typecheck against them. The
+  # schema only grows additively, so holding one copy is safe.
+  "@cloudflare/config": "0.23.0"
+  # One wrangler for the whole tree (code-runner's `cf dev` delegate and the
+  # vitest plugin's engine), held to the version the vitest plugin ships with.
+  wrangler: "4.147.0"
+
+peerDependencyRules:
+  allowedVersions:
+    typescript: 7.0.2
+    oxc-transform-react: 0.152.0
+
+# pnpm holds a release back for a day after it is published
+# (minimumReleaseAge), so a compromised version is usually caught and pulled
+# before a resolve here can pick it up. Kept at pnpm's default.

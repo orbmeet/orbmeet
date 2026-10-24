@@ -1,0 +1,53 @@
+# Copy to .dev.vars for local development
+APP_URL=http://localhost:3000
+ENVIRONMENT=development
+
+# Auth (generate with: openssl rand -base64 32)
+AUTH_SECRET=development-only-placeholder
+
+# Google OAuth
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+# Email (Cloudflare Email Service — no API key; uses the send_email binding.
+# `vite dev` simulates sends locally (logged, not delivered) unless the binding
+# has a remote dev binding (build/config/cloudflare.ts). Optional sender
+# to Orb Meet <noreply@orbmeet.com>.)
+EMAIL_FROM_ADDRESS="Orb Meet <noreply@example.com>"
+
+# The self-hosted nodes: one JSON object of independent machines, each with
+# the services it runs, every keyring's first key signing.
+# Locally, one node: the LiveKit started from infra/dev/livekit.dev.yaml and
+# the whiteboard server on :8787, whose keyrings match its .env. Whiteboard
+# keyrings are JSON {"<key id>":"<32+ char secret>"}.
+NODES={"dev":{"media":{"url":"ws://localhost:27880","capacity":100,"keys":{"devkey":"secret"}},"whiteboard":{"url":"http://localhost:8787","jwt":{"dev":"local-whiteboard-jwt-signing-key-change-me-0001"},"command":{"dev":"local-whiteboard-command-key-change-me-0001"},"callback":{"dev":"local-whiteboard-callback-key-change-me-0001"}}}}
+
+# The transcription agent signs its transcript deliveries with one of these
+# keys; apps/transcription-agent/.env names the one it uses.
+TRANSCRIPTION_INTERNAL_KEYS={"agent-dev":"generate-at-least-32-random-characters"}
+
+# R2 (for presigned URLs)
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_ACCOUNT_ID=
+# A scratch bucket, never the one cloudflare.config.ts deploys to: filling in the R2
+# credentials above turns this into a *remote* binding that writes for real.
+# The dev server refuses to start if the two names match.
+R2_BUCKET_NAME=orbmeet-storage-dev
+
+# AI (Gemini) — get key from Google AI Studio (aistudio.google.com)
+AI_API_KEY=
+AI_MODEL=gemini-3.1-flash-lite-preview
+AI_MODEL_FALLBACK=gemma-4-31b-it
+
+# MathInk recognizer proxy
+MATHINK_ORIGIN_URL=http://localhost:8080
+MATHINK_ORIGIN_SECRET=development-only-mathink-secret
+
+# tldraw license — leave blank for localhost development.
+# A real key is required for production deployments; obtain one from tldraw.dev.
+VITE_TLDRAW_LICENSE_KEY=
+
+# Monitoring (optional)
+BETTERSTACK_API_KEY=
+UPTIMEROBOT_API_KEY=

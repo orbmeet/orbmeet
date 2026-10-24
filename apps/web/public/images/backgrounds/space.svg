@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080">
+  <defs>
+    <radialGradient id="snebula1" cx="30%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#1a237e" stop-opacity="0.8"/>
+      <stop offset="40%" stop-color="#311b92" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#0a0a1a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="snebula2" cx="70%" cy="60%" r="45%">
+      <stop offset="0%" stop-color="#880e4f" stop-opacity="0.5"/>
+      <stop offset="50%" stop-color="#4a148c" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#0a0a1a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="snebula3" cx="50%" cy="30%" r="35%">
+      <stop offset="0%" stop-color="#0d47a1" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#0a0a1a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="#05050f"/>
+  <rect width="1920" height="1080" fill="url(#snebula1)"/>
+  <rect width="1920" height="1080" fill="url(#snebula2)"/>
+  <rect width="1920" height="1080" fill="url(#snebula3)"/>
+  <!-- Stars -->
+  <circle cx="150" cy="80" r="1.5" fill="white" opacity="0.9"/>
+  <circle cx="300" cy="200" r="1" fill="white" opacity="0.7"/>
+  <circle cx="450" cy="120" r="1.8" fill="white" opacity="0.8"/>
+  <circle cx="620" cy="300" r="1" fill="white" opacity="0.6"/>
+  <circle cx="780" cy="90" r="1.5" fill="white" opacity="0.85"/>
+  <circle cx="920" cy="250" r="1.2" fill="white" opacity="0.7"/>
+  <circle cx="1080" cy="150" r="1.6" fill="white" opacity="0.8"/>
+  <circle cx="1250" cy="70" r="1" fill="white" opacity="0.65"/>
+  <circle cx="1400" cy="220" r="1.8" fill="white" opacity="0.9"/>
+  <circle cx="1550" cy="130" r="1.2" fill="white" opacity="0.75"/>
+  <circle cx="1700" cy="280" r="1.5" fill="white" opacity="0.7"/>
+  <circle cx="1850" cy="100" r="1" fill="white" opacity="0.8"/>
+  <circle cx="200" cy="400" r="1.3" fill="white" opacity="0.7"/>
+  <circle cx="500" cy="450" r="1" fill="white" opacity="0.6"/>
+  <circle cx="750" cy="380" r="1.7" fill="white" opacity="0.85"/>
+  <circle cx="1000" cy="420" r="1" fill="white" opacity="0.7"/>
+  <circle cx="1300" cy="400" r="1.4" fill="white" opacity="0.8"/>
+  <circle cx="1600" cy="450" r="1" fill="white" opacity="0.65"/>
+  <circle cx="100" cy="550" r="1.5" fill="white" opacity="0.75"/>
+  <circle cx="350" cy="600" r="1.2" fill="white" opacity="0.8"/>
+  <circle cx="600" cy="580" r="1" fill="white" opacity="0.6"/>
+  <circle cx="850" cy="520" r="1.8" fill="white" opacity="0.9"/>
+  <circle cx="1100" cy="560" r="1.3" fill="white" opacity="0.7"/>
+  <circle cx="1350" cy="530" r="1" fill="white" opacity="0.65"/>
+  <circle cx="1580" cy="590" r="1.6" fill="white" opacity="0.8"/>
+  <circle cx="1800" cy="550" r="1" fill="white" opacity="0.7"/>
+  <circle cx="250" cy="700" r="1.4" fill="white" opacity="0.75"/>
+  <circle cx="480" cy="750" r="1" fill="white" opacity="0.6"/>
+  <circle cx="700" cy="720" r="1.7" fill="white" opacity="0.85"/>
+  <circle cx="950" cy="680" r="1.2" fill="white" opacity="0.7"/>
+  <circle cx="1200" cy="710" r="1.5" fill="white" opacity="0.8"/>
+  <circle cx="1450" cy="740" r="1" fill="white" opacity="0.65"/>
+  <circle cx="1700" cy="700" r="1.3" fill="white" opacity="0.75"/>
+  <circle cx="150" cy="850" r="1.6" fill="white" opacity="0.8"/>
+  <circle cx="400" cy="900" r="1" fill="white" opacity="0.7"/>
+  <circle cx="650" cy="870" r="1.4" fill="white" opacity="0.75"/>
+  <circle cx="900" cy="830" r="1.8" fill="white" opacity="0.9"/>
+  <circle cx="1150" cy="860" r="1" fill="white" opacity="0.65"/>
+  <circle cx="1400" cy="880" r="1.5" fill="white" opacity="0.8"/>
+  <circle cx="1650" cy="850" r="1.2" fill="white" opacity="0.7"/>
+  <circle cx="1880" cy="900" r="1" fill="white" opacity="0.6"/>
+  <circle cx="300" cy="980" r="1.3" fill="white" opacity="0.75"/>
+  <circle cx="550" cy="1020" r="1.6" fill="white" opacity="0.8"/>
+  <circle cx="800" cy="1000" r="1" fill="white" opacity="0.65"/>
+  <circle cx="1050" cy="960" r="1.4" fill="white" opacity="0.7"/>
+  <circle cx="1300" cy="990" r="1.7" fill="white" opacity="0.85"/>
+  <circle cx="1550" cy="1010" r="1" fill="white" opacity="0.7"/>
+  <circle cx="1800" cy="970" r="1.5" fill="white" opacity="0.8"/>
+  <!-- Bright stars -->
+  <circle cx="450" cy="120" r="3" fill="white" opacity="0.95"/>
+  <circle cx="1400" cy="220" r="3.5" fill="white" opacity="1"/>
+  <circle cx="850" cy="520" r="2.5" fill="white" opacity="0.95"/>
+  <circle cx="900" cy="830" r="3" fill="white" opacity="0.95"/>
+</svg>

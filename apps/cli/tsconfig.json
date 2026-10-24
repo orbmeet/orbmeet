@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    // Sources import each other with .ts specifiers so `node bin/orbmeet.ts`
+    // runs the CLI directly during development, with no build step. The
+    // published package is one esbuild bundle instead: it must ship
+    // JavaScript (Node refuses to strip types under node_modules), and it
+    // inlines the private workspace contract it parses responses with.
+    // Type stripping erases annotations without transforming code, so enums,
+    // namespaces, and parameter properties are rejected here rather than at
+    // a developer's first run.
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src/**/*.ts", "bin/**/*.ts"]
+}

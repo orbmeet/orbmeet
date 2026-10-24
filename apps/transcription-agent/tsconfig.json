@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"],
+    "allowImportingTsExtensions": false,
+    // Dependency packages in this repo ship TypeScript sources
+    // (packages/*/src), so files pulled in for checking may use explicit .ts
+    // specifiers; this flag accepts them while emitting the agent's own
+    // relative imports as .js.
+    "rewriteRelativeImportExtensions": true,
+    "noEmit": false
+  },
+  "include": ["src/**/*.ts"]
+}

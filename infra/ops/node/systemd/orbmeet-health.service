@@ -1,0 +1,7 @@
+[Unit]
+Description=Orb Meet application and dependency readiness
+After=docker.service
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/orbmeet-health check
+TimeoutStartSec=60

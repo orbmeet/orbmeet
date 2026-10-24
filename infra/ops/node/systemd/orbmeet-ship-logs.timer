@@ -1,0 +1,7 @@
+[Unit]
+Description=Send this node's logs to Axiom every five minutes
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+[Install]
+WantedBy=timers.target

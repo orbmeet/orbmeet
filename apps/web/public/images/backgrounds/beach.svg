@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2d1b69"/>
+      <stop offset="30%" stop-color="#8b3a62"/>
+      <stop offset="55%" stop-color="#e8734a"/>
+      <stop offset="75%" stop-color="#f4a261"/>
+      <stop offset="100%" stop-color="#fcd29f"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="50%" cy="78%" r="18%">
+      <stop offset="0%" stop-color="#fff4e0" stop-opacity="0.9"/>
+      <stop offset="40%" stop-color="#f4a261" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#f4a261" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d4845a"/>
+      <stop offset="50%" stop-color="#6b4c7a"/>
+      <stop offset="100%" stop-color="#2d1b69"/>
+    </linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#sky)"/>
+  <rect x="0" y="720" width="1920" height="360" fill="url(#water)" opacity="0.8"/>
+  <ellipse cx="960" cy="740" rx="900" ry="30" fill="#c47a50" opacity="0.3"/>
+  <circle cx="960" cy="680" r="200" fill="url(#sun)"/>
+</svg>

@@ -1,0 +1,58 @@
+{
+  "name": "@orbmeet/whiteboard-core",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./assistant": "./src/assistant/index.ts",
+    "./chunked-json": "./src/chunked-json.ts",
+    "./code-run-contract": "./src/code-run-contract.ts",
+    "./code-shape-schema": "./src/code-shape-schema.ts",
+    "./config": "./src/config.ts",
+    "./crypto-utils": "./src/crypto-utils.ts",
+    "./document-keys": "./src/document-keys.ts",
+    "./math-shape-schema": "./src/math-shape-schema.ts",
+    "./math/constants": "./src/math/constants.ts",
+    "./math/math-rich-text-schema": "./src/math/math-rich-text-schema.ts",
+    "./mathink-constants": "./src/mathink-constants.ts",
+    "./mathink-contract": "./src/mathink-contract.ts",
+    "./page-background": "./src/page-background.ts",
+    "./page-frame-model": "./src/page-frame-model.ts",
+    "./page-geometry": "./src/page-geometry.ts",
+    "./page-shape-schema": "./src/page-shape-schema.ts",
+    "./pdf-geometry": "./src/pdf-geometry.ts",
+    "./pdf-page-asset": "./src/pdf-page-asset.ts",
+    "./protocol": "./src/protocol.ts",
+    "./public-host": "./src/public-host.ts",
+    "./room-messages": "./src/room-messages.ts",
+    "./room-navigation": "./src/room-navigation.ts",
+    "./room-schema": "./src/room-schema.ts",
+    "./room-snapshot-validation": "./src/room-snapshot-validation.ts",
+    "./shape-author": "./src/shape-author.ts",
+    "./snapshot-assets": "./src/snapshot-assets.ts",
+    "./sync-commands": "./src/sync-commands.ts",
+    "./table-shape-schema": "./src/table-shape-schema.ts",
+    "./whiteboard-asset-key": "./src/whiteboard-asset-key.ts",
+    "./whiteboard-grant-principal": "./src/whiteboard-grant-principal.ts",
+    "./whiteboard-jwt": "./src/whiteboard-jwt.ts",
+    "./whiteboard-room-id": "./src/whiteboard-room-id.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@orbmeet/primitives": "workspace:*",
+    "@tldraw/store": "catalog:",
+    "@tldraw/sync-core": "catalog:",
+    "@tldraw/tlschema": "catalog:",
+    "@tldraw/utils": "catalog:",
+    "@tldraw/validate": "catalog:",
+    "jose": "catalog:",
+    "valibot": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,0 +1,24 @@
+# The local development LiveKit (started by apps/web/scripts/setup-livekit.mjs).
+# This machine may also be a media node, whose own LiveKit holds 7880-7885 and
+# whose firewall opens 7881 and 7882-7885 to the internet. Development uses
+# ports no media node or firewall rule uses, and signals on loopback only. The
+# e2e LiveKit (apps/web/e2e/livekit.yaml) holds 17880-17882.
+port: 27880
+bind_addresses:
+  - 127.0.0.1
+rtc:
+  tcp_port: 27881
+  udp_port: 27882
+  node_ip: 127.0.0.1
+  use_external_ip: false
+  # Both ends live on loopback, which ICE skips unless asked.
+  enable_loopback_candidate: true
+  ips:
+    includes:
+      - 127.0.0.1/32
+keys:
+  devkey: secret
+webhook:
+  api_key: devkey
+  urls:
+    - http://127.0.0.1:3000/api/livekit/webhook

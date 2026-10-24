@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="owall" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0%" stop-color="#d5cec5"/>
+      <stop offset="40%" stop-color="#c4bbb0"/>
+      <stop offset="100%" stop-color="#b0a89c"/>
+    </linearGradient>
+    <radialGradient id="olight" cx="40%" cy="20%" r="60%">
+      <stop offset="0%" stop-color="#e8e2da" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#c4bbb0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ofloor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8a7e72"/>
+      <stop offset="100%" stop-color="#6e6358"/>
+    </linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#owall)"/>
+  <rect width="1920" height="1080" fill="url(#olight)"/>
+  <rect x="0" y="780" width="1920" height="300" fill="url(#ofloor)"/>
+  <line x1="0" y1="780" x2="1920" y2="780" stroke="#a09488" stroke-width="3"/>
+  <rect x="350" y="200" width="300" height="400" rx="8" fill="#a09488" opacity="0.25"/>
+  <rect x="1270" y="200" width="300" height="400" rx="8" fill="#a09488" opacity="0.25"/>
+  <rect x="770" y="250" width="380" height="280" rx="6" fill="#b8b0a4" opacity="0.3"/>
+  <rect x="785" y="265" width="350" height="250" rx="4" fill="#d0c8bc" opacity="0.2"/>
+</svg>

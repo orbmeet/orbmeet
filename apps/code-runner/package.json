@@ -1,0 +1,25 @@
+{
+  "name": "@orbmeet/code-runner",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "cf dev",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts",
+    "test:image": "docker build --quiet -t orbmeet-code-runner:dev . && vitest run --config vitest.container.config.ts",
+    "deploy": "pnpm -C ../.. run check && cf deploy"
+  },
+  "dependencies": {
+    "@orbmeet/primitives": "workspace:*",
+    "@orbmeet/whiteboard-core": "workspace:*",
+    "valibot": "catalog:"
+  },
+  "devDependencies": {
+    "@cloudflare/config": "catalog:",
+    "@cloudflare/workers-types": "^5.20261002.1",
+    "cf": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "wrangler": "4.147.0"
+  }
+}

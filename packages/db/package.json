@@ -1,0 +1,23 @@
+{
+  "name": "@orbmeet/db",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema.ts",
+    "./triggers": "./src/triggers.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "check": "drizzle-kit check",
+    "generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@orbmeet/domain-model": "workspace:*",
+    "drizzle-orm": "catalog:"
+  },
+  "devDependencies": {
+    "drizzle-kit": "1.0.0-rc.4",
+    "typescript": "catalog:"
+  }
+}

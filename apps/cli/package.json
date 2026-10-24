@@ -1,0 +1,42 @@
+{
+  "name": "@orbmeet/cli",
+  "version": "0.1.1",
+  "description": "Run Orb Meet from the terminal: schedule Meetings and fetch Transcripts, AI Summaries, and recordings. JSON output, built for scripts and automation.",
+  "license": "MIT",
+  "author": "Atiq Rahman <support@orbmeet.com>",
+  "homepage": "https://orbmeet.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/atiqrahmanx/orbmeet.git",
+    "directory": "apps/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/atiqrahmanx/orbmeet/issues"
+  },
+  "type": "module",
+  "bin": {
+    "orbmeet": "dist/bin/orbmeet.js"
+  },
+  "engines": {
+    "node": ">=24.22.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && esbuild bin/orbmeet.ts --bundle --platform=node --format=esm --target=node24.22 --outfile=dist/bin/orbmeet.js --log-level=warning && node dist/bin/orbmeet.js --version",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts",
+    "prepublishOnly": "pnpm build"
+  },
+  "devDependencies": {
+    "@orbmeet/public-api-contract": "workspace:*",
+    "@types/node": "catalog:",
+    "esbuild": "0.28.2",
+    "typescript": "catalog:"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ]
+}

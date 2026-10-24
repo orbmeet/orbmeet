@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "lib": ["ES2024"],
+    // `node src/main.ts` runs the tool directly: type stripping erases
+    // annotations without transforming code, so enums, namespaces and
+    // parameter properties are rejected here rather than at the first run.
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src/**/*.ts"]
+}

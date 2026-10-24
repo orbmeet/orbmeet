@@ -1,0 +1,26 @@
+{
+  "name": "@orbmeet/public-api-contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./responses": "./src/responses.ts",
+    "./fields": "./src/fields.ts",
+    "./time-zone": "./src/time-zone.ts",
+    "./search-pattern": "./src/search-pattern.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@orbmeet/domain-model": "workspace:*",
+    "valibot": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

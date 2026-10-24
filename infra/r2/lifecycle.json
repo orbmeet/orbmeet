@@ -1,0 +1,39 @@
+{
+  "rules": [
+    {
+      "id": "expire-staging-uploads",
+      "enabled": true,
+      "conditions": { "prefix": "staging/" },
+      "deleteObjectsTransition": {
+        "condition": { "type": "Age", "maxAge": 172800 }
+      },
+      "abortMultipartUploadsTransition": {
+        "condition": { "type": "Age", "maxAge": 86400 }
+      }
+    },
+    {
+      "id": "expire-promotion-intents",
+      "enabled": true,
+      "conditions": { "prefix": "intents/promotions/" },
+      "deleteObjectsTransition": {
+        "condition": { "type": "Age", "maxAge": 604800 }
+      }
+    },
+    {
+      "id": "expire-whiteboard-backups",
+      "enabled": true,
+      "conditions": { "prefix": "internal/whiteboard-backups/" },
+      "deleteObjectsTransition": {
+        "condition": { "type": "Age", "maxAge": 604800 }
+      }
+    },
+    {
+      "id": "abort-incomplete-multipart-uploads",
+      "enabled": true,
+      "conditions": { "prefix": "" },
+      "abortMultipartUploadsTransition": {
+        "condition": { "type": "Age", "maxAge": 604800 }
+      }
+    }
+  ]
+}

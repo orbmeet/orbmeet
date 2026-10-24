@@ -1,0 +1,4 @@
+# Shared with the `orbmeet` Worker, which sends it as X-Code-Runner-Secret.
+# Any value works locally; production uses
+# `cf workers secrets update CODE_RUNNER_SECRET --worker orbmeet-code-runner`.
+CODE_RUNNER_SECRET="dev-secret"

@@ -1,0 +1,10 @@
+{
+	"databaseId": "<your-d1-database-id>",
+	"domains": [
+		"your-domain.example"
+	],
+	"vars": {
+		"APP_URL": "https://your-domain.example",
+		"EMAIL_FROM_ADDRESS": "Orb Meet <noreply@your-domain.example>"
+	}
+}

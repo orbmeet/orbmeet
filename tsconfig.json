@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": [
+    "apps/transcription-agent/vitest.config.ts",
+    "apps/code-runner/vitest.config.ts",
+    "apps/cli/vitest.config.ts",
+    "infra/ops/vitest.config.ts",
+    "packages/caption-protocol/vitest.config.ts",
+    "packages/primitives/vitest.config.ts",
+    "packages/whiteboard-core/vitest.config.ts",
+    "packages/public-api-contract/vitest.config.ts",
+    "packages/db/drizzle.config.ts"
+  ]
+}

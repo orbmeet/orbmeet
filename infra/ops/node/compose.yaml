@@ -1,0 +1,254 @@
+# One node. deploy.sh names the project orbmeet-<node> and enables the profile
+# of each Compose service the node's inventory services need (infra/ops/src/catalog.ts SERVICES):
+# media is Caddy, LiveKit, Redis, Egress and the transcription agent;
+# whiteboard is the whiteboard sync server, which Caddy serves at the node's whiteboard name.
+#
+# Caddy and LiveKit use the host's network: every public port is the host's,
+# and nothing is published through Docker. Everything else shares one bridge,
+# whose gateway is the host. Memory limits come from the inventory
+# (infra/ops/src/catalog.ts MEMORY_LIMITS), which checks they fit the machine;
+# should the host run short anyway, the kernel kills the batch work (Egress,
+# PDF rendering, transcription) before what carries live rooms.
+
+# Every container logs to the host's journal, where its log outlives it and
+# orbmeet-ship-logs sends what matters to Axiom (ship-logs.jq).
+x-service: &service
+  restart: unless-stopped
+  logging:
+    driver: journald
+
+services:
+  caddy:
+    <<: *service
+    profiles: [caddy]
+    image: orbmeet-caddy:${CADDY_BUILD}
+    build:
+      context: ./caddy
+      provenance: false
+    # Clients' own addresses, over IPv6 too, reach it without Docker's proxy.
+    network_mode: host
+    volumes:
+      - /etc/orbmeet/runtime/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /var/lib/orbmeet/caddy:/data
+    labels: {org.orbmeet.config: "${CADDY_CONFIG:-}"}
+    cap_drop: [NET_RAW]
+    mem_limit: ${CADDY_MEMORY}
+    oom_score_adj: -500
+    pids_limit: 256
+    healthcheck:
+      test: [CMD, wget, -qO-, "http://127.0.0.1:2019/config/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  livekit:
+    <<: *service
+    profiles: [livekit]
+    image: livekit/livekit-server:v1.13.6@sha256:e37d68f172556d02aa77968b9fc55ef481468c0315fa38e4fa6c56ce72e3a815
+    network_mode: host
+    command: [--config, /etc/livekit.yaml]
+    depends_on:
+      redis: {condition: service_healthy}
+    volumes:
+      - /etc/orbmeet/runtime/livekit.json:/etc/livekit.yaml:ro
+    labels: {org.orbmeet.config: "${LIVEKIT_CONFIG:-}"}
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    cpu_shares: 2048
+    mem_limit: ${LIVEKIT_MEMORY}
+    oom_score_adj: -900
+    pids_limit: 2048
+    # On SIGTERM LiveKit waits for its rooms to empty. A deploy does not wait
+    # for that: clients reconnect to the restarted server within seconds.
+    stop_grace_period: 15s
+    ulimits:
+      nofile: {soft: 65535, hard: 65535}
+    # It binds only the bridge's gateway (render.ts), even on the host network.
+    healthcheck:
+      test: [CMD, wget, -qO-, "http://172.30.22.1:7880/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    <<: *service
+    profiles: [redis]
+    image: redis:8.8.0-alpine@sha256:09160599abd229764c0fb44cb6be640294e1d360a54b19985ab4843dcf2d90f1
+    user: "999:999"
+    command: [redis-server, /etc/redis/redis.conf]
+    volumes:
+      - /etc/orbmeet/runtime/redis.conf:/etc/redis/redis.conf:ro
+      - /etc/orbmeet/runtime/redis.acl:/etc/redis/users.acl:ro
+      - /etc/orbmeet/runtime/redis_password:/run/secrets/redis_password:ro
+    labels: {org.orbmeet.config: "${REDIS_CONFIG:-}"}
+    # Unpublished: LiveKit on the host and Egress on the bridge reach it at its
+    # bridge address, and nothing else can.
+    read_only: true
+    tmpfs: ["/data:size=16m,uid=999,gid=999"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: ${REDIS_MEMORY}
+    oom_score_adj: -500
+    pids_limit: 128
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$(cat /run/secrets/redis_password)" redis-cli ping | grep -qx PONG']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      bridge: {ipv4_address: 172.30.22.10}
+
+  whiteboard:
+    <<: *service
+    profiles: [whiteboard]
+    image: orbmeet-whiteboard:${WHITEBOARD_BUILD:-none}
+    build:
+      context: ../../..
+      dockerfile: apps/whiteboard-server/Dockerfile
+      provenance: false
+    environment:
+      NODE_ENV: production
+      APP_URL: ${APP_URL}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      # Caddy on the host, whose connections come from the bridge's gateway
+      # and carry the client's address in X-Forwarded-For.
+      TRUST_PROXY_IPS: 172.30.22.1
+      LOG_FORMAT: json
+      DATA_DIR: /data/rooms
+      WHITEBOARD_COMMAND_KEYS_FILE: /run/secrets/whiteboard_command_keys
+      WHITEBOARD_CALLBACK_KEYS_FILE: /run/secrets/whiteboard_callback_keys
+      WHITEBOARD_JWT_KEYS_FILE: /run/secrets/whiteboard_jwt_keys
+      R2_ACCESS_KEY_ID_FILE: /run/secrets/r2_access_key_id
+      R2_SECRET_ACCESS_KEY_FILE: /run/secrets/r2_secret_access_key
+      R2_ACCOUNT_ID_FILE: /run/secrets/r2_account_id
+      R2_BUCKET_NAME_FILE: /run/secrets/r2_bucket_name
+      ASSISTANT_MODEL: ${ASSISTANT_MODEL:-}
+      AI_API_KEY_FILE: /run/secrets/ai_api_key
+    volumes:
+      - /var/lib/orbmeet/whiteboard:/data/rooms
+      - /etc/orbmeet/runtime/whiteboard_command_keys:/run/secrets/whiteboard_command_keys:ro
+      - /etc/orbmeet/runtime/whiteboard_callback_keys:/run/secrets/whiteboard_callback_keys:ro
+      - /etc/orbmeet/runtime/whiteboard_jwt_keys:/run/secrets/whiteboard_jwt_keys:ro
+      - /etc/orbmeet/runtime/r2_access_key_id:/run/secrets/r2_access_key_id:ro
+      - /etc/orbmeet/runtime/r2_secret_access_key:/run/secrets/r2_secret_access_key:ro
+      - /etc/orbmeet/runtime/r2_account_id:/run/secrets/r2_account_id:ro
+      - /etc/orbmeet/runtime/r2_bucket_name:/run/secrets/r2_bucket_name:ro
+      - /etc/orbmeet/runtime/ai_api_key:/run/secrets/ai_api_key:ro
+    labels: {org.orbmeet.config: "${WHITEBOARD_CONFIG:-}"}
+    read_only: true
+    tmpfs: ["/tmp:size=1g,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    # PDF rendering may borrow idle CPU, but yields to the SFU under contention.
+    cpus: 3
+    cpu_shares: 256
+    mem_limit: ${WHITEBOARD_MEMORY}
+    oom_score_adj: 500
+    pids_limit: 512
+    stop_grace_period: 2m
+    ulimits:
+      nofile: {soft: 65535, hard: 65535}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8787/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      bridge: {ipv4_address: 172.30.22.3}
+
+  egress:
+    <<: *service
+    profiles: [egress]
+    image: livekit/egress:v1.14.1@sha256:bf2b648b947349c3e9ff7aa8c718f00378d5c06af7624652a3653318e00333ce
+    environment:
+      EGRESS_CONFIG_FILE: /etc/egress.yaml
+    volumes:
+      - /etc/orbmeet/runtime/egress.json:/etc/egress.yaml:ro
+      - /var/lib/orbmeet/egress:/home/egress/tmp
+    labels: {org.orbmeet.config: "${EGRESS_CONFIG:-}"}
+    # Upstream's version-matched policy permits Chrome's sandbox namespaces.
+    security_opt:
+      - seccomp=./egress-seccomp.json
+    cap_drop: [NET_RAW]
+    shm_size: 1gb
+    # Recording shares the node with the SFU: at most two cores, and LiveKit's
+    # shares win under contention.
+    cpus: 2
+    cpu_shares: 256
+    mem_limit: ${EGRESS_MEMORY}
+    oom_score_adj: 500
+    pids_limit: 2048
+    # On SIGTERM Egress waits for its recording to finish. The ops tool asks
+    # before replacing Egress while it records, since the recording is lost.
+    stop_grace_period: 30s
+    ulimits:
+      nofile: {soft: 65536, hard: 65536}
+    healthcheck:
+      test: [CMD, curl, -fsS, "http://127.0.0.1:9090/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      bridge: {ipv4_address: 172.30.22.11}
+
+  transcription:
+    <<: *service
+    profiles: [transcription]
+    image: orbmeet-transcription:${TRANSCRIPTION_BUILD:-none}
+    build:
+      context: ../../..
+      dockerfile: apps/transcription-agent/Dockerfile
+      provenance: false
+    init: true
+    environment:
+      NODE_ENV: production
+      # Its own node's LiveKit, at the bridge's gateway.
+      LIVEKIT_URL: ${TRANSCRIPTION_LIVEKIT_URL:-}
+      LIVEKIT_API_KEY_FILE: /run/secrets/livekit_api_key
+      LIVEKIT_API_SECRET_FILE: /run/secrets/livekit_api_secret
+      DEEPGRAM_API_KEY_FILE: /run/secrets/deepgram_api_key
+      APP_URL: ${APP_URL}
+      TRANSCRIPTION_INTERNAL_KEY_ID: ${TRANSCRIPTION_INTERNAL_KEY_ID:-}
+      TRANSCRIPTION_INTERNAL_SECRET_FILE: /run/secrets/transcription_internal_secret
+      TRANSCRIPTION_JOURNAL_PATH: /var/lib/orbmeet/transcription/journal.db
+    volumes:
+      # Transcripts not yet delivered to the Worker survive a restart here.
+      - /var/lib/orbmeet/transcription:/var/lib/orbmeet/transcription
+      - /etc/orbmeet/runtime/transcription_livekit_api_key:/run/secrets/livekit_api_key:ro
+      - /etc/orbmeet/runtime/transcription_livekit_api_secret:/run/secrets/livekit_api_secret:ro
+      - /etc/orbmeet/runtime/deepgram_api_key:/run/secrets/deepgram_api_key:ro
+      - /etc/orbmeet/runtime/transcription_internal_secret:/run/secrets/transcription_internal_secret:ro
+    labels: {org.orbmeet.config: "${TRANSCRIPTION_CONFIG:-}"}
+    read_only: true
+    tmpfs: ["/tmp:size=128m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    # Speech recognition runs at Deepgram; the agent only relays audio. It
+    # yields to the SFU under contention, like Egress.
+    cpus: 2
+    cpu_shares: 256
+    mem_limit: ${TRANSCRIPTION_MEMORY}
+    oom_score_adj: 500
+    pids_limit: 1024
+    # Its jobs finish their captions and flush the journal on SIGTERM.
+    stop_grace_period: 75s
+    ulimits:
+      nofile: {soft: 65535, hard: 65535}
+    healthcheck:
+      test: [CMD, node, dist/healthcheck.js, agent]
+      interval: 30s
+      timeout: 12s
+      retries: 5
+      start_period: 30s
+    networks:
+      bridge: {ipv4_address: 172.30.22.12}
+
+networks:
+  bridge:
+    driver_opts: {com.docker.network.bridge.name: om-bridge}
+    ipam:
+      config: [{subnet: 172.30.22.0/28, gateway: 172.30.22.1}]

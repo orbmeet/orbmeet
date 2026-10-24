@@ -1,0 +1,2 @@
+*.test.mjs
+vitest.config.ts

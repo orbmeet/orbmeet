@@ -1,0 +1,74 @@
+{
+    storage file_system {
+        root /data
+    }
+    # Docker's log driver collects stdout. Naming the encoder keeps the format
+    # JSON regardless of whether the runtime hands Caddy a terminal.
+    log default {
+        output stdout
+        # Bearer credentials reach these logs through the request line and the
+        # headers: the LiveKit browser client appends the room JWT as the
+        # `access_token` query parameter of its /rtc WebSocket URL, and the
+        # whiteboard client offers its token as a WebSocket subprotocol.
+        # `wrap json` pins the format exactly as the comment above describes;
+        # the filters rewrite the logged fields in place before it.
+        format filter {
+            wrap json
+            request>uri query {
+                replace access_token REDACTED
+            }
+            request>headers>Authorization delete
+            request>headers>Cookie delete
+            request>headers>Sec-Websocket-Protocol delete
+        }
+    }
+    servers :443 {
+        protocols h1 h2
+        # TURN/TLS shares TCP 443 with HTTPS: its SNI hands the connection to
+        # LiveKit's TURN server before HTTP ever sees it.
+        listener_wrappers {
+            layer4 {
+                @turn tls sni $TURN_HOST
+                route @turn {
+                    tls
+                    proxy tcp/$TURN
+                }
+            }
+            tls
+        }
+    }
+}
+
+# Per-site HSTS. Both sites carry tokens, so a downgrade must be refused by
+# the browser rather than merely redirected by us.
+(site) {
+    log {
+        output stdout
+        # Same redactions as the default logger above: the (site) logger owns
+        # the per-host access logs.
+        format filter {
+            wrap json
+            request>uri query {
+                replace access_token REDACTED
+            }
+            request>headers>Authorization delete
+            request>headers>Cookie delete
+            request>headers>Sec-Websocket-Protocol delete
+        }
+    }
+    header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+}
+
+# Clients signal here for Meetings the Worker placed on this node.
+$RTC_HOST {
+    import site
+    reverse_proxy $LIVEKIT
+}
+
+# Only its certificate is used: TURN/TLS connections for this name are routed
+# to LiveKit by SNI in the listener wrapper above.
+$TURN_HOST {
+    import site
+    respond "TURN endpoint" 200
+}
+$WHITEBOARD_SITE
