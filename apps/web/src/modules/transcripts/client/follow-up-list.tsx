@@ -61,7 +61,8 @@ const styles = stylex.create({
     transitionTimingFunction: "cubic-bezier(0.34, 1.56, 0.64, 1)",
     outlineOffset: 2,
   },
-  label: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0, cursor: "pointer" },
+  body: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 },
+  label: { minWidth: 0, cursor: "pointer" },
   text: { fontSize: text.sm, lineHeight: 1.4, color: ink.strong, transitionProperty: "color", transitionDuration: "200ms" },
   textDone: { color: ink.muted, textDecorationLine: "line-through" },
   detail: { fontSize: "0.8125rem", color: ink.muted },
@@ -135,10 +136,13 @@ export function FollowUpList({
               onChange={(event) => mutation.mutate({ followUpId: item.id, done: event.target.checked, text: item.text })}
               {...stylex.props(styles.box, focus.ring)}
             />
-            <label htmlFor={id} {...stylex.props(styles.label)}>
-              <span {...stylex.props(styles.text, done && styles.textDone)}>{item.text}</span>
+            <div {...stylex.props(styles.body)}>
+              <label htmlFor={id} {...stylex.props(styles.label)}>
+                <span {...stylex.props(styles.text, done && styles.textDone)}>{item.text}</span>
+              </label>
+              {/* Outside the label: it can hold a link, which must not tick the box. */}
               {item.detail ? <span {...stylex.props(styles.detail)}>{item.detail}</span> : null}
-            </label>
+            </div>
           </li>
         );
       })}

@@ -128,6 +128,10 @@ const styles = stylex.create({
     fontWeight: weight.medium,
     color: ink.muted,
   },
+  sectionLink: {
+    color: { default: "inherit", [env.hoverable]: { default: "inherit", ":hover": ink.strong } },
+    textDecorationLine: "none",
+  },
   addSpace: {
     display: "grid",
     placeItems: "center",
@@ -236,7 +240,9 @@ export function Sidebar({ user, onLogout, offer, besideCanvas = false }: Sidebar
 
       <nav aria-labelledby="rail-spaces">
         <div {...stylex.props(styles.sectionHead)}>
-          <h2 id="rail-spaces" {...stylex.props(styles.sectionLabel)}>Spaces</h2>
+          <h2 id="rail-spaces" {...stylex.props(styles.sectionLabel)}>
+            <Link to="/spaces" {...stylex.props(styles.sectionLink, focus.ring)}>Spaces</Link>
+          </h2>
           <button
             type="button"
             aria-label="New space"

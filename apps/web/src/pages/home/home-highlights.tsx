@@ -120,6 +120,10 @@ const styles = stylex.create({
     textDecorationLine: "none",
     backgroundColor: surface.sunken,
   },
+  followUpMeeting: {
+    color: "inherit",
+    textDecorationLine: { default: "none", [env.hoverable]: { default: "none", ":hover": "underline" } },
+  },
   jumpCount: { display: "inline-flex", alignItems: "center", gap: space.s1, fontWeight: weight.normal, color: ink.muted },
 });
 
@@ -343,12 +347,18 @@ export function StillToDo() {
           id: followUp.id,
           text: followUp.text,
           done: followUp.done,
-          detail: [
-            followUp.ownerName,
-            `${followUp.meetingTitle?.trim() || "A call"}, ${sayWhen(formatMeetingDate(followUp.meetingStartedAt))}`,
-          ]
-            .filter(Boolean)
-            .join(" · "),
+          detail: (
+            <>
+              {followUp.ownerName ? `${followUp.ownerName} · ` : ""}
+              <Link
+                to="/meetings/$meetingId"
+                params={{ meetingId: followUp.meetingId }}
+                {...stylex.props(styles.followUpMeeting, focus.ring)}
+              >
+                {`${followUp.meetingTitle?.trim() || "A call"}, ${sayWhen(formatMeetingDate(followUp.meetingStartedAt))}`}
+              </Link>
+            </>
+          ),
         }))}
       />
     </section>

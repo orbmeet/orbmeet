@@ -1,6 +1,7 @@
 import { BrandMark } from "@orbmeet/ui/react";
 import { getRouteApi } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
+import { Search } from "lucide-react";
 import { Link, Outlet, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import type { ErrorComponentProps } from "@tanstack/react-router";
 import { useQueryClient, useQueryErrorResetBoundary } from "@tanstack/react-query";
@@ -105,6 +106,15 @@ const styles = stylex.create({
     alignItems: "center",
     gap: space.s2,
     textDecorationLine: "none",
+  },
+  mobileActions: { display: "flex", alignItems: "center", gap: space.s1 },
+  mobileSearch: {
+    display: "grid",
+    placeItems: "center",
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    color: ink.body,
   },
   mobileBrandName: {
     fontFamily: fonts.heading,
@@ -289,7 +299,17 @@ function AuthedLayoutContent() {
                 Orb Meet
               </span>
             </Link>
-            <UserMenu user={user} onLogout={() => void handleLogout()} />
+            <div {...stylex.props(styles.mobileActions)}>
+              <Link
+                to="/library"
+                search={{ find: true }}
+                aria-label="Search or join"
+                {...stylex.props(styles.mobileSearch, motion.tint, focus.ring)}
+              >
+                <Search size={20} aria-hidden="true" />
+              </Link>
+              <UserMenu user={user} onLogout={() => void handleLogout()} />
+            </div>
           </div>
         )}
 

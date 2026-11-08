@@ -1,7 +1,7 @@
 import { getRouteApi, Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { useInfiniteQuery, useSuspenseQuery } from "@tanstack/react-query";
-import { Check, Copy, Plus, Settings2 } from "lucide-react";
+import { Check, Copy, Plus, Settings2, Video } from "lucide-react";
 import {
   EXAMPLE_MEETING_CODE,
   MEETING_CODE_REGEX as CODE_REGEX,
@@ -137,6 +137,7 @@ const styles = stylex.create({
     cursor: "pointer",
     fontSize: text.sm,
     fontWeight: weight.medium,
+    textDecorationLine: "none",
     color: { default: accent.a700, [env.hoverable]: { default: accent.a700, ":hover": accent.a800 } },
     backgroundColor: "transparent",
   },
@@ -291,6 +292,14 @@ function RoomCard({ threads }: { threads: Thread[] }) {
         <>
           <span {...stylex.props(styles.code)}>{room.code}</span>
           <div {...stylex.props(styles.roomActions)}>
+            <a
+              href={`/${room.code}`}
+              onClick={() => beginMeetingEntryFlow({ source: "home-join", code: room.code })}
+              {...stylex.props(styles.textButton, motion.tint, focus.ring)}
+            >
+              <Video size={14} aria-hidden="true" />
+              Enter room
+            </a>
             <button
               type="button"
               onClick={() => void copy(`${window.location.origin}/${room.code}`)}

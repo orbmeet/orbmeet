@@ -1,6 +1,7 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
-import { Button, openExternalUrl } from "@orbmeet/ui/react";
-import { AlertTriangle, Copy, Download, FileDown, Loader2, RefreshCw } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { Button, buttonStyles, openExternalUrl } from "@orbmeet/ui/react";
+import { AlertTriangle, Copy, Download, FileDown, Loader2, RefreshCw, SquarePen } from "lucide-react";
 import * as stylex from "@stylexjs/stylex";
 import type { Editor, TLAssetId, TLAssetStore, TLShapeId } from "tldraw";
 import {
@@ -127,7 +128,7 @@ const styles = stylex.create({
     columnGap: space.s4,
     rowGap: space.s2,
   },
-  textAction: { fontSize: text.xs },
+  textAction: { fontSize: text.xs, gap: space.s1, textDecorationLine: "none" },
   copyPolicy: { color: { default: neutral.n600, [env.hoverable]: { default: neutral.n600, ":hover:not(:disabled)": ink.strong } } },
   pending: { marginTop: 0, fontSize: text.xs, color: neutral.n500 },
   /** The strip of board switchers when a Meeting used more than one board. */
@@ -555,6 +556,9 @@ export function MeetingWhiteboardPanel({
     (item) => item.whiteboardId === selectedWhiteboardId,
   ) ?? whiteboards[0] ?? null;
   const selectedDocumentId = selectedWhiteboard?.whiteboardId ?? null;
+  const selectedBoardOpenable = meeting.whiteboardsShown.some(
+    (board) => board.whiteboardId === selectedDocumentId && board.openable,
+  );
   const selectedRevisionId = selectedWhiteboard?.revisionId ?? null;
   const selectedAssetScope = useMemo<RevisionAssetScope | null>(
     () => (selectedDocumentId && selectedRevisionId
@@ -818,8 +822,18 @@ export function MeetingWhiteboardPanel({
             {copyPolicyError ? (
               <p role="alert" {...stylex.props(styles.failure)}>{copyPolicyError}</p>
             ) : null}
-            {captureState === "captured" && (meeting.canManageMeeting || selectedWhiteboard?.allowParticipantCopy) && selectedWhiteboard ? (
+            {captureState === "captured" && (meeting.canManageMeeting || selectedWhiteboard?.allowParticipantCopy || selectedBoardOpenable) && selectedWhiteboard ? (
               <div {...stylex.props(styles.textActions)}>
+                {selectedBoardOpenable ? (
+                  <Link
+                    to="/whiteboards/$whiteboardId"
+                    params={{ whiteboardId: selectedWhiteboard.whiteboardId }}
+                    {...stylex.props(...buttonStyles({ variant: "link", sx: styles.textAction }))}
+                  >
+                    <SquarePen size={13} aria-hidden="true" />
+                    Open board
+                  </Link>
+                ) : null}
                 {meeting.canManageMeeting ? (
                   <Button
                     variant="link"

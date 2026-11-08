@@ -121,9 +121,9 @@ const styles = stylex.create({
     color: ink.muted,
   },
   /**
-   * Restore is revealed by hovering its row rather than shown on every one.
-   * Keyboard focus reveals it too — an action that only exists under a pointer
-   * is an action half the people here cannot reach.
+   * Where there is a pointer, Restore is revealed by hovering its row rather
+   * than shown on every one. Keyboard focus reveals it too, and on a touch
+   * screen, with nothing to hover, it is simply there.
    */
   restore: {
     display: "flex",
@@ -137,9 +137,8 @@ const styles = stylex.create({
     backgroundColor: { default: "transparent", [env.hoverable]: { default: "transparent", ":hover:not(:disabled)": neutral.n100 } },
     color: { default: neutral.n500, [env.hoverable]: { default: neutral.n500, ":hover:not(:disabled)": ink.strong } },
     opacity: {
-      default: 0,
-      [env.hoverable]: { default: 0, [stylex.when.ancestor(":hover")]: 1 },
-      ":focus-visible": 1,
+      default: 1,
+      [env.hoverable]: { default: 0, [stylex.when.ancestor(":hover")]: 1, ":focus-visible": 1 },
       ":disabled": 0.5,
     },
   },

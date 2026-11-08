@@ -108,7 +108,7 @@ const styles = stylex.create({
     color: accent.a700,
     backgroundColor: { default: "transparent", [env.hoverable]: { default: "transparent", ":hover": accent.a50 } },
   },
-  titleButton: { maxWidth: { default: "100%", [bp.sm]: "18rem" }, minWidth: 0, gap: space.s2, padding: 0, borderWidth: 0, backgroundColor: "transparent", fontFamily: "inherit" },
+  titleButton: { maxWidth: { default: "100%", [bp.sm]: "min(40rem, 50vw)" }, minWidth: 0, gap: space.s2, padding: 0, borderWidth: 0, backgroundColor: "transparent", fontFamily: "inherit" },
   title: {
     margin: 0,
     fontSize: text.sm,

@@ -41,6 +41,7 @@ import { fonts, leading, text, weight } from "@orbmeet/ui/tokens/typography.styl
 import {
   AlertTriangle,
   ChevronDown,
+  ChevronUp,
   Clock,
   MicOff,
   PenTool,
@@ -104,6 +105,8 @@ const styles = stylex.create({
   momentAt: { flexShrink: 0, width: 52, fontFamily: fonts.mono, fontSize: "0.8125rem", color: ink.muted },
   // The link colour only where pressing it plays something.
   momentAtPlayable: { color: accent.a700 },
+  transcriptOpen: { display: "flex", flexDirection: "column", gap: space.s3 },
+  transcriptHide: { alignSelf: "flex-start" },
   momentText: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 },
   momentTitle: { fontSize: text.base, fontWeight: weight.medium, color: ink.strong },
   momentDetail: { fontSize: text.sm, lineHeight: 1.45, color: ink.muted },
@@ -701,7 +704,15 @@ function TranscriptSection({ meetingId }: { meetingId: string }) {
       </Button>
     );
   }
-  return <TranscriptList meetingId={meetingId} />;
+  return (
+    <div {...stylex.props(styles.transcriptOpen)}>
+      <Button variant="secondary" size="sm" onClick={() => setExpanded(false)} aria-expanded sx={styles.transcriptHide}>
+        <ChevronUp size={14} />
+        Hide transcript
+      </Button>
+      <TranscriptList meetingId={meetingId} />
+    </div>
+  );
 }
 
 function TranscriptList({ meetingId }: { meetingId: string }) {

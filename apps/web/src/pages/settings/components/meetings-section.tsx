@@ -43,7 +43,13 @@ export function MeetingsSection() {
           <p {...stylex.props(settings.itemMeta, settings.itemMetaSpaced)}>
             {room ? (
               <>
-                <span {...stylex.props(styles.code)}>{room.code}</span> · Anyone with it can knock, and you let them in.
+                <span {...stylex.props(styles.code)}>{room.code}</span>
+                {" · "}
+                {room.joinPolicy === "approval_required"
+                  ? "Anyone with it can knock, and you let them in."
+                  : room.joinPolicy === "closed"
+                    ? "It isn’t letting anyone in right now."
+                    : "Anyone with it can walk straight in."}
               </>
             ) : (
               "One link people can always use to reach you."

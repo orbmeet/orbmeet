@@ -9,7 +9,7 @@ import { UpcomingMeetings } from "@/modules/scheduling/client/upcoming-meetings"
 import { ScheduleMeetingDialog, type UpcomingMeetingSchedule } from "@/modules/scheduling/client/schedule-meeting-dialog";
 import { useNow } from "@/lib/hooks/use-now";
 import { useResponsive } from "@/lib/hooks/use-responsive";
-import { Button } from "@orbmeet/ui/react";
+import { BottomSheet, Button } from "@orbmeet/ui/react";
 import { enter } from "@orbmeet/ui/styles/animations";
 import { focus, layout, motion } from "@orbmeet/ui/styles/atoms";
 import { accent, border, danger, ink, live, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
@@ -136,6 +136,7 @@ const styles = stylex.create({
     backgroundColor: surface.sunken,
   },
   detailEmpty: { margin: 0, fontSize: text.sm, lineHeight: 1.5, color: ink.muted },
+  sheetBody: { height: "100%", overflowY: "auto", boxSizing: "border-box", paddingInline: space.s5, paddingBottom: space.s8 },
   scroller: {
     flexGrow: 999,
     flexShrink: 1,
@@ -454,6 +455,13 @@ export function CalendarPage() {
 
   const [scheduling, setScheduling] = useState<{ startsAt?: string; schedule?: UpcomingMeetingSchedule } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Below the width where the details sit beside the week they are under 24
+  // hours of grid, so a tap opens them over it instead.
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const pickEvent = (id: string) => {
+    setSelectedId(id);
+    if (!window.matchMedia("(min-width: 1024px)").matches) setSheetOpen(true);
+  };
   // Nothing picked yet: what is on now, else the next thing still to come.
   const selected =
     events.find((event) => event.id === selectedId) ??
@@ -575,7 +583,7 @@ export function CalendarPage() {
                 selectedId={selected?.id ?? null}
                 minMinutes={coarse ? MIN_EVENT_MINUTES.touch : MIN_EVENT_MINUTES.pointer}
                 onPick={(at) => setScheduling({ startsAt: at.toISOString() })}
-                onSelect={setSelectedId}
+                onSelect={pickEvent}
               />
             ))}
           </div>
@@ -589,6 +597,21 @@ export function CalendarPage() {
         </aside>
         </div>
       )}
+
+      {selected ? (
+        <BottomSheet open={sheetOpen} onClose={() => setSheetOpen(false)} title={selected.title}>
+          <div {...stylex.props(styles.sheetBody)}>
+            <EventDetail
+              event={selected}
+              now={now}
+              onEditSchedule={(schedule) => {
+                setSheetOpen(false);
+                setScheduling({ schedule });
+              }}
+            />
+          </div>
+        </BottomSheet>
+      ) : null}
 
       <ScheduleMeetingDialog
         open={scheduling !== null}

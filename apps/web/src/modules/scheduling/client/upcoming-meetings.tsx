@@ -223,7 +223,7 @@ export function UpcomingMeetings({
   if (meetings.length === 0) return onSchedule ? (
     <EmptyState
       icon={CalendarDays}
-      title={spaceId ? "No upcoming meetings" : "Nothing on the calendar yet"}
+      title={spaceId ? "No upcoming meetings" : "Nothing coming up"}
       description={spaceId
         ? "Schedule the next time this Space will meet."
         : "Set a time, invite your people, and we’ll keep the details here."}

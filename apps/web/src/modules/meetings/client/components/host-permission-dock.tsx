@@ -49,8 +49,9 @@ const styles = stylex.create({
   /** A badge on the avatar saying what is being asked for, tinted by kind. */
   kindBadge: {
     position: "absolute",
-    right: -4,
-    bottom: -4,
+    // Far enough out to leave the initials readable.
+    right: -9,
+    bottom: -9,
     display: "grid",
     height: 20,
     width: 20,

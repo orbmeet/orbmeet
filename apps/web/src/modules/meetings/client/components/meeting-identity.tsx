@@ -111,7 +111,7 @@ interface MeetingIdentityProps {
 /** How long the button shows its tick after a copy. */
 const COPIED_MS = 1600;
 
-function CopyLinkButton({ onCopy }: { onCopy: () => void }) {
+export function CopyLinkButton({ onCopy }: { onCopy: () => void }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;

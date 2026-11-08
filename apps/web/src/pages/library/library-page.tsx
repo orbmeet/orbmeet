@@ -403,7 +403,10 @@ function MeetingResults({ search, viewerName }: { search: LibrarySearch; viewerN
     hasWhiteboard: meeting.hasWhiteboardState || meeting.hasWhiteboardPdf,
   }));
   const days = groupMeetingsByDay(meetings);
-  const narrowed = Boolean(search.q || search.scope || search.spaceId || search.person || search.within || search.type);
+  const filtered = Boolean(search.q || search.scope || search.spaceId || search.person || search.within);
+  const narrowed = filtered || Boolean(search.type);
+  // Asking for recordings and having none isn't a search that came up empty.
+  const onlyRecordings = search.type === "recordings" && !filtered;
 
   return (
     <section aria-labelledby="library-meetings" {...stylex.props(styles.section)}>
@@ -419,7 +422,9 @@ function MeetingResults({ search, viewerName }: { search: LibrarySearch; viewerN
         <QueryErrorNotice message="Past meetings couldn’t be loaded." onRetry={() => void query.refetch()} />
       ) : days.length === 0 ? (
         <p {...stylex.props(styles.quiet)}>
-          {narrowed
+          {onlyRecordings
+            ? "No recordings yet. Meetings you record land here."
+            : narrowed
             ? "Nothing matches. Try other words, or fewer filters."
             : "No past meetings yet. When a meeting ends, it lands here with its board, recording and recap."}
         </p>

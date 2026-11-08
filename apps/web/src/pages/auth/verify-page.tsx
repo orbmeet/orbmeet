@@ -52,7 +52,7 @@ const styles = stylex.create({
     lineHeight: leading.sm,
     color: danger.d600,
   },
-  backButton: { marginTop: space.s6, width: "100%" },
+  backButton: { marginTop: space.s6, alignSelf: "flex-start" },
 
   description: {
     marginTop: space.s2,
@@ -245,7 +245,9 @@ export function VerifyPage() {
                 key={i}
                 autoFocus={i === 0}
                 aria-label={
-                  i === 0 ? undefined : `Digit ${i + 1} of ${EMAIL_CODE_LENGTH}`
+                  i === 0
+                    ? `Verification code, digit 1 of ${EMAIL_CODE_LENGTH}`
+                    : `Digit ${i + 1} of ${EMAIL_CODE_LENGTH}`
                 }
                 {...stylex.props(styles.otpInput)}
               />

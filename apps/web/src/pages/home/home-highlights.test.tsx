@@ -120,7 +120,7 @@ describe("Still to do", () => {
     const html = renderToStaticMarkup(<StillToDo />);
     expect(html).toContain("Still to do");
     expect(html).toContain("2 open");
-    expect(html).toContain("Send the practice set — Atiq · Fractions practice, ");
-    expect(html).toContain("Book the next session — A call, ");
+    expect(html).toMatch(/Send the practice set — Atiq · <a [^>]*>Fractions practice, /);
+    expect(html).toMatch(/Book the next session — <a [^>]*>A call, /);
   });
 });
