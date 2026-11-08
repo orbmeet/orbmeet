@@ -505,7 +505,14 @@ const styles = stylex.create({
     transitionTimingFunction: easing.stiff,
   },
   controlButtonLarge: { height: 44, width: 44 },
-  controlButtonRegular: { height: 30, width: 30, borderRadius: radii.control },
+  controlButtonRegular: {
+    position: "relative",
+    height: 30,
+    width: 30,
+    borderRadius: radii.control,
+    // 44px tall under a finger, without changing the band the camera is fitted around.
+    "::after": { content: { default: null, [env.touch]: '""' }, position: "absolute", insetInline: 0, insetBlock: -7 },
+  },
   /** A view that is on, like the page picker when it is open. */
   controlButtonPressed: { color: accent.a700, backgroundColor: accent.a50 },
 

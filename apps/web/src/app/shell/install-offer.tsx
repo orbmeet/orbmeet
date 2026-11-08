@@ -1,4 +1,4 @@
-import { Button } from "@orbmeet/ui/react";
+import { Button, MenuItem } from "@orbmeet/ui/react";
 import { accent, border, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
 import { bp } from "@orbmeet/ui/tokens/media.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";
@@ -94,6 +94,35 @@ function dismiss() {
 
 function getDismissed() {
   return dismissed;
+}
+
+/* ── From the account menu ───────────────────────────────────────────────── */
+
+/**
+ * The same install, always to hand. Unaffected by dismissing the offer: that
+ * means "stop asking", and this only appears when someone goes looking.
+ */
+export function InstallMenuItem() {
+  const prompt = useSyncExternalStore(subscribe, getPrompt, () => null);
+  if (!prompt) return null;
+  return (
+    <MenuItem
+      onClick={() => {
+        void prompt.prompt()
+          .then(() => prompt.userChoice)
+          .then(() => {
+            capturedPrompt = null;
+            emit();
+          })
+          .catch(() => {
+            // Leave the item available after a transient browser error.
+          });
+      }}
+    >
+      <Download size={16} aria-hidden="true" />
+      Install the app
+    </MenuItem>
+  );
 }
 
 /* ── The offer ───────────────────────────────────────────────────────────── */

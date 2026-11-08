@@ -175,7 +175,7 @@ function FileRow({
             size="iconSm"
             onClick={() => downloadMutation.mutate()}
             loading={downloadMutation.isPending}
-            aria-label="Download file"
+            aria-label={`Download ${file.filename}`}
             title="Download"
           >
             {downloadMutation.isPending ? null : <Download size={16} />}
@@ -186,7 +186,7 @@ function FileRow({
               size="iconSm"
               sx={styles.remove}
               onClick={() => setDeleteOpen(true)}
-              aria-label="Remove file"
+              aria-label={`Remove ${file.filename}`}
               title="Remove"
             >
               <Trash size={16} />

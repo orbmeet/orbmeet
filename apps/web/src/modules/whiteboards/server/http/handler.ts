@@ -15,6 +15,8 @@ import {
   syncProtocolOf,
 } from "@orbmeet/whiteboard-core/sync-commands";
 import { handlePdfUpload } from "@/modules/whiteboards/server/http/whiteboard-pdf-upload";
+import { handleMeetingPreview } from "@/modules/whiteboards/server/http/meeting-preview";
+import { MEETING_PREVIEW_PATH } from "@/modules/whiteboards/contract/meeting-preview";
 import { handlePdfImportGrant } from "@/modules/whiteboards/server/http/whiteboard-pdf-import-grant";
 import { handleRecorderAuth } from "@/modules/whiteboards/server/http/recorder-auth";
 import { handleWbAssets } from "@/modules/whiteboards/server/http/wb-assets";
@@ -77,6 +79,8 @@ const ROUTES: readonly Route[] = [
   { method: "POST", path: CODE_RUN_CANCEL_PATH, auth: "bearer", handle: handleCancelCodeRun },
   { method: "POST", path: ROOM_AUTHORITY_PATH, auth: "signed", handle: handleRoomAuthority },
   { method: "POST", path: "/api/whiteboard/pdf-upload", auth: "browser", handle: handlePdfUpload },
+  { method: "GET", path: MEETING_PREVIEW_PATH, prefix: true, auth: "browser", handle: handleMeetingPreview },
+  { method: "POST", path: MEETING_PREVIEW_PATH, prefix: true, auth: "browser", handle: handleMeetingPreview },
   { method: "POST", path: "/api/whiteboard/pdf-import-grant", auth: "signed", handle: handlePdfImportGrant },
   { method: "POST", path: "/api/whiteboard/recorder-auth", auth: "browser", handle: handleRecorderAuth },
   {

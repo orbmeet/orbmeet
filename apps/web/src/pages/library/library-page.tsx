@@ -152,7 +152,8 @@ const styles = stylex.create({
   },
   chipOn: { borderColor: ink.strong, color: surface.raised, backgroundColor: ink.strong },
   divider: {
-    display: { default: "none", [bp.sm]: "block" },
+    // Only where both groups are sure to share a row: wrapped, it was stranded.
+    display: { default: "none", [bp.xl]: "block" },
     width: 1,
     alignSelf: "stretch",
     marginBlock: space.s1,

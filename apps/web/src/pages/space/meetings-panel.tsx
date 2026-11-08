@@ -56,6 +56,7 @@ import {
   Users,
   Video,
 } from "lucide-react";
+import { MeetingBoardPreview } from "@/modules/meetings/client/components/meeting-board-preview";
 import { List, ListRow, WideOnly } from "@/app/shell/list";
 import { Section } from "@/app/shell/section";
 import { focus, layout, motion, stack, status, touch } from "@orbmeet/ui/styles/atoms";
@@ -126,6 +127,7 @@ const styles = stylex.create({
     borderColor: neutral.n150,
     backgroundColor: surface.sunken,
     color: neutral.n400,
+    overflow: "hidden",
   },
   cardBody: { display: "flex", flexDirection: "column", gap: space.s2, flexGrow: 1, flexShrink: 1, flexBasis: { default: 0, [bp.sm]: 260 }, minWidth: 0 },
   cardTitle: { fontSize: "1.0625rem", fontWeight: weight.semibold, lineHeight: 1.3 },
@@ -356,7 +358,11 @@ function TimelineCard({ meeting, spaceSlug }: { meeting: SpaceMeeting; spaceSlug
           {...stylex.props(styles.card, motion.tint, focus.ring)}
         >
           <span aria-hidden="true" {...stylex.props(styles.thumb)}>
-            {hasBoard ? <Presentation size={26} strokeWidth={1.4} /> : <Video size={26} strokeWidth={1.4} />}
+            {hasBoard ? (
+              <MeetingBoardPreview meetingId={meeting.id} fallback={<Presentation size={26} strokeWidth={1.4} />} />
+            ) : (
+              <Video size={26} strokeWidth={1.4} />
+            )}
           </span>
           <span {...stylex.props(styles.cardBody)}>
             <span {...stylex.props(styles.cardTitle)}>{meetingDisplayTitle(meeting.title, meeting.participantNames)}</span>

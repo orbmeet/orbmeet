@@ -8,6 +8,7 @@ import * as stylex from "@stylexjs/stylex";
 import { Link } from "@tanstack/react-router";
 import { Play, Presentation, Sparkles, Video } from "lucide-react";
 
+import { MeetingBoardPreview } from "./meeting-board-preview";
 import { formatMeetingLength, formatTimeRange, meetingDisplayTitle } from "./meeting-format";
 
 /** What a row needs to know about a past meeting; every meeting list has it. */
@@ -51,6 +52,7 @@ const styles = stylex.create({
     borderColor: neutral.n150,
     backgroundColor: surface.sunken,
     color: neutral.n400,
+    overflow: "hidden",
   },
   body: { display: "flex", flexDirection: "column", gap: 5, flexGrow: 1, minWidth: 0 },
   title: { fontSize: text.base, fontWeight: weight.medium, lineHeight: 1.3 },
@@ -113,7 +115,11 @@ export function MeetingRow({ meeting, viewerName }: { meeting: MeetingRowData; v
       {...stylex.props(styles.row, motion.tint, focus.ring)}
     >
       <span {...stylex.props(styles.thumb)} aria-hidden="true">
-        {meeting.hasWhiteboard ? <Presentation size={22} strokeWidth={1.5} /> : <Video size={22} strokeWidth={1.5} />}
+        {meeting.hasWhiteboard ? (
+          <MeetingBoardPreview meetingId={meeting.meetingId} fallback={<Presentation size={22} strokeWidth={1.5} />} />
+        ) : (
+          <Video size={22} strokeWidth={1.5} />
+        )}
       </span>
       <span {...stylex.props(styles.body)}>
         <span {...stylex.props(styles.title, layout.truncate)}>{title}</span>

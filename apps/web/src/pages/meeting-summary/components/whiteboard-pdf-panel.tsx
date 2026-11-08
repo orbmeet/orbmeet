@@ -37,7 +37,10 @@ import { getWhiteboardClientCapabilities } from "@/lib/browser-capabilities";
 import { reportBoundaryError } from "@/lib/telemetry/client-errors";
 import type { getEndedMeeting } from "@/modules/transcripts/server/meeting-summary.functions";
 import { setMeetingWhiteboardCopyPolicy } from "@/modules/whiteboards/server/api.functions";
+import { publishMeetingPreview } from "@/modules/whiteboards/client/publish-meeting-preview";
 import { revisionAssetUrl, type RevisionAssetScope } from "./revision-asset-url";
+
+const PREVIEW_DELAY_MS = 2_500;
 
 type EndedMeeting = NonNullable<
   Awaited<ReturnType<typeof getEndedMeeting>>["meeting"]
@@ -961,6 +964,14 @@ export function MeetingWhiteboardPanel({
               // pages that were just removed from it.
               fitViewerToHandout(editor, viewerState.pageIds);
               editor.updateInstanceState({ isReadonly: true });
+              // The meeting's first board stands for it in lists. A moment's
+              // wait lets the page's images arrive before it is drawn.
+              const [firstPage] = getPdfPageIds(editor, viewerState.pageIds);
+              if (!meeting.canManageMeeting || !firstPage || selectedDocumentId !== whiteboards[0]?.whiteboardId) return;
+              const timer = window.setTimeout(() => {
+                publishMeetingPreview(editor, meeting.meetingId, firstPage).catch(() => {});
+              }, PREVIEW_DELAY_MS);
+              return () => window.clearTimeout(timer);
             }}
             options={WHITEBOARD_TLDRAW_OPTIONS}
             licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY || undefined}

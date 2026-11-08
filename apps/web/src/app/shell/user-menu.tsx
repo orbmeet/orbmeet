@@ -19,6 +19,7 @@ import * as stylex from "@stylexjs/stylex";
 import { Link } from "@tanstack/react-router";
 import { ChevronDown, LogOut, Settings } from "lucide-react";
 
+import { InstallMenuItem } from "./install-offer";
 import { mainNavItems } from "./nav-items";
 
 const OPEN = ":is([data-popup-open])";
@@ -184,6 +185,7 @@ export function UserMenu({ user, onLogout, compact }: UserMenuProps) {
             <Settings size={16} {...stylex.props(styles.itemIcon)} />
             Settings
           </MenuLinkItem>
+          <InstallMenuItem />
         </MenuGroup>
 
         <MenuSeparator />

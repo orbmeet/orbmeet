@@ -51,7 +51,9 @@ const styles = stylex.create({
   wide: { maxWidth: 1040 },
   layout: { display: "flex", alignItems: "flex-start", gap: space.s10 },
   toc: {
-    display: { default: "none", [bp.lg]: "flex" },
+    // From `xl`: beside the app's own rail at 1024px it squeezed the settings
+    // to where "Matches this device" wrapped a word a line.
+    display: { default: "none", [bp.xl]: "flex" },
     position: "sticky",
     top: space.s7,
     flexDirection: "column",

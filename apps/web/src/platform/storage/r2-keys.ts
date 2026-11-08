@@ -7,6 +7,7 @@
 //   spaces/{spaceId}/uploads/{assetId}.{ext}                user files
 //   meetings/{meetingId}/recordings/{egressId}.{ext}        user output
 //   meetings/{meetingId}/exports/whiteboard/{publishId}.pdf Meeting handout
+//   meetings/{meetingId}/preview                            board picture for lists
 //   whiteboards/{whiteboardId}/assets/{assetId}             document assets
 //   whiteboards/{whiteboardId}/revisions/{revisionId}.json  immutable history
 //   internal/meetings/{meetingId}/recorder/{name}           recorder snapshots
@@ -119,6 +120,11 @@ function isMeetingWhiteboardHandoutKey(meetingId: string, r2Key: string): boolea
   if (!r2Key.startsWith(prefix) || !r2Key.endsWith(".pdf")) return false;
   const publishId = r2Key.slice(prefix.length, -".pdf".length);
   return publishId.length > 0 && SAFE_SEGMENT.test(publishId);
+}
+
+/** The small picture of a meeting's board shown in lists of meetings. */
+export function meetingPreviewKey(meetingId: string): string {
+  return `${meetingPrefix(meetingId)}preview`;
 }
 
 /** User-output objects of one meeting. */

@@ -1,6 +1,7 @@
 import { Link, useRouter } from "@tanstack/react-router";
 import { useState, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, Copy } from "lucide-react";
 import {
   getErrorMessage,
   getServerErrorCode,
@@ -282,6 +283,9 @@ const styles = stylex.create({
     borderRadius: 4,
   },
   install: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: space.s1_5,
     padding: 0,
     borderWidth: 0,
     cursor: "pointer",
@@ -309,6 +313,7 @@ function InstallCommand() {
       aria-label={`Copy install command: ${INSTALL_COMMAND}`}
       {...stylex.props(touch.target, pressable.base, focus.ring, motion.tint, styles.install, copied && styles.copied)}
     >
+      {copied ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
       {copied ? "Copied" : INSTALL_COMMAND}
     </button>
   );

@@ -304,6 +304,7 @@ function SpaceInvitationUrl({
             {isOrganizationSpace
               ? "Grants lasting membership to a licensed Organization user · valid until replaced"
               : "Grants lasting membership: members can enter Space Meetings and edit Space Whiteboards · valid until replaced"}
+            {!invitationPath && !inviteQuery.isPending ? " · No link yet: reset to create one" : ""}
           </p>
         </div>
         <div {...stylex.props(row.x2, styles.panelActions)}>
