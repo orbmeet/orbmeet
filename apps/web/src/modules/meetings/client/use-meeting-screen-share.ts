@@ -16,14 +16,55 @@ import {
   SCREEN_SHARE_PUBLISH_OPTIONS,
 } from "./media-quality";
 import { adaptScreenShareToContent } from "./screen-share-content";
+import { ScreenShareCapture, type ScreenShareNotice } from "./screen-share-capture";
 import { useLiveKitScreenShare } from "./use-livekit-screen-share";
-import { stopScreenShare } from "@/modules/meetings/server/runtime/live.functions";
+import {
+  requestScreenShare,
+  stopScreenShare,
+} from "@/modules/meetings/server/runtime/live.functions";
 import type { HostPermissionRequest } from "./types";
-import type { useToast } from "@orbmeet/ui/react";
+import { useCommittedRef, type useToast } from "@orbmeet/ui/react";
 import { canCaptureDisplay, getPlatformEnvironment } from "@/lib/browser-capabilities";
-import { MediaOperationQueue } from "./media-operation-queue";
 
-const SCREEN_SHARE_REQUEST_TIMEOUT_MS = 15_000;
+type AddToast = ReturnType<typeof useToast>["add"];
+
+const NOTICES: Record<ScreenShareNotice, Parameters<AddToast>[0]> = {
+  unsupported: {
+    title: "Screen sharing not available on this device",
+    description: "iPhone and iPad only support sharing the current browser tab, which isn't useful in a meeting. Use a desktop browser to share your screen.",
+    data: { variant: "info" },
+  },
+  "start-failed": {
+    title: "Screen share failed",
+    description: "Could not start screen sharing. Try again.",
+    data: { variant: "error" },
+  },
+  "capture-failed": {
+    title: "Screen share failed",
+    description: "Could not capture your screen. Try again.",
+    data: { variant: "error" },
+  },
+  "publish-failed": {
+    title: "Screen share failed",
+    description: "Could not start sharing your screen. Try again.",
+    data: { variant: "error" },
+  },
+  "request-failed": {
+    title: "Screen share request failed",
+    description: "Could not send the request. Check your connection and try again.",
+    data: { variant: "error" },
+  },
+  "decision-timed-out": {
+    title: "Screen share request timed out",
+    description: "No moderator responded. Request screen share again.",
+    data: { variant: "error" },
+  },
+  "permission-timed-out": {
+    title: "Screen share approval timed out",
+    description: "The grant did not reach your browser. Request screen share again.",
+    data: { variant: "error" },
+  },
+};
 
 function hasScreenSharePublishPermission(
   participant: { permissions?: { canPublishSources?: number[] } } | null | undefined,
@@ -84,6 +125,32 @@ export async function publishScreenTracksPerKind(
   }
 }
 
+function createCapture(
+  room: Room | undefined,
+  meetingId: string,
+  connectionId: string,
+  addToast: React.RefObject<AddToast>,
+): ScreenShareCapture {
+  const participant = () => {
+    if (!room) throw new Error("Not connected to the meeting room.");
+    return room.localParticipant;
+  };
+  const data = { meetingId, connectionId };
+  return new ScreenShareCapture({
+    isSharing: () => room?.localParticipant.isScreenShareEnabled ?? false,
+    stopSharing: async () => {
+      await participant().setScreenShareEnabled(false);
+    },
+    canCaptureDisplay: () => canCaptureDisplay(getPlatformEnvironment()),
+    capture: () => participant().createScreenTracks(getScreenShareCaptureOptions()),
+    publish: (tracks) => publishScreenTracksPerKind(participant(), tracks),
+    request: () => requestScreenShare({ data }),
+    withdraw: () => stopScreenShare({ data }),
+    notify: (notice) => addToast.current(NOTICES[notice]),
+    logError,
+  });
+}
+
 export function useMeetingScreenShare({
   roomInstance,
   canModerate,
@@ -95,17 +162,78 @@ export function useMeetingScreenShare({
   canModerate: boolean;
   meetingId: string;
   connectionId: string;
-  addToast: ReturnType<typeof useToast>["add"];
+  addToast: AddToast;
 }) {
   const {
     pendingRequests: screenShareRequests,
-    requestState: screenShareRequestState,
-    requestScreenShare,
-    withdrawRequest: withdrawScreenShareRequest,
-    dismissDenied: dismissScreenShareDenied,
+    ownAsk,
     approveRequest: approveScreenShareRequest,
     denyRequest: denyScreenShareRequest,
   } = useLiveKitScreenShare({ room: roomInstance, meetingId, connectionId, isAdmin: canModerate });
+
+  const addToastRef = useCommittedRef(addToast);
+  // One capture per room connection; later props reach it through the setters
+  // below. A new connection replaces it during render, React's pattern for
+  // state derived from a changed prop.
+  const [current, setCurrent] = React.useState(() => ({
+    room: roomInstance,
+    capture: createCapture(roomInstance, meetingId, connectionId, addToastRef),
+  }));
+  let capture = current.capture;
+  if (current.room !== roomInstance) {
+    capture = createCapture(roomInstance, meetingId, connectionId, addToastRef);
+    setCurrent({ room: roomInstance, capture });
+  }
+
+  // Everything the capture reads is set before it starts converging on it.
+  React.useEffect(() => capture.setCanModerate(canModerate), [capture, canModerate]);
+  const ownAskState = ownAsk?.state ?? null;
+  const ownAskRevision = ownAsk?.revision ?? null;
+  React.useEffect(() => {
+    capture.setAsk(ownAskState === null || ownAskRevision === null ? null : { state: ownAskState, revision: ownAskRevision });
+  }, [capture, ownAskRevision, ownAskState]);
+  React.useEffect(() => {
+    if (!roomInstance) {
+      capture.setPermission(false);
+      return;
+    }
+    const local = roomInstance.localParticipant;
+    const sync = () => capture.setPermission(hasScreenSharePublishPermission(local));
+    const handlePermissionsChanged = (_previous: unknown, participant: { identity: string }) => {
+      if (participant.identity === local.identity) sync();
+    };
+    sync();
+    roomInstance.on(RoomEvent.ParticipantPermissionsChanged, handlePermissionsChanged);
+    return () => {
+      roomInstance.off(RoomEvent.ParticipantPermissionsChanged, handlePermissionsChanged);
+    };
+  }, [capture, roomInstance]);
+  React.useEffect(() => {
+    capture.activate();
+    return () => capture.deactivate();
+  }, [capture]);
+
+  React.useEffect(() => {
+    if (!roomInstance) return;
+    const handleLocalTrackUnpublished = (publication: LocalTrackPublication) => {
+      if (
+        publication.source === Track.Source.ScreenShare ||
+        publication.source === Track.Source.ScreenShareAudio
+      ) {
+        capture.giveBack();
+      }
+    };
+    const handleDisconnected = () => capture.disconnected();
+    roomInstance.on(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished);
+    roomInstance.on(RoomEvent.Disconnected, handleDisconnected);
+    return () => {
+      roomInstance.off(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished);
+      roomInstance.off(RoomEvent.Disconnected, handleDisconnected);
+    };
+  }, [capture, roomInstance]);
+
+  const snapshot = React.useSyncExternalStore(capture.subscribe, capture.getSnapshot, capture.getSnapshot);
+
   const [pendingDecisionIdentities, setPendingDecisionIdentities] = React.useState<Set<string>>(
     () => new Set(),
   );
@@ -133,402 +261,10 @@ export function useMeetingScreenShare({
     [pendingDecisionIdentities, screenShareRequests],
   );
 
-  const [hasScreenSharePermission, setHasScreenSharePermission] = React.useState(() =>
-    roomInstance ? hasScreenSharePublishPermission(roomInstance.localParticipant) : false,
-  );
-  const preparedScreenShareTracksRef = React.useRef<LocalTrack[] | null>(null);
-  const preparedTrackCleanupRef = React.useRef<Array<() => void>>([]);
-  // Invalidated on unmount and room replacement. `createScreenTracks` awaits a
-  // browser picker that can resolve *after* either event — without this fence
-  // the freshly-captured tracks would never be stopped and the browser would
-  // keep capturing the screen after the user left the meeting.
-  const captureGenRef = React.useRef(0);
-  const isClearingPreparedTracksRef = React.useRef(false);
-  const revokeInFlightRef = React.useRef(false);
-  const isPreparingScreenShareRef = React.useRef(false);
-  const isPublishingPreparedScreenShareRef = React.useRef(false);
-  const screenShareActionQueueRef = React.useRef(new MediaOperationQueue());
-  const [hasPreparedScreenShare, setHasPreparedScreenShare] = React.useState(false);
-  const [isPreparingScreenShare, setIsPreparingScreenShare] = React.useState(false);
-
-  const enqueueScreenShareAction = React.useCallback((action: () => Promise<void>) => {
-    return screenShareActionQueueRef.current.enqueue(action);
-  }, []);
-
-  const revokeScreenShareGrant = React.useCallback(() => {
-    if (canModerate || revokeInFlightRef.current) return;
-    revokeInFlightRef.current = true;
-    stopScreenShare({
-      data: { meetingId, connectionId },
-    })
-      .catch((err) => logError("[Meeting] Failed to revoke screen share permission:", err))
-      .finally(() => {
-        revokeInFlightRef.current = false;
-      });
-  }, [canModerate, meetingId, connectionId]);
-
-  const clearPreparedTrackListeners = React.useCallback(() => {
-    for (const cleanup of preparedTrackCleanupRef.current) cleanup();
-    preparedTrackCleanupRef.current = [];
-  }, []);
-
-  const stopPreparedScreenShareTracks = React.useCallback(() => {
-    const tracks = preparedScreenShareTracksRef.current;
-    preparedScreenShareTracksRef.current = null;
-    setHasPreparedScreenShare(false);
-    isClearingPreparedTracksRef.current = true;
-    clearPreparedTrackListeners();
-    tracks?.forEach((track) => track.stop());
-    isClearingPreparedTracksRef.current = false;
-  }, [clearPreparedTrackListeners]);
-
-  const handlePreparedTrackEnded = React.useCallback(() => {
-    if (isClearingPreparedTracksRef.current) return;
-    stopPreparedScreenShareTracks();
-    withdrawScreenShareRequest();
-  }, [stopPreparedScreenShareTracks, withdrawScreenShareRequest]);
-
-  const setPreparedScreenShareTracks = React.useCallback((tracks: LocalTrack[] | null) => {
-    clearPreparedTrackListeners();
-    preparedScreenShareTracksRef.current = tracks;
-    setHasPreparedScreenShare(Boolean(tracks && tracks.length > 0));
-    if (!tracks) return;
-    for (const track of tracks) {
-      const mediaTrack = track.mediaStreamTrack;
-      mediaTrack.addEventListener("ended", handlePreparedTrackEnded, { once: true });
-      preparedTrackCleanupRef.current.push(() => {
-        mediaTrack.removeEventListener("ended", handlePreparedTrackEnded);
-      });
-    }
-  }, [clearPreparedTrackListeners, handlePreparedTrackEnded]);
-
-  const handleCancelScreenShareRequest = React.useCallback(() => {
-    stopPreparedScreenShareTracks();
-    withdrawScreenShareRequest();
-  }, [stopPreparedScreenShareTracks, withdrawScreenShareRequest]);
-
-  const publishPreparedScreenShareTracks = React.useCallback(async () => {
-    if (!roomInstance || isPublishingPreparedScreenShareRef.current) return false;
-    const tracks = preparedScreenShareTracksRef.current;
-    if (!tracks || tracks.length === 0) return false;
-
-    isPublishingPreparedScreenShareRef.current = true;
-    try {
-      await publishScreenTracksPerKind(roomInstance.localParticipant, tracks);
-      // The grant stays: it is what lets this participant keep sharing, until
-      // they stop or a moderator takes it back.
-      setPreparedScreenShareTracks(null);
-      return true;
-    } catch (err) {
-      stopPreparedScreenShareTracks();
-      withdrawScreenShareRequest();
-      logError("[Meeting] Failed to publish prepared screen share:", err);
-      addToast({
-        title: "Screen share failed",
-        description: "Could not start sharing your screen. Try again.",
-        data: { variant: "error" },
-      });
-      return false;
-    } finally {
-      isPublishingPreparedScreenShareRef.current = false;
-    }
-  }, [
-    roomInstance,
-    setPreparedScreenShareTracks,
-    stopPreparedScreenShareTracks,
-    withdrawScreenShareRequest,
-    addToast,
-  ]);
-
-  // Sync screen share permission from room events
-  React.useEffect(() => {
-    if (!roomInstance) {
-      setHasScreenSharePermission(false);
-      return;
-    }
-
-    const lp = roomInstance.localParticipant;
-    const syncPermission = () => {
-      setHasScreenSharePermission(hasScreenSharePublishPermission(lp));
-    };
-    const handlePermissionsChanged = (_prev: unknown, participant: { identity: string }) => {
-      if (participant.identity !== lp.identity) return;
-      syncPermission();
-    };
-
-    syncPermission();
-    roomInstance.on(RoomEvent.ParticipantPermissionsChanged, handlePermissionsChanged);
-    return () => {
-      roomInstance.off(RoomEvent.ParticipantPermissionsChanged, handlePermissionsChanged);
-    };
-  }, [roomInstance]);
-
-  // Cleanup prepared tracks on unmount
-  React.useEffect(() => {
-    return () => {
-      captureGenRef.current += 1;
-      stopPreparedScreenShareTracks();
-    };
-  }, [stopPreparedScreenShareTracks]);
-
-  React.useEffect(() => {
-    return () => {
-      captureGenRef.current += 1;
-      stopPreparedScreenShareTracks();
-    };
-  }, [roomInstance, stopPreparedScreenShareTracks]);
-
   const handleToggleScreenShare = React.useCallback(
-    () => enqueueScreenShareAction(async () => {
-      if (!roomInstance) return;
-      const lp = roomInstance.localParticipant;
-    const startSharing = async () => {
-      // Create the screen tracks, then publish each with its correct per-kind
-      // options (video vs. the music-preset audio). setScreenShareEnabled's
-      // single publishOptions arg would force the audio track onto the speech
-      // preset, so publish individually — same path the prepared flow uses.
-      let tracks: LocalTrack[] = [];
-      const captureGen = captureGenRef.current;
-      try {
-        tracks = await lp.createScreenTracks(getScreenShareCaptureOptions());
-        if (captureGen !== captureGenRef.current) {
-          // The picker resolved after unmount/room replacement; stop the
-          // capture instead of publishing into a dead connection.
-          for (const track of tracks) track.stop();
-          return;
-        }
-        await publishScreenTracksPerKind(lp, tracks);
-        tracks = []; // ownership transferred to the published tracks on success
-      } catch (err) {
-        // NotAllowedError = user cancelled the system picker; no feedback needed.
-        if (err instanceof DOMException && err.name === "NotAllowedError") {
-          for (const track of tracks) track.stop();
-          return;
-        }
-        for (const track of tracks) track.stop();
-        logError("[Meeting] Screen share error:", err);
-        addToast({
-          title: "Screen share failed",
-          description: "Could not start screen sharing. Try again.",
-          data: { variant: "error" },
-        });
-      }
-    };
-
-    if (lp.isScreenShareEnabled) {
-      try {
-        await lp.setScreenShareEnabled(false);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "NotAllowedError") return;
-        logError("[Meeting] Screen share error:", err);
-      }
-      stopPreparedScreenShareTracks();
-      // Non-host: give the grant back so approval is not sticky.
-      withdrawScreenShareRequest();
-      return;
-    }
-
-    // iOS and iPadOS have no useful full-screen getDisplayMedia path. The
-    // browser either auto-rejects or the user dismisses the tab-picker; both
-    // produce NotAllowedError which the catch block below silently swallows,
-    // leaving the user with no feedback. Show a clear message instead.
-    if (!canCaptureDisplay(getPlatformEnvironment())) {
-      addToast({
-        title: "Screen sharing not available on this device",
-        description: "iPhone and iPad only support sharing the current browser tab, which isn't useful in a meeting. Use a desktop browser to share your screen.",
-        data: { variant: "info" },
-      });
-      return;
-    }
-
-    // Host can share directly
-    if (canModerate) {
-      await startSharing();
-      return;
-    }
-
-    if (hasScreenSharePermission) {
-      if (preparedScreenShareTracksRef.current) {
-        await publishPreparedScreenShareTracks();
-        return;
-      }
-      // Already granted: only a stale denial notice is cleared. The grant
-      // itself is what lets the share publish.
-      dismissScreenShareDenied();
-      await startSharing();
-      return;
-    }
-
-    if (
-      isPreparingScreenShareRef.current ||
-      isPublishingPreparedScreenShareRef.current ||
-      screenShareRequestState === "pending" ||
-      screenShareRequestState === "approved" ||
-      hasPreparedScreenShare ||
-      preparedScreenShareTracksRef.current !== null
-    ) {
-      return;
-    }
-
-    isPreparingScreenShareRef.current = true;
-    setIsPreparingScreenShare(true);
-    const captureGen = captureGenRef.current;
-    try {
-      const tracks = await lp.createScreenTracks(getScreenShareCaptureOptions());
-      if (captureGen !== captureGenRef.current) {
-        // Picker resolved after unmount/room replacement — the cleanup effects
-        // have already run and will never see these tracks, so stop them here.
-        for (const track of tracks) track.stop();
-        return;
-      }
-      if (tracks.length === 0) return;
-      setPreparedScreenShareTracks(tracks);
-      const requestSent = await requestScreenShare();
-      if (!requestSent && preparedScreenShareTracksRef.current === tracks) {
-        stopPreparedScreenShareTracks();
-        addToast({
-          title: "Screen share request failed",
-          description: "Could not send the request. Check your connection and try again.",
-          data: { variant: "error" },
-        });
-      }
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "NotAllowedError") return;
-      logError("[Meeting] Screen share capture error:", err);
-      addToast({
-        title: "Screen share failed",
-        description: "Could not capture your screen. Try again.",
-        data: { variant: "error" },
-      });
-    } finally {
-      isPreparingScreenShareRef.current = false;
-      setIsPreparingScreenShare(false);
-    }
-    }), [
-    roomInstance,
-    canModerate,
-    hasScreenSharePermission,
-    hasPreparedScreenShare,
-    screenShareRequestState,
-    requestScreenShare,
-    publishPreparedScreenShareTracks,
-    setPreparedScreenShareTracks,
-    stopPreparedScreenShareTracks,
-    withdrawScreenShareRequest,
-    dismissScreenShareDenied,
-    addToast,
-    enqueueScreenShareAction,
-  ]);
-
-  // A successful data-channel write is not an admission decision. Bound the
-  // time we retain browser-owned capture tracks while waiting for a moderator,
-  // including when no moderator is present or the application message is lost.
-  React.useEffect(() => {
-    if (
-      screenShareRequestState !== "pending" ||
-      canModerate ||
-      hasScreenSharePermission ||
-      !hasPreparedScreenShare
-    ) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      handleCancelScreenShareRequest();
-      addToast({
-        title: "Screen share request timed out",
-        description: "No moderator responded. Request screen share again.",
-        data: { variant: "error" },
-      });
-    }, SCREEN_SHARE_REQUEST_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-  }, [
-    screenShareRequestState,
-    canModerate,
-    hasScreenSharePermission,
-    hasPreparedScreenShare,
-    handleCancelScreenShareRequest,
-    addToast,
-  ]);
-
-  // Timeout approved screen share if permission update is slow
-  React.useEffect(() => {
-    if (
-      screenShareRequestState !== "approved" ||
-      canModerate ||
-      hasScreenSharePermission ||
-      !hasPreparedScreenShare
-    ) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      logError("[Meeting] Screen share permission update timed out");
-      handleCancelScreenShareRequest();
-      addToast({
-        title: "Screen share approval timed out",
-        description: "The grant did not reach your browser. Request screen share again.",
-        data: { variant: "error" },
-      });
-    }, 10_000);
-    return () => clearTimeout(timer);
-  }, [
-    screenShareRequestState,
-    canModerate,
-    hasScreenSharePermission,
-    hasPreparedScreenShare,
-    handleCancelScreenShareRequest,
-    addToast,
-  ]);
-
-  // Auto-publish prepared tracks once permission arrives
-  React.useEffect(() => {
-    if (
-      (screenShareRequestState !== "approved" && screenShareRequestState !== "pending") ||
-      canModerate ||
-      !hasScreenSharePermission ||
-      !hasPreparedScreenShare
-    ) {
-      return;
-    }
-    void publishPreparedScreenShareTracks();
-  }, [
-    screenShareRequestState,
-    canModerate,
-    hasScreenSharePermission,
-    hasPreparedScreenShare,
-    publishPreparedScreenShareTracks,
-  ]);
-
-  // Auto-dismiss denied state after 3 seconds
-  React.useEffect(() => {
-    if (screenShareRequestState !== "denied") return;
-    // The server already cleared the request; only local state is left.
-    stopPreparedScreenShareTracks();
-    const timer = setTimeout(() => dismissScreenShareDenied(), 3000);
-    return () => clearTimeout(timer);
-  }, [screenShareRequestState, stopPreparedScreenShareTracks, dismissScreenShareDenied]);
-
-  React.useEffect(() => {
-    if (!roomInstance || canModerate) return;
-
-    const handleLocalTrackUnpublished = (publication: LocalTrackPublication) => {
-      if (
-        publication.source === Track.Source.ScreenShare ||
-        publication.source === Track.Source.ScreenShareAudio
-      ) {
-        revokeScreenShareGrant();
-      }
-    };
-    const handleDisconnected = () => {
-      if (hasScreenSharePermission) revokeScreenShareGrant();
-    };
-
-    roomInstance.on(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished);
-    roomInstance.on(RoomEvent.Disconnected, handleDisconnected);
-    return () => {
-      roomInstance.off(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished);
-      roomInstance.off(RoomEvent.Disconnected, handleDisconnected);
-    };
-  }, [roomInstance, canModerate, hasScreenSharePermission, revokeScreenShareGrant]);
+    () => (roomInstance ? capture.toggle() : Promise.resolve()),
+    [capture, roomInstance],
+  );
 
   const handleApproveScreenShare = React.useCallback(
     async (targetUserIdentity: string) => {
@@ -571,13 +307,13 @@ export function useMeetingScreenShare({
   );
 
   return {
-    screenShareRequestState,
-    isPreparingScreenShare,
-    hasPreparedScreenShare,
-    hasScreenSharePermission,
+    screenShareRequestState: snapshot.requestState,
+    isPreparingScreenShare: snapshot.isPreparing,
+    hasPreparedScreenShare: snapshot.hasPrepared,
+    hasScreenSharePermission: snapshot.hasPermission,
     handleToggleScreenShare,
-    handleCancelScreenShareRequest,
-    handleDismissScreenShareDenied: dismissScreenShareDenied,
+    handleCancelScreenShareRequest: capture.cancel,
+    handleDismissScreenShareDenied: capture.dismissDenied,
     handleApproveScreenShare,
     handleDenyScreenShare,
     hostPermissionRequests,

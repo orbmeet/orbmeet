@@ -255,20 +255,27 @@ export async function runTranscriptShipper(
       result = { delivered: 0, unavailable: true };
     }
 
+    // Reporting and pruning are housekeeping: nothing here may end the loop,
+    // which has no supervisor and whose process would stay up without it. The
+    // timestamps move first, so a failure waits for the next interval.
     const now = Date.now();
-    if (now - lastBacklogReportAt >= BACKLOG_REPORT_INTERVAL_MS) {
-      lastBacklogReportAt = now;
-      const backlog = journal.status();
-      if (backlog.pending > 0) {
-        logWarn("Transcript delivery backlog", {
-          pending: backlog.pending,
-          oldestAgeMs: backlog.oldestAt === null ? 0 : now - backlog.oldestAt,
-        });
+    try {
+      if (now - lastBacklogReportAt >= BACKLOG_REPORT_INTERVAL_MS) {
+        lastBacklogReportAt = now;
+        const backlog = journal.status();
+        if (backlog.pending > 0) {
+          logWarn("Transcript delivery backlog", {
+            pending: backlog.pending,
+            oldestAgeMs: backlog.oldestAt === null ? 0 : now - backlog.oldestAt,
+          });
+        }
       }
-    }
-    if (now - lastPruneAt >= REJECTED_PRUNE_INTERVAL_MS) {
-      lastPruneAt = now;
-      journal.pruneRejected(REJECTED_RETENTION_MS, now);
+      if (now - lastPruneAt >= REJECTED_PRUNE_INTERVAL_MS) {
+        lastPruneAt = now;
+        journal.pruneRejected(REJECTED_RETENTION_MS, now);
+      }
+    } catch (error) {
+      logError("Transcript journal housekeeping failed; delivery continues", error);
     }
 
     if (result.unavailable) {

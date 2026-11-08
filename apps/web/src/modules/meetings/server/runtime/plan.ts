@@ -9,6 +9,7 @@ import {
   ISSUE_GRACE_MS,
   MEDIA_NODE_UNREACHABLE_GRACE_MS,
   PRESENCE_CHECK_MS,
+  SCREEN_SHARE_ASK_TTL_MS,
   WHITEBOARD_PIN_START_WINDOW_MS,
   grantFor,
   grantHash,
@@ -304,6 +305,7 @@ export function nextWakeAt(state: MeetingState, now: number): number | null {
     }
     for (const admission of Object.values(state.admissions)) {
       if (admission.status === "pending") at(admission.createdAt + ADMISSION_PENDING_TTL_MS);
+      if (admission.screenShareAsk) at(admission.screenShareAsk.at + SCREEN_SHARE_ASK_TTL_MS);
     }
     if (seatedUserIds(state).length > 0) {
       // Like the presence check: a due check is running or backing off.

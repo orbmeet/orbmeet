@@ -14,7 +14,9 @@ import type { MeetingEndReason } from "@orbmeet/domain-model";
 import {
   PARTICIPANT_ATTRIBUTE,
   formatRaisedHand,
+  formatScreenShareAsk,
   type MeetingRoomState,
+  type ScreenShareState,
 } from "@/modules/meetings/contract/live-state";
 
 // ─── Timing ──────────────────────────────────────────────────────────────────
@@ -29,6 +31,11 @@ export const ISSUE_GRACE_MS = 60_000;
 export const ABSENT_GRACE_MS = 30_000;
 /** A waiter nobody decides on is turned away after this. */
 export const ADMISSION_PENDING_TTL_MS = 5 * 60_000;
+/**
+ * A screen-share request nobody decides on is dropped after this. The asking
+ * client gives up much sooner; this clears the moderators' list when it cannot.
+ */
+export const SCREEN_SHARE_ASK_TTL_MS = 2 * 60_000;
 /** An open meeting with nobody present or on the way ends after this. */
 export const EMPTY_MEETING_GRACE_MS = 2 * 60_000;
 /** How often the room is compared with the attempts while anyone is in it. */
@@ -159,7 +166,11 @@ export interface Admission {
    * A read requested before then is not applied over it.
    */
   spaceRoleAt: number;
-  screenShare: "none" | "requested" | "granted";
+  screenShare: ScreenShareState;
+  /** Rises with every change to `screenShare`, so clients can order what they hear. */
+  screenShareRevision: number;
+  /** The attempt whose request is open, and when it asked; null unless `requested`. */
+  screenShareAsk: { attemptId: string; at: number } | null;
   /**
    * A host or moderator let this attendee edit the meeting's boards. Like the
    * moderator grant it is meeting-local, and cleared whenever the admission
@@ -449,6 +460,8 @@ export function upgradeState(state: MeetingState): MeetingState {
   state.meta.transcription ??= true;
   for (const admission of Object.values(state.admissions)) {
     admission.transcriptionStopRequested ??= false;
+    admission.screenShareRevision ??= 0;
+    admission.screenShareAsk ??= null;
     // Edit grants lived in D1 before; a meeting open across that change
     // starts without them, and a moderator grants again.
     admission.boardEdit ??= false;
@@ -616,7 +629,7 @@ export function grantFor(state: MeetingState, admission: Admission): Participant
       [PARTICIPANT_ATTRIBUTE.role]: role,
       [PARTICIPANT_ATTRIBUTE.hand]: role === "attendee" ? formatRaisedHand(admission.hand) : "",
       [PARTICIPANT_ATTRIBUTE.screenShare]:
-        role === "attendee" && admission.screenShare !== "none" ? admission.screenShare : "",
+        role === "attendee" ? formatScreenShareAsk(admission.screenShare, admission.screenShareRevision) : "",
       [PARTICIPANT_ATTRIBUTE.board]: role === "attendee" && admission.boardRequested ? "requested" : "",
       [PARTICIPANT_ATTRIBUTE.transcriptionStop]:
         role === "attendee" && admission.transcriptionStopRequested ? "requested" : "",

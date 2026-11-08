@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConnectionState, RoomEvent } from "livekit-client";
 import type { MeetingSurfaceState } from "@/modules/meetings/contract/live-state";
 import type { MeetingSurfaceAccess } from "@/modules/meetings/contract/types";
-import { REMINT_WHILE_OFFLINE_MS } from "./whiteboard-credentials";
+import { MINT_TIMEOUT_MS, REMINT_WHILE_OFFLINE_MS } from "./whiteboard-credentials";
 import { WhiteboardSession, type WhiteboardSessionApi } from "./whiteboard-session";
 
 const CONNECTION = "connection-1";
@@ -390,5 +390,58 @@ describe("WhiteboardSession timers", () => {
     await vi.advanceTimersByTimeAsync(500);
     expect(passes.mock.calls.length).toBeLessThanOrEqual(1);
     session.deactivate();
+  });
+
+  describe("a mint that lands late or never", () => {
+    function heldMints() {
+      const answers: Array<(documentId: string) => void> = [];
+      const api: WhiteboardSessionApi = {
+        mintAccess: vi.fn(() => new Promise<Awaited<ReturnType<WhiteboardSessionApi["mintAccess"]>>>((resolve) => {
+          answers.push((documentId) =>
+            resolve({ token: token(documentId), whiteboardUrl: URL_BASE, documentId, documentTitle: "Board" }));
+        })),
+        writeSurface: vi.fn(),
+      };
+      return { api, answers };
+    }
+
+    it("mints again as soon as an answer lands for a board the meeting has left", async () => {
+      const { api, answers } = heldMints();
+      const session = await createSession({ api, canModerate: false });
+      session.setSurface(surfaceState({ whiteboardId: "wb_1", revision: 1 }));
+      await vi.advanceTimersByTimeAsync(1_000);
+      session.setSurface(surfaceState({ whiteboardId: "wb_2", revision: 2 }));
+      answers[0]("wb_1");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(api.mintAccess).toHaveBeenCalledTimes(2);
+
+      answers[1]("wb_2");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(session.getSnapshot()).toMatchObject({ accessReady: true, documentId: "wb_2" });
+      session.deactivate();
+    });
+
+    it("still mints again when that answer lands after the access deadline", async () => {
+      const { api, answers } = heldMints();
+      const session = await createSession({ api, canModerate: false });
+      session.setSurface(surfaceState({ whiteboardId: "wb_1", revision: 1 }));
+      await vi.advanceTimersByTimeAsync(9_000);
+      session.setSurface(surfaceState({ whiteboardId: "wb_2", revision: 2 }));
+      answers[0]("wb_1");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(api.mintAccess).toHaveBeenCalledTimes(2);
+      session.deactivate();
+    });
+
+    it("reports a mint that never answers as failed, and tries again", async () => {
+      const { api } = heldMints();
+      const session = await createSession({ api, canModerate: false });
+      session.setSurface(surfaceState({ whiteboardId: "wb_1", revision: 1 }));
+      await vi.advanceTimersByTimeAsync(MINT_TIMEOUT_MS + 1);
+      expect(session.getSnapshot().view).toBe("fatal");
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(api.mintAccess).toHaveBeenCalledTimes(2);
+      session.deactivate();
+    });
   });
 });

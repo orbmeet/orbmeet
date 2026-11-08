@@ -12,6 +12,7 @@ import {
   ISSUE_GRACE_MS,
   MEDIA_NODE_UNREACHABLE_GRACE_MS,
   PRUNED_ATTEMPT_MEMORY,
+  SCREEN_SHARE_ASK_TTL_MS,
   SETTLED_ATTEMPT_RETENTION_MS,
   WHITEBOARD_PIN_GIVE_UP_MS,
   canManage,
@@ -197,6 +198,15 @@ function advance(state: MeetingState, now: number, outcome: Outcome): void {
   for (const admission of Object.values(state.admissions)) {
     if (admission.status === "pending" && now - admission.createdAt >= ADMISSION_PENDING_TTL_MS) {
       decide(state, admission, "expired", null, "expired", now);
+    }
+    // A request lives as long as the attempt that made it, which holds the
+    // capture it is for, and no longer than the wait for an answer.
+    if (admission.screenShare === "requested") {
+      const ask = admission.screenShareAsk;
+      const asker = ask ? state.attempts[ask.attemptId] : undefined;
+      if (!ask || !asker || asker.endedAt !== null || now - ask.at >= SCREEN_SHARE_ASK_TTL_MS) {
+        setScreenShare(admission, "none", now);
+      }
     }
   }
 
@@ -394,9 +404,8 @@ function command(
     }
     case "requestScreenShare": {
       const admission = ownApprovedAdmission(state, input.subject, input.attemptId);
-      if (roleOf(state, admission) === "attendee" && admission.screenShare === "none") {
-        admission.screenShare = "requested";
-        touch(admission, now);
+      if (roleOf(state, admission) === "attendee" && (admission.screenShare === "none" || admission.screenShare === "declined")) {
+        setScreenShare(admission, "requested", now, { attemptId: input.attemptId, at: now });
       }
       return { kind: "ok" };
     }
@@ -407,10 +416,12 @@ function command(
       if (roleOf(state, target) !== "attendee") {
         throw Errors.VALIDATION("Hosts and moderators can always share their screen.");
       }
-      const next = input.allow ? "granted" : "none";
-      if (target.screenShare !== next) {
-        target.screenShare = next;
-        touch(target, now);
+      // A decision answers a request that is still open. One that lands after
+      // the attendee withdrew changes nothing; refusing a grant takes it back.
+      if (target.screenShare === "requested") {
+        setScreenShare(target, input.allow ? "granted" : "declined", now);
+      } else if (target.screenShare === "granted" && !input.allow) {
+        setScreenShare(target, "none", now);
       }
       return { kind: "ok" };
     }
@@ -478,10 +489,7 @@ function command(
     }
     case "stopScreenShare": {
       const admission = ownApprovedAdmission(state, input.subject, input.attemptId);
-      if (admission.screenShare !== "none") {
-        admission.screenShare = "none";
-        touch(admission, now);
-      }
+      setScreenShare(admission, "none", now);
       return { kind: "ok" };
     }
     case "setCountdown": {
@@ -582,6 +590,8 @@ function join(
       spaceRole: subject.kind === "user" ? subject.spaceRole : "visitor",
       spaceRoleAt: now,
       screenShare: "none",
+      screenShareRevision: 0,
+      screenShareAsk: null,
       boardEdit: false,
       boardRequested: false,
       transcriptionStopRequested: false,
@@ -1132,7 +1142,7 @@ function decide(
   admission.decisionReason = reason;
   if (status !== "approved") {
     admission.moderator = false;
-    admission.screenShare = "none";
+    setScreenShare(admission, "none", now);
     admission.boardEdit = false;
     admission.boardRequested = false;
     admission.transcriptionStopRequested = false;
@@ -1630,6 +1640,19 @@ function addStray(state: MeetingState, identity: string): void {
 function addStrayEgress(state: MeetingState, egressId: string): void {
   if (egressId === state.egress.egressId) return;
   if (!state.egress.strays.includes(egressId)) state.egress.strays.push(egressId);
+}
+
+function setScreenShare(
+  admission: Admission,
+  next: Admission["screenShare"],
+  now: number,
+  ask: Admission["screenShareAsk"] = null,
+): void {
+  if (admission.screenShare === next) return;
+  admission.screenShare = next;
+  admission.screenShareRevision += 1;
+  admission.screenShareAsk = ask;
+  touch(admission, now);
 }
 
 function touch(admission: Admission, now: number): void {

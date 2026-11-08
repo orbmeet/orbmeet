@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { RoomEvent, Track, type Room } from "livekit-client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { PARTICIPANT_ATTRIBUTE } from "@/modules/meetings/contract/live-state";
+import { PARTICIPANT_ATTRIBUTE, formatScreenShareAsk } from "@/modules/meetings/contract/live-state";
 
 const stopScreenShare = vi.fn(async () => ({ kind: "ok" }));
 const requestScreenShare = vi.fn(async () => ({ kind: "ok" }));
@@ -58,7 +58,9 @@ function attendeeRoom() {
     localParticipant,
     /** The coordinator records the request, then a moderator's grant. */
     serverSets(value: "requested" | "granted") {
-      localParticipant.attributes = { [PARTICIPANT_ATTRIBUTE.screenShare]: value };
+      localParticipant.attributes = {
+        [PARTICIPANT_ATTRIBUTE.screenShare]: formatScreenShareAsk(value, value === "requested" ? 1 : 2),
+      };
       if (value === "granted") {
         localParticipant.permissions = { canPublishSources: [Track.sourceToProto(Track.Source.ScreenShare)] };
         room.emit(RoomEvent.ParticipantPermissionsChanged, undefined, localParticipant);

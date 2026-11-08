@@ -139,10 +139,26 @@ export function parseRaisedHand(value: string | undefined): RaisedHand | null {
   return { raiseId: value.slice(0, separator), raisedAt };
 }
 
-export type ScreenShareRequestState = "requested" | "granted" | null;
+export type ScreenShareState = "none" | "requested" | "granted" | "declined";
 
-export function parseScreenShareState(value: string | undefined): ScreenShareRequestState {
-  return value === "requested" || value === "granted" ? value : null;
+/**
+ * An attendee's screen-share standing, as the room last wrote it. The revision
+ * rises with every change, so a report older than one already seen is dropped,
+ * and a refusal is stated rather than guessed from a request disappearing.
+ */
+export interface ScreenShareAsk {
+  state: ScreenShareState;
+  revision: number;
+}
+
+/** Revision 0 is an attendee who has never asked: nothing to report. */
+export function formatScreenShareAsk(state: ScreenShareState, revision: number): string {
+  return revision === 0 ? "" : `${state}:${revision}`;
+}
+
+export function parseScreenShareAsk(value: string | undefined): ScreenShareAsk | null {
+  const match = /^(none|requested|granted|declined):(\d+)$/.exec(value ?? "");
+  return match ? { state: match[1] as ScreenShareState, revision: Number(match[2]) } : null;
 }
 
 /** Whether a participant's attributes carry a request to open the board. */

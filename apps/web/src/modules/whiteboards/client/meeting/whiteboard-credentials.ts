@@ -12,6 +12,29 @@ import {
  */
 export const REMINT_WHILE_OFFLINE_MS = 30_000;
 
+/**
+ * How long one mint may stay unanswered. Concurrent callers share the request,
+ * and the socket waits on it, so a mint that never answers must end as a
+ * failure for anything to retry or report it. A late answer is discarded.
+ */
+export const MINT_TIMEOUT_MS = 10_000;
+
+function withinMintDeadline<T>(work: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Whiteboard access request timed out")), MINT_TIMEOUT_MS);
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export interface MintedWhiteboardAccess {
   token: string;
   whiteboardUrl: string;
@@ -102,8 +125,10 @@ export class WhiteboardCredentials {
   /** Mint for the surface at `revision`. Concurrent callers share one request. */
   mint(revision: number): Promise<WhiteboardCredential> {
     if (this.inFlight) return this.inFlight;
-    const request = this.options
-      .mint()
+    const settle = () => {
+      if (this.inFlight === request) this.inFlight = null;
+    };
+    const request: Promise<WhiteboardCredential> = withinMintDeadline(this.options.mint())
       .then((minted) => {
         const credential: WhiteboardCredential = {
           access: accessFromToken(minted.token, minted.whiteboardUrl),
@@ -116,12 +141,13 @@ export class WhiteboardCredentials {
         if (!this.currentValue || this.currentValue.revision <= revision) this.currentValue = credential;
         this.minted = true;
         this.droppedSinceMint = false;
+        // Settled before telling anyone: the surface may have moved on while
+        // this was in flight, and the listener must be free to mint again.
+        settle();
         this.options.onChange();
         return credential;
       })
-      .finally(() => {
-        this.inFlight = null;
-      });
+      .finally(settle);
     this.inFlight = request;
     return request;
   }

@@ -203,4 +203,22 @@ describe("runTranscriptShipper", () => {
     await running;
     expect(deliver).toHaveBeenCalled();
   });
+
+  it("keeps delivering after journal housekeeping fails", async () => {
+    const scope = new AbortController();
+    vi.spyOn(journal, "pruneRejected").mockImplementationOnce(() => {
+      throw new Error("database or disk is full");
+    });
+    vi.spyOn(journal, "status").mockImplementationOnce(() => {
+      throw new Error("database is locked");
+    });
+    const deliver = vi.fn(async (): Promise<DeliveryOutcome> => ({ kind: "committed" }));
+    const running = runTranscriptShipper(journal, deliver, { maxUnresolvedAgeMs: 60_000, signal: scope.signal });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    append("p1", "a");
+    await vi.waitFor(() => expect(journal.status().pending).toBe(0), { timeout: 3_000 });
+    scope.abort();
+    await running;
+    expect(deliver).toHaveBeenCalled();
+  });
 });

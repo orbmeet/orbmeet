@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PARTICIPANT_ATTRIBUTE } from "@/modules/meetings/contract/live-state";
-import { AUTHORITY_CHECK_MS, grantFor } from "./model";
+import { AUTHORITY_CHECK_MS, SCREEN_SHARE_ASK_TTL_MS, grantFor } from "./model";
+import { nextWakeAt } from "./plan";
 
 import type { Subject } from "./protocol";
 import type { SurfaceFocus } from "./model";
@@ -54,6 +55,96 @@ describe("moderation state is server-owned", () => {
     expect(m.state.admissions[a.admissionId].screenShare).toBe("granted");
     expect(m.refuse({ kind: "decideScreenShare", subject: host, admissionId: h.admissionId, allow: false }).code)
       .toBe("VALIDATION_ERROR");
+  });
+
+  describe("a screen-share ask", () => {
+    function asking() {
+      const m = new Meeting();
+      m.joined(m.admitted(host).identity);
+      const a = m.admitted(ada);
+      m.joined(a.identity);
+      m.apply({ kind: "requestScreenShare", subject: ada, attemptId: a.attemptId });
+      const admission = () => m.state.admissions[a.admissionId];
+      const shown = () => grantFor(m.state, admission()).attributes[PARTICIPANT_ATTRIBUTE.screenShare];
+      const decide = (allow: boolean) =>
+        m.apply({ kind: "decideScreenShare", subject: host, admissionId: a.admissionId, allow });
+      const stop = () => m.apply({ kind: "stopScreenShare", subject: ada, attemptId: a.attemptId });
+      return { m, a, admission, shown, decide, stop };
+    }
+
+    it("states a refusal, and can be asked again", () => {
+      const { m, a, admission, shown, decide } = asking();
+      decide(false);
+      expect(admission().screenShare).toBe("declined");
+      expect(shown()).toBe("declined:2");
+      m.apply({ kind: "requestScreenShare", subject: ada, attemptId: a.attemptId });
+      expect(shown()).toBe("requested:3");
+    });
+
+    it("does not let a late approval grant someone who withdrew", () => {
+      const { m, admission, decide, stop } = asking();
+      stop();
+      decide(true);
+      expect(admission().screenShare).toBe("none");
+      expect(grantFor(m.state, admission()).canScreenShare).toBe(false);
+    });
+
+    it("does not let a late refusal mark someone who withdrew as refused", () => {
+      const { admission, decide, stop } = asking();
+      stop();
+      decide(false);
+      expect(admission().screenShare).toBe("none");
+    });
+
+    it("takes a grant back without calling it a refusal", () => {
+      const { admission, decide } = asking();
+      decide(true);
+      decide(false);
+      expect(admission().screenShare).toBe("none");
+    });
+
+    it("raises the revision with every change and only then", () => {
+      const { a, m, admission, decide } = asking();
+      expect(admission().screenShareRevision).toBe(1);
+      m.apply({ kind: "requestScreenShare", subject: ada, attemptId: a.attemptId });
+      expect(admission().screenShareRevision).toBe(1);
+      decide(true);
+      expect(admission().screenShareRevision).toBe(2);
+    });
+
+    it("ends with the attempt that asked", () => {
+      const { m, a, admission } = asking();
+      const next = m.admitted(ada, { replacesAttemptId: a.attemptId });
+      m.joined(next.identity);
+      expect(admission().screenShare).toBe("none");
+      expect(admission().screenShareAsk).toBeNull();
+    });
+
+    it("ends when the participant leaves", () => {
+      const { m, a, admission } = asking();
+      m.apply({ kind: "leave", subject: ada, attemptId: a.attemptId });
+      expect(admission().screenShare).toBe("none");
+    });
+
+    it("expires unanswered, and wakes the room to do it", () => {
+      const { m, admission } = asking();
+      const askedAt = m.now;
+      expect(nextWakeAt(m.state, m.now)).toBeLessThanOrEqual(askedAt + SCREEN_SHARE_ASK_TTL_MS);
+      m.now = askedAt + SCREEN_SHARE_ASK_TTL_MS - 1;
+      m.apply({ kind: "tick" });
+      expect(admission().screenShare).toBe("requested");
+      m.now = askedAt + SCREEN_SHARE_ASK_TTL_MS;
+      m.apply({ kind: "tick" });
+      expect(admission().screenShare).toBe("none");
+    });
+
+    it("keeps a grant after the attempt that asked is gone", () => {
+      const { m, a, admission, decide } = asking();
+      decide(true);
+      const next = m.admitted(ada, { replacesAttemptId: a.attemptId });
+      m.joined(next.identity);
+      expect(admission().screenShare).toBe("granted");
+    });
   });
 
   it("revokes a removed member everywhere", () => {
@@ -303,7 +394,7 @@ describe("Space authority over time", () => {
     m.now += 1;
     m.apply({ kind: "authority", userId: "ada", spaceRole: "visitor", reason: "role_changed", readAt: m.now });
     expect(shown()[PARTICIPANT_ATTRIBUTE.hand]).not.toBe("");
-    expect(shown()[PARTICIPANT_ATTRIBUTE.screenShare]).toBe("requested");
+    expect(shown()[PARTICIPANT_ATTRIBUTE.screenShare]).toBe("requested:1");
   });
 });
 
