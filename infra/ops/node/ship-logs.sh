@@ -38,7 +38,10 @@ held=$(jq -rn --argjson now "$(date +%s)" '
       else .open[$id] //= {line, at: ($entry.__REALTIME_TIMESTAMP | tonumber / 1000000)} end)
   | [.open[] | select($now - .at < 60) | .line] | min // empty' "$state/entries")
 if [[ -n $held ]]; then
-  sed -i "${held},\$d" "$state/entries"
+  # Not sed -i: its in-place syntax differs between GNU and BSD sed, and the
+  # tests run this script on the operator's machine as well as the nodes.
+  head -n "$((held - 1))" "$state/entries" > "$state/entries.held"
+  mv "$state/entries.held" "$state/entries"
 fi
 
 jq -nc --arg node "$NODE" -f /usr/local/lib/orbmeet/ship-logs.jq "$state/entries" > "$state/batch"

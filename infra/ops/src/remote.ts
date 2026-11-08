@@ -1,13 +1,14 @@
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DOCKERFILES, REMOTE, REMOTE_NODE_DIR, WORKSPACE_FILES } from "./catalog.ts";
 import type { Inventory } from "./inventory.ts";
 import { imageSources } from "./render.ts";
 import type { RunOptions, Shell } from "./shell.ts";
 
-// One connection per node, reused by every ssh and rsync of a run.
+// One connection per node, reused by every ssh and rsync of a run. The socket
+// lives in ~/.ssh, not the system temp directory: macOS's is long enough to
+// push the path past the 104-byte limit on Unix socket names.
 const SSH_OPTIONS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "-o", "ControlMaster=auto",
-  "-o", `ControlPath=${join(tmpdir(), "orbmeet-ssh-%C")}`, "-o", "ControlPersist=60"];
+  "-o", "ControlPath=~/.ssh/orbmeet-%C", "-o", "ControlPersist=60"];
 
 export function ssh(shell: Shell, inv: Inventory, name: string, command: string, options?: RunOptions): Promise<string> {
   return shell(["ssh", ...SSH_OPTIONS, inv.nodes[name].ssh, command], options);
