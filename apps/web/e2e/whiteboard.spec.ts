@@ -38,13 +38,14 @@ test("a person removed mid-session loses the board", async ({ signUp }) => {
   // People, beside the board under the faces, has what may be done to each.
   // The top bar opens it: the panel has a title, not a second set of tabs.
   await host.getByRole("toolbar", { name: "Meeting controls" }).getByRole("button", { name: /^People · / }).click();
-  await host.getByRole("button", { name: "Remove Bob Guest from meeting" }).click();
+  await host.getByRole("button", { name: "More actions for Bob Guest" }).click();
+  await host.getByRole("menuitem", { name: "Remove from meeting" }).click();
   await host.getByRole("button", { name: "Remove", exact: true }).click();
 
   // The guest is out of the meeting, and with it the board.
   await expect(guest.getByText("A moderator removed you from this meeting.")).toBeVisible();
   await expect(guest.locator(".tl-canvas")).toHaveCount(0);
-  await expect(host.getByRole("button", { name: "Remove Bob Guest from meeting" })).toHaveCount(0);
+  await expect(host.getByRole("button", { name: "More actions for Bob Guest" })).toHaveCount(0);
   await expect(strokes(host)).toHaveCount(1);
 
   // The link no longer lets them back in.
@@ -204,7 +205,7 @@ test("the host lets everyone look around, then leads them again", async ({ signU
   await expect(host.getByRole("status").filter({ hasText: "You're presenting" })).toBeVisible();
 
   // Free roam: the host moves and the guest stays where they are.
-  await host.getByRole("button", { name: "Let everyone browse" }).click();
+  await host.getByRole("button", { name: "Let them look around" }).click();
   await expect(guest.getByText("Alice Host let everyone look around")).toBeVisible();
   await host.getByRole("button", { name: "Previous page" }).click();
   await expect(pager(host)).toHaveAccessibleName(/^Page 2 of 3\./);

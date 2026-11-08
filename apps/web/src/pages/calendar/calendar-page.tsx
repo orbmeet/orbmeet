@@ -1,7 +1,7 @@
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { CalendarPlus, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarPlus, ChevronLeft, ChevronRight, ChevronUp } from "lucide-react";
 import { myMeetingsQueryOptions, myUpcomingMeetingSchedulesQueryOptions } from "@/app/query-client/queries/meetings";
 import { useAuthenticatedSession } from "@/app/query-client/use-authenticated-session";
 import { meetingDisplayTitle } from "@/modules/meetings/client/components/meeting-format";
@@ -18,7 +18,7 @@ import { shadows } from "@orbmeet/ui/tokens/shadows.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { fonts, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
-import { addDays, fromDateParam, openingHour, placeDay, sameDay, startOfWeek, toDateParam } from "./calendar-week";
+import { addDays, eventsAboveHour, fromDateParam, openingHour, placeDay, sameDay, startOfWeek, toDateParam } from "./calendar-week";
 import { EventDetail, type CalendarEvent, type EventKind } from "./event-detail";
 
 const routeApi = getRouteApi("/_authed/calendar/");
@@ -86,7 +86,27 @@ const styles = stylex.create({
     textDecorationLine: "none",
     backgroundColor: { default: surface.raised, [env.hoverable]: { default: surface.raised, ":hover": neutral.n50 } },
   },
-  zone: { fontSize: "0.8125rem", color: ink.muted },
+  // Gives way on a tablet, where it is what pushes Schedule onto its own row.
+  zone: { display: { default: "inline", [bp.md]: "none", [bp.xl]: "inline" }, fontSize: "0.8125rem", color: ink.muted },
+  /** Meetings above the hour the grid opens at, which would otherwise look like none. */
+  earlier: {
+    alignSelf: "flex-start",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: space.s1_5,
+    height: { default: 36, [env.touch]: 44 },
+    paddingInline: space.s3,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: accent.a200,
+    borderRadius: 10,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    fontSize: "0.8125rem",
+    fontWeight: weight.medium,
+    color: accent.a700,
+    backgroundColor: { default: accent.a50, [env.hoverable]: { default: accent.a50, ":hover": accent.a100 } },
+  },
   spacer: { flexGrow: 1 },
   views: { display: "flex", padding: 3, borderRadius: 11, backgroundColor: neutral.n100 },
   viewLink: {
@@ -107,8 +127,8 @@ const styles = stylex.create({
   detail: {
     flexGrow: 1,
     flexShrink: 1,
-    flexBasis: 300,
-    maxWidth: { default: "none", [bp.xl]: 340 },
+    flexBasis: { default: 300, [bp.lg]: 260 },
+    maxWidth: { default: "none", [bp.lg]: 340 },
     minWidth: 0,
     boxSizing: "border-box",
     padding: space.s6,
@@ -119,7 +139,8 @@ const styles = stylex.create({
   scroller: {
     flexGrow: 999,
     flexShrink: 1,
-    flexBasis: 640,
+    // Small enough on a landscape tablet that the details stay beside the week.
+    flexBasis: { default: 640, [bp.lg]: 480 },
     minWidth: 0,
     overflow: "auto",
     maxHeight: { default: "70vh", [bp.lg]: "100%" },
@@ -128,7 +149,7 @@ const styles = stylex.create({
     borderTopStyle: "solid",
     borderTopColor: border.subtle,
   },
-  grid: { display: "grid", minWidth: 680 },
+  grid: { display: "grid", minWidth: { default: 680, [bp.lg]: 520 } },
   gridDay: { minWidth: 0 },
   head: {
     position: "sticky",
@@ -448,6 +469,14 @@ export function CalendarPage() {
     if (scroller.current) scroller.current.scrollTop = firstHour * HOUR - 16;
   }, [view, firstHour]);
   const weekKey = days[0].toDateString();
+  // What today (or the one day shown) has above where the grid opens. Once
+  // revealed, the row has done its job for this week.
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const earlierDay = view === "day" ? anchor : days.find((day) => sameDay(day, today));
+  const earlier =
+    view === "agenda" || !earlierDay || revealed === `${view}:${weekKey}`
+      ? []
+      : eventsAboveHour(events, earlierDay, firstHour);
   useEffect(() => {
     // A week wider than the screen opens on today rather than on Monday.
     const el = scroller.current;
@@ -499,6 +528,22 @@ export function CalendarPage() {
           <CalendarPlus size={16} aria-hidden="true" /> Schedule
         </Button>
       </div>
+
+      {earlier.length > 0 ? (
+        <button
+          type="button"
+          onClick={() => {
+            if (scroller.current) scroller.current.scrollTop = earlier[0].start.getHours() * HOUR - 16;
+            setRevealed(`${view}:${weekKey}`);
+          }}
+          {...stylex.props(styles.earlier, motion.tint, focus.ring)}
+        >
+          <ChevronUp size={14} aria-hidden="true" />
+          {earlier.length === 1
+            ? `Earlier: ${earlier[0].title}, ${shortTime(earlier[0].start)}`
+            : `${earlier.length} earlier meetings`}
+        </button>
+      ) : null}
 
       {view === "agenda" ? (
         <UpcomingMeetings onSchedule={() => setScheduling({})} scheduleActionLabel="Schedule" />

@@ -1,11 +1,16 @@
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { StillToDo, Today } from "./home-highlights";
+import { JustEnded, StillToDo, StillToDoLink, Today } from "./home-highlights";
 
-const feeds = vi.hoisted(() => ({ upcoming: vi.fn(), followUps: vi.fn() }));
-vi.mock("@tanstack/react-query", () => ({ useSuspenseInfiniteQuery: feeds.upcoming, useQuery: feeds.followUps }));
+const feeds = vi.hoisted(() => ({ upcoming: vi.fn(), followUps: vi.fn(), meetings: vi.fn() }));
+vi.mock("@tanstack/react-query", () => ({
+  useSuspenseInfiniteQuery: feeds.upcoming,
+  useQuery: feeds.followUps,
+  useInfiniteQuery: feeds.meetings,
+}));
 vi.mock("@/app/query-client/queries/meetings", () => ({
+  myMeetingsQueryOptions: () => ({}),
   myUpcomingMeetingSchedulesQueryOptions: () => ({}),
   myOpenFollowUpsQueryOptions: () => ({}),
 }));
@@ -73,7 +78,30 @@ describe("Today", () => {
   });
 });
 
+describe("Just ended", () => {
+  const ended = { meetingId: "m1", title: "Design sync", participantNames: ["Maya", "Sam"], hasSummary: true };
+
+  it("leads to the recap of the meeting you left, once it is over", () => {
+    feeds.meetings.mockReturnValue({ data: { pages: [{ meetings: [ended] }] } });
+    const html = renderToStaticMarkup(<JustEnded meetingId="m1" viewerName="Maya" onDismiss={() => {}} />);
+    expect(html).toContain("Design sync just ended");
+    expect(html).toContain("Orb’s summary is ready.");
+    expect(html).toContain("Open recap");
+  });
+
+  it("shows nothing while the meeting is still going", () => {
+    feeds.meetings.mockReturnValue({ data: { pages: [{ meetings: [{ ...ended, meetingId: "other" }] }] } });
+    expect(renderToStaticMarkup(<JustEnded meetingId="m1" viewerName="Maya" onDismiss={() => {}} />)).toBe("");
+  });
+});
+
 describe("Still to do", () => {
+  it("links down to the list only when something is open", () => {
+    expect(renderToStaticMarkup(<StillToDoLink />)).toBe("");
+    feeds.followUps.mockReturnValue({ data: { followUps: [{ id: "f1", done: false }] } });
+    expect(renderToStaticMarkup(<StillToDoLink />)).toContain("1 open");
+  });
+
   it("is not on Home until there is something still to do", () => {
     expect(renderToStaticMarkup(<StillToDo />)).toBe("");
     feeds.followUps.mockReturnValue({ data: { followUps: [] } });

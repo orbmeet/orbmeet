@@ -101,7 +101,9 @@ const styles = stylex.create({
     cursor: "pointer",
     backgroundColor: { default: "transparent", [env.hoverable]: { default: "transparent", ":hover": neutral.n50 } },
   },
-  momentAt: { flexShrink: 0, width: 52, fontFamily: fonts.mono, fontSize: "0.8125rem", color: accent.a700 },
+  momentAt: { flexShrink: 0, width: 52, fontFamily: fonts.mono, fontSize: "0.8125rem", color: ink.muted },
+  // The link colour only where pressing it plays something.
+  momentAtPlayable: { color: accent.a700 },
   momentText: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 },
   momentTitle: { fontSize: text.base, fontWeight: weight.medium, color: ink.strong },
   momentDetail: { fontSize: text.sm, lineHeight: 1.45, color: ink.muted },
@@ -358,7 +360,7 @@ export function EndedMeetingPage({
                 {moments.map((moment) => {
                   const body = (
                     <>
-                      <span {...stylex.props(styles.momentAt)}>{formatOffset(moment.atSeconds)}</span>
+                      <span {...stylex.props(styles.momentAt, moment.recordingSeconds !== null && styles.momentAtPlayable)}>{formatOffset(moment.atSeconds)}</span>
                       <span {...stylex.props(styles.momentText)}>
                         <span {...stylex.props(styles.momentTitle)}>{moment.title}</span>
                         {moment.detail ? <span {...stylex.props(styles.momentDetail)}>{moment.detail}</span> : null}

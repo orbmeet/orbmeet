@@ -11,6 +11,7 @@ import { filesInfiniteQueryOptions } from "@/app/query-client/queries/files";
 import { primeSpaceDetailCache } from "@/modules/spaces/client/space-query-cache";
 import { RouteError, RoutePending } from "@/app/shell/route-state";
 import { parseSpaceTab, type SpaceTab } from "@/modules/spaces/contract";
+import { createPageHead, SITE_NAME } from "@/lib/seo";
 import { lazy } from "react";
 
 const SpaceDetailPage = import.meta.env.SSR ? () => null : lazy(() => import("@/pages/space/space-detail-page").then((page) => ({ default: page.SpaceDetailPage })));
@@ -84,8 +85,14 @@ export const Route = createFileRoute("/_authed/space/$spaceSlug")({
         break;
     }
 
-    return { spaceId };
+    return { spaceId, spaceName: spaceData.space.name };
   },
+  head: ({ loaderData }) => createPageHead({
+    title: `${loaderData?.spaceName ?? "Space"} — ${SITE_NAME}`,
+    description: "This Space's meetings, boards, people and files.",
+    noindex: true,
+    canonical: false,
+  }),
   pendingComponent: RoutePending,
   // A Space owns form drafts, open dialogs, selections, and mutation state.
   // TanStack Router keeps this route instance mounted when only the slug

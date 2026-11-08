@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { useQuery, useSuspenseInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useSuspenseInfiniteQuery } from "@tanstack/react-query";
+import { ChevronRight, X } from "lucide-react";
 import * as stylex from "@stylexjs/stylex";
-import { myOpenFollowUpsQueryOptions, myUpcomingMeetingSchedulesQueryOptions } from "@/app/query-client/queries/meetings";
-import { formatMeetingDate } from "@/modules/meetings/client/components/meeting-format";
+import { myMeetingsQueryOptions, myOpenFollowUpsQueryOptions, myUpcomingMeetingSchedulesQueryOptions } from "@/app/query-client/queries/meetings";
+import { formatMeetingDate, meetingDisplayTitle } from "@/modules/meetings/client/components/meeting-format";
 import { FollowUpList } from "@/modules/transcripts/client/follow-up-list";
 import { beginMeetingEntryFlow } from "@/modules/meetings/client/entry-metrics";
 import { ScheduleMeetingDialog } from "@/modules/scheduling/client/schedule-meeting-dialog";
@@ -89,7 +90,91 @@ const styles = stylex.create({
     backgroundColor: { default: "transparent", [env.hoverable]: { default: "transparent", ":hover": neutral.n100 } },
   },
   quietCard: { boxShadow: "none", backgroundColor: surface.sunken },
+  primaryAccent: {
+    color: ink.onAccent,
+    backgroundColor: { default: accent.a600, [env.hoverable]: { default: accent.a600, ":hover": accent.a700 } },
+  },
+  dismiss: {
+    display: "grid",
+    placeItems: "center",
+    width: 44,
+    height: 44,
+    padding: 0,
+    borderWidth: 0,
+    borderRadius: 999,
+    cursor: "pointer",
+    color: ink.muted,
+    backgroundColor: { default: "transparent", [env.hoverable]: { default: "transparent", ":hover": accent.a100 } },
+  },
+  /** Beside the page there is no need: the list is already in view. */
+  jump: {
+    display: { default: "flex", [bp.xl]: "none" },
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 48,
+    paddingInline: space.s4,
+    borderRadius: 14,
+    fontSize: text.sm,
+    fontWeight: weight.medium,
+    color: ink.strong,
+    textDecorationLine: "none",
+    backgroundColor: surface.sunken,
+  },
+  jumpCount: { display: "inline-flex", alignItems: "center", gap: space.s1, fontWeight: weight.normal, color: ink.muted },
 });
+
+// ─── Just ended ──────────────────────────────────────────────────────────────
+
+/** Long enough for the meeting's end to land, not so long it polls forever. */
+const JUST_ENDED_WATCH_MS = 60_000;
+const JUST_ENDED_POLL_MS = 4_000;
+
+/**
+ * The meeting you just walked out of, once it is over, with the way to what it
+ * left. Nothing while others are still in it: Today already offers those back.
+ */
+export function JustEnded({
+  meetingId,
+  viewerName,
+  onDismiss,
+}: {
+  meetingId: string;
+  viewerName: string;
+  onDismiss: () => void;
+}) {
+  const [watchUntil] = useState(() => Date.now() + JUST_ENDED_WATCH_MS);
+  const isThis = (meeting: { meetingId: string }) => meeting.meetingId === meetingId;
+  const query = useInfiniteQuery({
+    ...myMeetingsQueryOptions({ status: "ended", limit: 6 }),
+    refetchInterval: (current) =>
+      current.state.data?.pages[0]?.meetings.some(isThis) || Date.now() > watchUntil ? false : JUST_ENDED_POLL_MS,
+  });
+  const meeting = query.data?.pages[0]?.meetings.find(isThis);
+  if (!meeting) return null;
+
+  return (
+    <section aria-label="Meeting that just ended" {...stylex.props(styles.card, styles.cardLive, enter.fadeUp)}>
+      <div {...stylex.props(styles.lines)}>
+        <h2 {...stylex.props(styles.title, layout.truncate)}>
+          {meetingDisplayTitle(meeting.title, meeting.participantNames, viewerName)} just ended
+        </h2>
+        <p {...stylex.props(styles.meta)}>
+          {meeting.hasSummary ? "Orb’s summary is ready." : "See what was said, drawn and decided."}
+        </p>
+      </div>
+      <Link
+        to="/meetings/$meetingId"
+        params={{ meetingId }}
+        {...stylex.props(styles.primary, styles.primaryAccent, motion.tint, focus.ring)}
+      >
+        Open recap
+      </Link>
+      <button type="button" aria-label="Dismiss" onClick={onDismiss} {...stylex.props(styles.dismiss, motion.tint, focus.ring)}>
+        <X size={16} aria-hidden="true" />
+      </button>
+    </section>
+  );
+}
 
 // ─── Today ───────────────────────────────────────────────────────────────────
 
@@ -213,6 +298,21 @@ export function Today({ threads, now }: { threads: Thread[]; now: number }) {
 
 // ─── Still to do ─────────────────────────────────────────────────────────────
 
+/** In one column the list sits under your recent meetings: this reaches it. */
+export function StillToDoLink() {
+  const query = useQuery(myOpenFollowUpsQueryOptions());
+  const open = (query.data?.followUps ?? []).filter((followUp) => !followUp.done).length;
+  if (open === 0) return null;
+  return (
+    <a href="#home-todo-title" {...stylex.props(styles.jump, motion.tint, focus.ring)}>
+      Still to do
+      <span {...stylex.props(styles.jumpCount)}>
+        {open} open <ChevronRight size={16} aria-hidden="true" />
+      </span>
+    </a>
+  );
+}
+
 /** "today", "yesterday", "Thu, Oct 15": a day as it reads mid-sentence. */
 function sayWhen(day: string): string {
   return day === "Today" || day === "Yesterday" ? day.toLowerCase() : day;
@@ -238,6 +338,7 @@ export function StillToDo() {
       </div>
       <p {...stylex.props(styles.lede)}>What people agreed to in meetings.</p>
       <FollowUpList
+        undoable
         items={followUps.map((followUp) => ({
           id: followUp.id,
           text: followUp.text,

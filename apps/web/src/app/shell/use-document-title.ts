@@ -16,7 +16,10 @@ export function useDocumentTitle(title: string) {
     const previous = document.title;
     document.title = title;
     return () => {
-      document.title = previous;
+      // Only while the title is still ours: leaving for a route that sets its
+      // own has already replaced it, and restoring here would put the old
+      // "Join Meeting" back over that route's title.
+      if (document.title === title) document.title = previous;
     };
   }, [title]);
 }

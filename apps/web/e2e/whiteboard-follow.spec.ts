@@ -210,7 +210,7 @@ test.describe("following the presenter on every screen", () => {
       await host.getByRole("button", { name: "Open the board for everyone" }).click();
       await expect(ipad.getByRole("button", { name: "Ask to edit" })).toBeVisible({ timeout: 60_000 });
 
-      await host.getByRole("button", { name: "Hand off navigation control" }).click();
+      await host.getByRole("button", { name: "Give control of the pages to someone" }).click();
       await expect(host.getByText("Gets edit access too")).toBeVisible();
       await host.getByRole("button", { name: /^iPad landscape/ }).click();
 

@@ -89,6 +89,18 @@ export function placeDay<T extends Timed>(items: readonly T[], day: Date, minMin
 }
 
 /**
+ * What `day` has wholly above `hour`, earliest first: out of sight when the
+ * grid opens there, so the day would look emptier than it was.
+ */
+export function eventsAboveHour<T extends Timed>(items: readonly T[], day: Date, hour: number): T[] {
+  const midnight = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
+  const line = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour).getTime();
+  return items
+    .filter((item) => item.start.getTime() >= midnight && item.end.getTime() <= line)
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+}
+
+/**
  * The hour the grid opens scrolled to: `preferred`, unless an event on one of
  * `days` runs across that line. Then its start hour, so it is read whole
  * rather than cut by the header. Events wholly before `preferred` stay above

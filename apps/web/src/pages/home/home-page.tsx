@@ -20,7 +20,7 @@ import { Spinner } from "@orbmeet/ui/react";
 import { CreatePersonalMeetingLinkDialog } from "@/modules/meetings/client/dashboard/create-personal-meeting-link-dialog";
 import { RoomLinkSettings } from "@/modules/meetings/client/components/links/room-link-settings";
 import { groupMeetingsByDay, MeetingRow } from "@/modules/meetings/client/components/meeting-row";
-import { StillToDo, Today } from "@/pages/home/home-highlights";
+import { JustEnded, StillToDo, StillToDoLink, Today } from "@/pages/home/home-highlights";
 import { enter } from "@orbmeet/ui/styles/animations";
 import { focus, motion, pressable, touch } from "@orbmeet/ui/styles/atoms";
 import { accent, border, danger, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
@@ -144,20 +144,20 @@ const styles = stylex.create({
 
   /**
    * Today and Earlier, with the to-dos and your room beside them. In one
-   * column the side comes between the two, so your room is not pushed under
-   * the whole of your history.
+   * column the meetings come first and the side follows them, with a link
+   * under Today down to the to-dos.
    */
   body: {
     display: "grid",
     gridTemplateColumns: { default: "minmax(0, 1fr)", [bp.xl]: "minmax(0, 1fr) minmax(260px, 300px)" },
     gridTemplateRows: { default: null, [bp.xl]: "auto 1fr" },
-    gridTemplateAreas: { default: '"today" "aside" "recent"', [bp.xl]: '"today aside" "recent aside"' },
+    gridTemplateAreas: { default: '"today" "recent" "aside"', [bp.xl]: '"today aside" "recent aside"' },
     alignItems: "start",
     columnGap: space.s10,
     rowGap: space.s9,
   },
   // Placed by the named areas above; the start and end lines name an area's edges.
-  areaToday: { gridRowStart: "today", gridRowEnd: "today", gridColumnStart: "today", gridColumnEnd: "today", minWidth: 0 },
+  areaToday: { gridRowStart: "today", gridRowEnd: "today", gridColumnStart: "today", gridColumnEnd: "today", minWidth: 0, display: "flex", flexDirection: "column", gap: space.s3 },
   areaRecent: { gridRowStart: "recent", gridRowEnd: "recent", gridColumnStart: "recent", gridColumnEnd: "recent", minWidth: 0 },
   recent: { display: "flex", flexDirection: "column", gap: space.s2 },
   aside: { gridRowStart: "aside", gridRowEnd: "aside", gridColumnStart: "aside", gridColumnEnd: "aside", display: "flex", flexDirection: "column", gap: space.s8, minWidth: 0 },
@@ -376,6 +376,8 @@ function Recent({ viewerName }: { viewerName: string }) {
 export function HomePage() {
   const { session: initialSession } = routeApi.useRouteContext();
   const session = useAuthenticatedSession(initialSession);
+  const { left } = routeApi.useSearch();
+  const navigate = routeApi.useNavigate();
   const name = session.user.name ?? "";
   const firstName = name.split(" ")[0] || "there";
   const [{ greeting, date }] = useState(() => {
@@ -403,9 +405,17 @@ export function HomePage() {
         </header>
         <Launch />
       </div>
+      {left ? (
+        <JustEnded
+          meetingId={left}
+          viewerName={name}
+          onDismiss={() => void navigate({ search: {}, replace: true })}
+        />
+      ) : null}
       <div {...stylex.props(styles.body)}>
         <div {...stylex.props(styles.areaToday)}>
           <Today threads={threads} now={now} />
+          <StillToDoLink />
         </div>
         <div {...stylex.props(styles.areaRecent)}>
           <Recent viewerName={name} />

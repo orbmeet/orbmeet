@@ -456,11 +456,11 @@ function ScheduleMeetingDialogForm({
     ?? (context === `space:${initialSpace?.id}` ? initialSpace?.name : undefined);
   const dialogTitle = isRescheduling
     ? isSpaceMeeting
-      ? `Reschedule the Meeting in ${selectedSpaceName ?? "this Space"}`
-      : "Reschedule a personal Meeting"
+      ? `Reschedule the meeting in ${selectedSpaceName ?? "this Space"}`
+      : "Reschedule a personal meeting"
     : isSpaceMeeting
-      ? `Schedule the next Meeting in ${selectedSpaceName ?? "this Space"}`
-      : "Schedule a personal Meeting";
+      ? `Schedule the next meeting in ${selectedSpaceName ?? "this Space"}`
+      : "Schedule a personal meeting";
 
   if (created) {
     return (

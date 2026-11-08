@@ -61,12 +61,16 @@ export function useMeetingLeaveEnd({
     }
     clearReconnectAdmissionId(code);
     if (isAuthenticated) {
-      void navigate({ to: "/home" });
+      // Read again on arrival: the last one out ends the meeting, and Home
+      // would otherwise show lists from before it did.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.meetings.lists() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.threads() });
+      void navigate({ to: "/home", search: { left: meetingId } });
     } else {
       void navigate({
         to: "/handoff/$meetingId",
         params: { meetingId },
-        search: { admissionId },
+        search: { admissionId, code },
       });
     }
   }, [
@@ -74,6 +78,7 @@ export function useMeetingLeaveEnd({
     connectionId,
     isAuthenticated,
     navigate,
+    queryClient,
     onIntentionalDisconnect,
     lifecycleHooks,
     disconnectMeetingNow,

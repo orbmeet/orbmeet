@@ -52,8 +52,9 @@ const styles = stylex.create({
   meterFull: { backgroundColor: danger.d500 },
   retry: { marginTop: space.s2 },
 
-  actions: { marginTop: space.s4 },
+  actions: { marginTop: space.s4, flexWrap: "wrap" },
   manage: { marginTop: space.s4, gap: space.s2, alignSelf: "flex-start" },
+  billingNote: { marginTop: space.s3, marginBottom: 0 },
 });
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@orbmeet/ui/react";
@@ -132,7 +133,7 @@ export function PlanSection({
         {plan === "free"
           ? "You are on Free: one permanent personal meeting link and one Space."
           : plan === "pro"
-            ? "You are on Pro: cloud recording, a custom Meeting code, and higher limits."
+            ? "You are on Pro: cloud recording, a custom meeting code, and higher limits."
             : "You are on Organization: shared billing, licensed users, and Organization-funded Spaces."}
       </p>
       <div {...stylex.props(settings.formPanel, styles.limits)}>
@@ -214,18 +215,28 @@ sx={styles.retry}
         </div>
       </div>
 
+      {plan !== "free" && !hasManagedSubscription ? (
+        <p {...stylex.props(settings.blurb, styles.billingNote)}>
+          This plan has no subscription of its own to manage, so there are no invoices here.
+        </p>
+      ) : null}
       {hasManagedSubscription ? (
-        <Button
-          variant="secondary"
-          sx={styles.manage}
-          onClick={() => {
-            void openPortal();
-          }}
-          disabled={loading === "portal"}
-        >
-          <ExternalLink size={14} />
-          {loading === "portal" ? "Opening..." : "Manage billing"}
-        </Button>
+        <>
+          <Button
+            variant="secondary"
+            sx={styles.manage}
+            onClick={() => {
+              void openPortal();
+            }}
+            disabled={loading === "portal"}
+          >
+            <ExternalLink size={14} />
+            {loading === "portal" ? "Opening..." : "Manage billing"}
+          </Button>
+          <p {...stylex.props(settings.blurb, styles.billingNote)}>
+            Invoices, your payment method and cancelling are all in the billing portal.
+          </p>
+        </>
       ) : (
         <div {...stylex.props(row.x3, styles.actions)}>
           {plan !== "pro" && plan !== "organization" && (

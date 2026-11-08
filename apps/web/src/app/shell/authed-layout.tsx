@@ -255,6 +255,9 @@ function AuthedLayoutContent() {
 
   // A canvas page is all canvas: no offer competes with the board for room.
   const onCanvas = onCanvasPage;
+  // On a small screen the offer takes a row off the top of the page, so it
+  // asks once, on Home, rather than above everything.
+  const offersInstallStrip = pathname === "/home" || pathname === "/home/";
 
   const user = {
     name: session.user.name,
@@ -291,7 +294,7 @@ function AuthedLayoutContent() {
         )}
 
         <main id={MAIN_CONTENT_ID} {...stylex.props(styles.main, onCanvas && styles.mainCanvas)}>
-          {onCanvas ? null : <InstallOffer variant="strip" />}
+          {offersInstallStrip ? <InstallOffer variant="strip" /> : null}
           <div {...stylex.props(enter.fade)}>
             <Outlet />
           </div>

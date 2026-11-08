@@ -3,6 +3,7 @@ import { sessionsListQueryOptions, linkedAccountsQueryOptions, passkeysQueryOpti
 import { myOrganizationsQueryOptions } from "@/app/query-client/queries/organizations";
 import { isSettingsTabId, settingsPageOf, type SettingsTabId } from "@/pages/settings/settings-tabs";
 import { optionalString } from "@/lib/search-params";
+import { createPageHead, SITE_NAME } from "@/lib/seo";
 import { lazy } from "react";
 
 const RouteError = import.meta.env.SSR ? () => null : lazy(() => import("@/app/shell/route-state").then((page) => ({ default: page.RouteError })));
@@ -29,6 +30,12 @@ export const Route = createFileRoute("/_authed/settings/")({
       void context.queryClient.prefetchQuery(myOrganizationsQueryOptions());
     }
   },
+  head: () => createPageHead({
+    title: `Settings — ${SITE_NAME}`,
+    description: "Your profile, meetings, account and plan.",
+    noindex: true,
+    canonical: false,
+  }),
   component: SettingsPage,
   errorComponent: RouteError,
 });

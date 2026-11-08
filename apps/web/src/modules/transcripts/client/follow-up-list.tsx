@@ -71,7 +71,16 @@ const styles = stylex.create({
  * What people agreed to do, each a checkbox. Ticking one off ticks it off for
  * everyone who can open the meeting: the work is shared, so is its state.
  */
-export function FollowUpList({ items, meetingId }: { items: FollowUpItem[]; meetingId?: string }) {
+export function FollowUpList({
+  items,
+  meetingId,
+  undoable = false,
+}: {
+  items: FollowUpItem[];
+  meetingId?: string;
+  /** For a list that drops what is ticked: says so, and offers it back. */
+  undoable?: boolean;
+}) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const baseId = useId();
@@ -81,8 +90,20 @@ export function FollowUpList({ items, meetingId }: { items: FollowUpItem[]; meet
   // would otherwise show the first one unticked until the refetch landed.
   const [pending, setPending] = useState<ReadonlyMap<string, boolean>>(() => new Map());
   const mutation = useMutation({
-    mutationFn: (input: { followUpId: string; done: boolean }) => setFollowUpDone({ data: input }),
+    mutationFn: ({ followUpId, done }: { followUpId: string; done: boolean; text?: string }) =>
+      setFollowUpDone({ data: { followUpId, done } }),
     onMutate: (input) => setPending((current) => new Map(current).set(input.followUpId, input.done)),
+    onSuccess: (_data, input) => {
+      if (!undoable || !input.done) return;
+      toast.add({
+        title: "Marked done",
+        description: input.text,
+        actionProps: {
+          children: "Undo",
+          onClick: () => mutation.mutate({ followUpId: input.followUpId, done: false }),
+        },
+      });
+    },
     onError: () =>
       toast.add({ title: "Couldn’t update that follow-up", description: "Try again in a moment.", data: { variant: "error" } }),
     onSettled: async (_data, _error, input) => {
@@ -111,7 +132,7 @@ export function FollowUpList({ items, meetingId }: { items: FollowUpItem[]; meet
               type="checkbox"
               checked={done}
               disabled={pendingDone !== undefined}
-              onChange={(event) => mutation.mutate({ followUpId: item.id, done: event.target.checked })}
+              onChange={(event) => mutation.mutate({ followUpId: item.id, done: event.target.checked, text: item.text })}
               {...stylex.props(styles.box, focus.ring)}
             />
             <label htmlFor={id} {...stylex.props(styles.label)}>

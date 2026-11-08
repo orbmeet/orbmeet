@@ -1020,7 +1020,7 @@ export function MeetingRoomActions({
           label="People"
           showLabel
           count={people.count}
-          tooltip={people.open ? "Close the people list" : `People · ${people.count} in the meeting`}
+          tooltip={people.open ? `Close the people list · ${people.count} in the meeting` : `People · ${people.count} in the meeting`}
           active={people.open}
           onClick={people.onToggle}
         />

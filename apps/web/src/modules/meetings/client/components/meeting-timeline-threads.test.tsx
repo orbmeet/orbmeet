@@ -118,6 +118,27 @@ describe("asking Orb from the Timeline", () => {
     expect(input().value).toBe("@Orb is the arithmetic correct?");
   });
 
+  it("offers to open the board, then sends the question once Orb is reachable", async () => {
+    const onOpenBoard = vi.fn();
+    const props = await mount({ orb: null, onOpenBoard });
+    await type("@Orb is the arithmetic correct?");
+    await send();
+
+    const open = Array.from(container.querySelectorAll("button")).find((b) => b.textContent === "Open board and ask");
+    if (!open) throw new Error("No offer to open the board");
+    await act(async () => open.click());
+    expect(onOpenBoard).toHaveBeenCalledTimes(1);
+
+    const away = orb({ live: false });
+    await act(async () => root.render(<MeetingTimeline {...props} onOpenBoard={onOpenBoard} orb={away} />));
+    expect(away.prompt).not.toHaveBeenCalled();
+
+    const assistant = orb();
+    await act(async () => root.render(<MeetingTimeline {...props} onOpenBoard={onOpenBoard} orb={assistant} />));
+    expect(assistant.prompt).toHaveBeenCalledWith("is the arithmetic correct?", { audience: { kind: "room" }, said: "" });
+    expect(input().value).toBe("");
+  });
+
   it("keeps the question and says why when Orb is busy with someone else", async () => {
     const assistant = orb({ runs: [{ id: "r1", requesterUserId: "sam", requesterName: "Sam" }] });
     await mount({ orb: assistant });

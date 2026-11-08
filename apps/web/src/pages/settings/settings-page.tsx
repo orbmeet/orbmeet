@@ -149,7 +149,9 @@ export function SettingsPage() {
   const page = settingsPageOf(tab);
 
   useEffect(() => {
-    if (!tab) return;
+    // A page's first section is already in view: scrolling to it only hides
+    // the page's own title and its way back.
+    if (!tab || tab === "security" || tab === "plan-&-billing") return;
     document.getElementById(`settings-${tab}`)?.scrollIntoView({ block: "start" });
   }, [tab]);
 
@@ -187,7 +189,7 @@ export function SettingsPage() {
   if (page === "billing") {
     return (
       <div {...stylex.props(styles.page)}>
-        <Header back title="Plan & billing" lead="Your plan, its invoices, and the organization that pays for it." />
+        <Header back title="Plan & billing" lead="Your plan, its billing, and the organization that pays for it." />
         <Panel id="plan-&-billing">
           <PlanSection
             plan={user.plan}
@@ -246,7 +248,7 @@ export function SettingsPage() {
         <Link to="/settings" search={{ tab: "plan-&-billing" }} {...stylex.props(styles.moreLink, motion.tint, focus.ring)}>
           <span {...stylex.props(styles.moreText)}>
             <span {...stylex.props(styles.moreTitle)}>Plan &amp; billing</span>
-            <span {...stylex.props(styles.moreNote)}>Your plan, invoices and organization.</span>
+            <span {...stylex.props(styles.moreNote)}>Your plan, billing and organization.</span>
           </span>
           <ChevronRight size={18} aria-hidden="true" {...stylex.props(styles.chevron)} />
         </Link>

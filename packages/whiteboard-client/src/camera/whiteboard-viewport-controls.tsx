@@ -178,7 +178,7 @@ const styles = stylex.create({
   fitFitted: { color: neutral.n700 },
   fitZoomed: { color: neutral.n600 },
 
-  /** "Hand off": labeled, because it hands a participant the wheel. */
+  /** "Give control": labeled, because it hands a participant the wheel. */
   handoff: {
     display: "flex",
     alignItems: "center",
@@ -643,7 +643,7 @@ export function WhiteboardViewportControls({
       grant: onGrantEditAccess,
       setController: onSetNavigationController,
     });
-    if (failure) emitWhiteboardError(failure, { title: "Hand off" });
+    if (failure) emitWhiteboardError(failure, { title: "Give control" });
   };
 
   const handleReleaseNavigationController = async () => {
@@ -701,11 +701,11 @@ export function WhiteboardViewportControls({
           type="button"
           onClick={() => setShowHandoffMenu((value) => !value)}
           {...stylex.props(styles.handoff, styles.handoffBand, compact && styles.handoffCompact)}
-          aria-label="Hand off navigation control"
-          title="Let a participant drive the pages everyone sees"
+          aria-label="Give control of the pages to someone"
+          title="Let someone else choose the page everyone sees"
         >
           <Radio size={16} />
-          <span {...stylex.props(compact && styles.handoffWordCompact)}>Hand off</span>
+          <span {...stylex.props(compact && styles.handoffWordCompact)}>Give control</span>
         </button>
         {showHandoffMenu && (
           <>
@@ -760,7 +760,7 @@ export function WhiteboardViewportControls({
         title={presenting.roam ? "Bring everyone back to your view" : "Let everyone look around on their own"}
         {...stylex.props(styles.presentingAction)}
       >
-        {presenting.roam ? "Lead again" : "Let everyone browse"}
+        {presenting.roam ? "Lead again" : "Let them look around"}
       </button>
     </div>
   );

@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { myUpcomingMeetingSchedulesQueryOptions } from "@/app/query-client/queries/meetings";
 import { oneOf, optionalString } from "@/lib/search-params";
+import { createPageHead, SITE_NAME } from "@/lib/seo";
 import { lazy } from "react";
 
 export interface CalendarSearch {
@@ -24,5 +25,11 @@ export const Route = createFileRoute("/_authed/calendar/")({
   loader: ({ context }) => {
     void context.queryClient.prefetchInfiniteQuery(myUpcomingMeetingSchedulesQueryOptions());
   },
+  head: () => createPageHead({
+    title: `Calendar — ${SITE_NAME}`,
+    description: "What is planned, and what has happened, by week.",
+    noindex: true,
+    canonical: false,
+  }),
   component: CalendarPage,
 });

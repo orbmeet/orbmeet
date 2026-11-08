@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Hand, Lock, Mic, MessageSquareLock, MessageSquareText, Pencil, RefreshCw, Send, X } from "lucide-react";
-import { Avatar, Tooltip } from "@orbmeet/ui/react";
+import { Avatar, Button, Tooltip } from "@orbmeet/ui/react";
 import { enter } from "@orbmeet/ui/styles/animations";
 import { focus, layout, motion, pressable } from "@orbmeet/ui/styles/atoms";
 import { accent, danger, ink, neutral, surface, violet, warning } from "@orbmeet/ui/tokens/colors.stylex";
@@ -51,6 +51,8 @@ import { firstName } from "./meeting-format";
 
 const URL_REGEX = /https?:\/\/[^\s<>)"']*[^\s<>)"'.,;:!?]/g;
 const MAX_MESSAGE_LENGTH = 500;
+/** How long a question waits for the board, and Orb with it, to come up. */
+const BOARD_OPEN_WAIT_MS = 20_000;
 
 const styles = stylex.create({
   shell: { height: "100%" },
@@ -370,6 +372,8 @@ const styles = stylex.create({
     },
   },
   sendError: { margin: 0, marginTop: space.s2, fontSize: text.xs, color: danger.d700 },
+  boardAsk: { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: space.s2, marginTop: space.s2 },
+  boardAskText: { margin: 0, fontSize: text.xs, color: ink.muted },
 
   /** One tip under the box: quiet, a line or two, and it changes. */
   tip: {
@@ -673,6 +677,11 @@ export interface MeetingTimelineProps {
     onApprove: (userId: string) => void;
     onDismiss: (userId: string) => void;
   };
+  /**
+   * Opens the board, for a question asked of Orb while it is closed. Omit
+   * where this viewer can't open it.
+   */
+  onOpenBoard?: () => void;
   onClose?: () => void;
   /** Inside a bottom sheet, which has its own title and close. */
   hideHeader?: boolean;
@@ -702,6 +711,7 @@ export function MeetingTimeline({
   orbTeaching,
   speech,
   hands,
+  onOpenBoard,
   onClose,
   hideHeader = false,
   embedded = false,
@@ -712,6 +722,8 @@ export function MeetingTimeline({
   const mentionId = React.useId();
   const hintId = React.useId();
   const [sendError, setSendError] = React.useState<string | null>(null);
+  // A question is waiting on the board: the offer to open it, then the wait.
+  const [boardAsk, setBoardAsk] = React.useState<"offered" | "opening" | null>(null);
   const ownKeyboardOffset = useIOSKeyboard();
   const keyboardOffset = embeddedInSheet ? 0 : ownKeyboardOffset;
   const streamRef = React.useRef<HTMLDivElement>(null);
@@ -814,7 +826,13 @@ export function MeetingTimeline({
   const saidLately = () => recentlySaid(speech.entries, Date.now());
   const askOrb = async (question: string, target: TimelineThread): Promise<string | null> => {
     if (!question) return withOrb ? "Write your question first." : `Write your question after @${ORB_NAME}.`;
-    if (!orb) return `${ORB_NAME} works on the board. Open the board, then ask again.`;
+    if (!orb) {
+      if (onOpenBoard) {
+        setBoardAsk("offered");
+        return `${ORB_NAME} needs the board for this. Your question is saved.`;
+      }
+      return `${ORB_NAME} works on the board. Open the board, then ask again.`;
+    }
     if (!orb.available) return `${ORB_NAME} isn't set up on this server.`;
     if (!orb.live) return `${ORB_NAME} can't be reached right now. Try again in a moment.`;
     const busy = orb.runs.find((run) => audienceKey(run.audience) === audienceKey(threadAudience(target, currentUserId)));
@@ -853,11 +871,33 @@ export function MeetingTimeline({
       }
     }
     setSendError(null);
+    setBoardAsk(null);
     setInputValue("");
     setTipTurn((turn) => turn + 1);
     setIdeaShift((shift) => shift + 1);
     inputRef.current?.focus();
   };
+
+  // Once the board is up and Orb with it, send the question that was waiting.
+  // Not `orb` alone: Orb arrives before it can be reached.
+  const submitRef = React.useRef(submit);
+  React.useEffect(() => {
+    submitRef.current = submit;
+  });
+  const orbReady = Boolean(orb && (orb.live || !orb.available));
+  React.useEffect(() => {
+    if (boardAsk !== "opening") return;
+    if (orbReady) {
+      setBoardAsk(null);
+      void submitRef.current();
+      return;
+    }
+    const timer = setTimeout(() => {
+      setBoardAsk(null);
+      setSendError(`${ORB_NAME} can't be reached right now. Try again in a moment.`);
+    }, BOARD_OPEN_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [boardAsk, orbReady]);
 
   // An answer seen in private can be put to the room, as yours.
   const shareWithRoom = async (text: string) => {
@@ -1162,6 +1202,7 @@ export function MeetingTimeline({
               onChange={(event) => {
                 setInputValue(event.target.value);
                 if (sendError) setSendError(null);
+                setBoardAsk(null);
               }}
               onKeyDown={(event) => {
                 if (offerOrb && event.key === "Tab") {
@@ -1198,7 +1239,21 @@ export function MeetingTimeline({
             </button>
           </div>
         </div>
-        {sendError ? (
+        {boardAsk ? (
+          <div role="status" {...stylex.props(styles.boardAsk)}>
+            <p {...stylex.props(styles.boardAskText)}>{sendError}</p>
+            <Button
+              size="sm"
+              disabled={boardAsk === "opening"}
+              onClick={() => {
+                setBoardAsk("opening");
+                onOpenBoard?.();
+              }}
+            >
+              {boardAsk === "opening" ? "Opening the board…" : "Open board and ask"}
+            </Button>
+          </div>
+        ) : sendError ? (
           <p role="status" {...stylex.props(styles.sendError)}>
             {sendError}
           </p>

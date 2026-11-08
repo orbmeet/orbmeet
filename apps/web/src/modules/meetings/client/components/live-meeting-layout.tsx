@@ -629,6 +629,7 @@ export function LiveMeetingLayout({
             }
           : undefined
       }
+      onOpenBoard={surfaceToolbar?.onShowBoard ?? surfaceToolbar?.onToggle}
       onClose={options.onClose}
       hideHeader={options.hideHeader}
       embedded={options.embedded}

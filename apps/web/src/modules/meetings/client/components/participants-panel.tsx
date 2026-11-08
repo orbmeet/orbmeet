@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Captions, Mic, MicOff, X, DoorOpen, Lock, LockOpen, MessageSquareLock, UserMinus, UserPlus } from "lucide-react";
+import { Captions, Mic, MicOff, MoreHorizontal, X, DoorOpen, Lock, LockOpen, MessageSquareLock, ShieldCheck, UserMinus, UserPlus } from "lucide-react";
 import { useSpeakingParticipants } from "@livekit/components-react";
 import { enter, progress } from "@orbmeet/ui/styles/animations";
 import { focus, layout, motion, pressable, row, stack } from "@orbmeet/ui/styles/atoms";
@@ -9,7 +9,7 @@ import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { text, weight } from "@orbmeet/ui/tokens/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
 import type { StyleXStyles } from "@stylexjs/stylex";
-import { Avatar, Button, Switch } from "@orbmeet/ui/react";
+import { Avatar, Button, MenuContent, MenuItem, MenuRoot, MenuTrigger, Switch } from "@orbmeet/ui/react";
 
 import { sidePanel } from "@/modules/meetings/client/meeting-styles";
 import type { MeetingRole } from "@/modules/meetings/contract/constants";
@@ -133,45 +133,18 @@ const styles = stylex.create({
     color: ink.muted,
   },
 
-  moderatorToggle: {
-    borderRadius: radii.field,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: neutral.n200,
-    backgroundColor: { default: surface.raised, [env.hoverable]: { default: surface.raised, ":hover": neutral.n100 } },
-    paddingInline: space.s2,
-    paddingBlock: space.s1,
-    fontSize: text.xs2,
-    fontWeight: weight.medium,
-    color: neutral.n600,
-    // `wait`: the update is in flight; the row is not refusing the click.
-    cursor: { default: "pointer", ":disabled": "wait" },
-    opacity: { default: 1, ":disabled": 0.5 },
-  },
-
-  /** Writing to someone privately: a quiet action, not a destructive one. */
-  messageAction: {
+  /** The way to what can be done to someone. */
+  moreAction: {
     display: "flex",
-    height: 24,
-    width: 24,
+    flexShrink: 0,
+    height: { default: 32, [env.touch]: 44 },
+    width: { default: 32, [env.touch]: 44 },
     alignItems: "center",
     justifyContent: "center",
     borderRadius: radii.field,
     backgroundColor: { default: "transparent", [env.hoverable]: { default: "transparent", ":hover": neutral.n100 } },
     color: { default: neutral.n500, [env.hoverable]: { default: neutral.n500, ":hover": neutral.n800 } },
     cursor: "pointer",
-  },
-  removeAction: {
-    display: "flex",
-    height: 24,
-    width: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radii.field,
-    backgroundColor: { default: "transparent", [env.hoverable]: { default: "transparent", ":hover": danger.d50 } },
-    color: { default: neutral.n500, [env.hoverable]: { default: neutral.n500, ":hover": danger.d600 } },
-    cursor: { default: "pointer", ":disabled": "wait" },
-    opacity: { default: 1, ":disabled": 0.5 },
   },
 
   micState: {
@@ -323,6 +296,8 @@ export function ParticipantsPanel({
             const isMicOn = p.isMicOn ?? true;
             const roleUpdatePending = moderatorUpdatePending?.has(p.id) ?? false;
             const canRemove = canRemoveParticipant(p, management);
+            const canMessage = canMessagePrivately(p, management);
+            const canModerate = canChangeModerator(p, management);
 
             return (
               <div
@@ -373,46 +348,6 @@ export function ParticipantsPanel({
                   ) : null}
                 </div>
 
-                {canMessagePrivately(p, management) && (
-                  <button
-                    type="button"
-                    onClick={() => onMessagePrivately?.({ id: p.id, name: p.name || "Participant" })}
-                    title="Message privately"
-                    aria-label={`Message ${p.name || "participant"} privately`}
-                    {...stylex.props(pressable.base, motion.tint, focus.ring, styles.messageAction)}
-                  >
-                    <MessageSquareLock size={14} />
-                  </button>
-                )}
-
-                {canChangeModerator(p, management) && (
-                  <button
-                    type="button"
-                    disabled={roleUpdatePending}
-                    onClick={() => onSetModerator?.(p.id, !isModerator)}
-                    {...stylex.props(pressable.base, motion.tint, focus.ring, styles.moderatorToggle)}
-                  >
-                    {roleUpdatePending
-                      ? "Updating…"
-                      : isModerator
-                        ? "Remove moderator"
-                        : "Make moderator"}
-                  </button>
-                )}
-
-                {canRemove && (
-                  <button
-                    type="button"
-                    disabled={removalPending?.has(p.id) ?? false}
-                    onClick={() => removal.requestRemoval(p)}
-                    title="Remove from meeting"
-                    aria-label={`Remove ${p.name || "participant"} from meeting`}
-                    {...stylex.props(pressable.base, motion.tint, focus.ring, styles.removeAction)}
-                  >
-                    <UserMinus size={14} />
-                  </button>
-                )}
-
                 {/* Mic status */}
                 <div
                   role="img"
@@ -425,6 +360,39 @@ export function ParticipantsPanel({
                     <MicOff size={12} />
                   )}
                 </div>
+
+                {/* What can be done to someone, folded away so their name has the row. */}
+                {canMessage || canModerate || canRemove ? (
+                  <MenuRoot>
+                    <MenuTrigger
+                      aria-label={`More actions for ${p.name || "participant"}`}
+                      title="More actions"
+                      {...stylex.props(pressable.base, motion.tint, focus.ring, styles.moreAction)}
+                    >
+                      <MoreHorizontal size={16} aria-hidden="true" />
+                    </MenuTrigger>
+                    <MenuContent sideOffset={4}>
+                      {canMessage ? (
+                        <MenuItem onClick={() => onMessagePrivately?.({ id: p.id, name: p.name || "Participant" })}>
+                          <MessageSquareLock size={14} aria-hidden="true" />
+                          Message privately
+                        </MenuItem>
+                      ) : null}
+                      {canModerate ? (
+                        <MenuItem disabled={roleUpdatePending} onClick={() => onSetModerator?.(p.id, !isModerator)}>
+                          <ShieldCheck size={14} aria-hidden="true" />
+                          {roleUpdatePending ? "Updating…" : isModerator ? "Remove moderator" : "Make moderator"}
+                        </MenuItem>
+                      ) : null}
+                      {canRemove ? (
+                        <MenuItem disabled={removalPending?.has(p.id) ?? false} onClick={() => removal.requestRemoval(p)}>
+                          <UserMinus size={14} aria-hidden="true" />
+                          Remove from meeting
+                        </MenuItem>
+                      ) : null}
+                    </MenuContent>
+                  </MenuRoot>
+                ) : null}
               </div>
             );
           })}

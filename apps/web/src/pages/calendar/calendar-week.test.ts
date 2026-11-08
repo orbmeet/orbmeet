@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { openingHour, placeDay, startOfWeek, toDateParam, fromDateParam } from "./calendar-week";
+import { eventsAboveHour, openingHour, placeDay, startOfWeek, toDateParam, fromDateParam } from "./calendar-week";
 
 const day = new Date(2026, 9, 15);
 const at = (h: number, m = 0) => new Date(2026, 9, 15, h, m);
@@ -40,6 +40,17 @@ describe("placeDay", () => {
     expect(short.toMinute - short.fromMinute).toBe(20);
     const [late] = placeDay([{ start: at(23, 30), end: new Date(2026, 9, 16, 1) }], day);
     expect(late.toMinute).toBe(24 * 60);
+  });
+});
+
+describe("eventsAboveHour", () => {
+  it("finds what ended before the hour on that day, earliest first", () => {
+    const late = { start: at(5), end: at(6) };
+    const early = { start: at(1), end: at(1, 30) };
+    const crossing = { start: at(6, 30), end: at(8) };
+    const after = { start: at(9), end: at(10) };
+    const yesterday = { start: new Date(2026, 9, 14, 3), end: new Date(2026, 9, 14, 4) };
+    expect(eventsAboveHour([late, crossing, after, yesterday, early], day, 7)).toEqual([early, late]);
   });
 });
 

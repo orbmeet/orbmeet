@@ -34,6 +34,8 @@ const routeApi = getRouteApi("/handoff/$meetingId");
 
 /** How often to look for the Summary while the meeting's summary job owes one. */
 const SUMMARY_POLL_MS = 3_000;
+/** How often to check whether a meeting you left has ended yet. */
+const ACTIVE_POLL_MS = 10_000;
 
 type SummaryData = {
   id: string;
@@ -153,6 +155,7 @@ const styles = stylex.create({
     paddingBlock: space.s16,
   },
   bannerMark: { marginBottom: space.s6 },
+  rejoin: { marginTop: space.s5, textDecorationLine: "none" },
   bannerBody: {
     position: "relative",
     display: "flex",
@@ -263,7 +266,7 @@ const styles = stylex.create({
 
 export function PublicMeetingSummaryPage() {
   const { meetingId } = routeApi.useParams();
-  const { admissionId } = routeApi.useSearch();
+  const { admissionId, code } = routeApi.useSearch();
   const queryClient = useQueryClient();
   const hasAccessParams = Boolean(admissionId);
 
@@ -276,6 +279,8 @@ export function PublicMeetingSummaryPage() {
     ...summaryOptions,
     enabled: hasAccessParams,
     refetchInterval: (query) => {
+      // The page promises the outputs once the meeting ends, so it has to notice.
+      if (query.state.data?.status === "active") return ACTIVE_POLL_MS;
       // The meeting's summary job writes the Summary; watch for it.
       if (query.state.data?.status === "pending") return SUMMARY_POLL_MS;
       const createdAt = query.state.data?.summary?.createdAt;
@@ -466,11 +471,17 @@ export function PublicMeetingSummaryPage() {
               Meeting in progress
             </p>
             <h1 {...stylex.props(styles.bannerTitle)}>
-              You left the Meeting
+              You left the meeting
             </h1>
             <p {...stylex.props(styles.bannerDetail)}>
-              The Meeting is still going. This page will show its shared outputs after it ends.
+              It’s still going. Keep this page open and the summary and board appear here when it ends.
             </p>
+            {code ? (
+              // A full load, like every way into a room: the room is its own entry.
+              <a href={`/${code}`} {...stylex.props(...buttonStyles({ variant: "primary" }), styles.rejoin)}>
+                Rejoin
+              </a>
+            ) : null}
           </div>
         </div>
         {whiteboardSection}
@@ -493,7 +504,7 @@ export function PublicMeetingSummaryPage() {
               Wrapping up the meeting
             </h1>
             <p {...stylex.props(styles.bannerDetail)}>
-              The Meeting has ended. The Transcript is syncing to prepare your guest-safe Summary.
+              The meeting has ended. Orb is preparing your summary.
             </p>
             <p {...stylex.props(styles.wrapUpRow)}>This usually takes a few seconds.</p>
           </div>

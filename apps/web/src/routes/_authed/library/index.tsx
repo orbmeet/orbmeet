@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { myMeetingsQueryOptions } from "@/app/query-client/queries/meetings";
 import { oneOf, optionalString } from "@/lib/search-params";
+import { createPageHead, SITE_NAME } from "@/lib/seo";
 import { lazy } from "react";
 
 export type LibraryType = "meetings" | "boards" | "recordings";
@@ -78,5 +79,11 @@ export const Route = createFileRoute("/_authed/library/")({
       void context.queryClient.prefetchInfiniteQuery(myMeetingsQueryOptions(toLibraryMeetingsInput(deps)));
     }
   },
+  head: () => createPageHead({
+    title: `Library — ${SITE_NAME}`,
+    description: "Every past meeting, board and recording.",
+    noindex: true,
+    canonical: false,
+  }),
   component: LibraryPage,
 });
