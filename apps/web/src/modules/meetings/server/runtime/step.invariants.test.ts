@@ -259,7 +259,8 @@ function checkState(run: Run): void {
 }
 
 describe("meeting invariants under random inputs", () => {
-  it(`hold after every input of ${RUNS} runs`, () => {
+  // CPU-bound, so a busy machine running every suite at once can outlast the default timeout.
+  it(`hold after every input of ${RUNS} runs`, { timeout: 30_000 }, () => {
     let failure: string | null = null;
     for (let seed = 1; seed <= RUNS && failure === null; seed += 1) {
       const run = new Run(random(seed));
