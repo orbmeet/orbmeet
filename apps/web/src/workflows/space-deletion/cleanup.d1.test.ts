@@ -5,6 +5,7 @@ import {
   meetingArtifacts,
   meetings,
   meetingLinks,
+  spaceDefaultMeetingLinks,
   organizationMembers,
   organizations,
   spaceMembers,
@@ -173,6 +174,25 @@ describe("archived Space deletion", () => {
     await expect(
       db.query.meetingLinks.findFirst({ where: { id: "room_1" } }),
     ).resolves.toMatchObject({ archivedAt });
+  });
+
+  it("closes the Space's default link along with the Space", async () => {
+    await seedSpace();
+    await db.insert(spaceDefaultMeetingLinks).values({
+      spaceId: "space_1",
+      spaceKind: "shared",
+      meetingLinkId: "room_1",
+      linkReusePolicy: "reusable",
+    });
+    const archivedAt = new Date("2026-06-02T00:00:00.000Z");
+
+    await expect(requestSpaceDeletion(appDb(), "space_1", "owner", archivedAt)).resolves.toBe(true);
+    await expect(
+      db.query.meetingLinks.findFirst({ where: { id: "room_1" } }),
+    ).resolves.toMatchObject({ archivedAt });
+    await expect(
+      db.query.spaceDefaultMeetingLinks.findFirst({ where: { spaceId: "space_1" } }),
+    ).resolves.toBeUndefined();
   });
 
   it("does not let a Space admin perform an Organization governance deletion", async () => {

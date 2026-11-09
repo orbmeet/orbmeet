@@ -1,7 +1,7 @@
 import "@tanstack/react-start/server-only";
 
 import type { Database } from "@orbmeet/db";
-import { meetingLinks, meetingScheduleNotifications, meetingSchedules, organizations, spaces } from "@orbmeet/db/schema";
+import { meetingLinks, meetingScheduleNotifications, meetingSchedules, organizations, spaceDefaultMeetingLinks, spaces } from "@orbmeet/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { getRunChanges } from "@/platform/database/db-utils";
 
@@ -32,6 +32,21 @@ export async function requestSpaceDeletion(
                   and authority.user_id = ${userId}
                   and authority.role = 'admin'
               )
+            )`,
+        ),
+      ),
+    // A Space's default link must stay active for as long as it is the default
+    // (a database trigger enforces it), so it stops being one first. Archiving
+    // the links without this failed the whole deletion.
+    db
+      .delete(spaceDefaultMeetingLinks)
+      .where(
+        and(
+          eq(spaceDefaultMeetingLinks.spaceId, spaceId),
+          sql`exists (
+              select 1 from ${spaces}
+              where ${spaces.id} = ${spaceId}
+                and ${spaces.archivedAt} is not null
             )`,
         ),
       ),
