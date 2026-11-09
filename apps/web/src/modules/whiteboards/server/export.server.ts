@@ -153,15 +153,19 @@ export async function getWhiteboardSnapshotImpl({
   data: HistoryRequestInput;
   context: AuthFnContext;
 }) {
-  await assertExportAccess(db, data.meetingId, user.id);
-  const [captured] = await findCapturedWhiteboardRevisions(db, data.meetingId, data.whiteboardId);
+  // Nothing leaves this function until the access check has passed; waiting
+  // for it first would only add a round trip to D1.
+  const [, [captured]] = await Promise.all([
+    assertExportAccess(db, data.meetingId, user.id),
+    findCapturedWhiteboardRevisions(db, data.meetingId, data.whiteboardId),
+  ]);
   if (!captured) return { snapshot: null, whiteboard: null, pageIds: [] };
-  const snapshot = await readStoredSnapshot<WhiteboardSnapshotExport>(env, captured.r2Key);
+  const [snapshot, handoutPages] = await Promise.all([
+    readStoredSnapshot<WhiteboardSnapshotExport>(env, captured.r2Key),
+    findHandoutPages(db, [captured.meetingWhiteboardId]),
+  ]);
   if (!snapshot) return { snapshot: null, whiteboard: null, pageIds: [] };
-  const recordedPageIds =
-    (await findHandoutPages(db, [captured.meetingWhiteboardId])).get(
-      captured.meetingWhiteboardId,
-    ) ?? [];
+  const recordedPageIds = handoutPages.get(captured.meetingWhiteboardId) ?? [];
   const pageIds = filterCapturedHandoutPageIds(snapshot, recordedPageIds);
   return {
     snapshot,
@@ -231,17 +235,19 @@ export async function getMeetingWhiteboardHistoryImpl({
   data: HistoryRequestInput;
   context: AuthFnContext;
 }) {
-  await assertExportAccess(db, data.meetingId, user.id);
-  const captured = await findCapturedWhiteboardRevisions(db, data.meetingId);
+  const [, captured, pdf] = await Promise.all([
+    assertExportAccess(db, data.meetingId, user.id),
+    findCapturedWhiteboardRevisions(db, data.meetingId),
+    db.query.meetingArtifacts.findFirst({
+      where: {
+        RAW: (row) => and(eq(row.meetingId, data.meetingId), eq(row.type, "whiteboard_pdf"))!,
+      },
+      columns: { id: true },
+    }),
+  ]);
   if (captured.length === 0) {
     return { whiteboard: null, whiteboards: [], hasCapturedWhiteboards: false };
   }
-  const pdf = await db.query.meetingArtifacts.findFirst({
-    where: {
-      RAW: (row) => and(eq(row.meetingId, data.meetingId), eq(row.type, "whiteboard_pdf"))!,
-    },
-    columns: { id: true },
-  });
   return {
     whiteboard: {
       ...captured[0],

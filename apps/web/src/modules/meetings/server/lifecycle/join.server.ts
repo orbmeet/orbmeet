@@ -4,6 +4,7 @@
  * DB/Drizzle imports and stays safe to include in client route graphs.
  */
 
+import type { Database } from "@orbmeet/db";
 import { meetings, meetingLinks, spaceDefaultMeetingLinks, spaces } from "@orbmeet/db/schema";
 import { and, eq } from "drizzle-orm";
 import type * as v from "valibot";
@@ -46,6 +47,19 @@ async function newGuestSecret(authSecret: string, meetingId: string, firstJoinKe
   return firstJoinKey
     ? hmacSha256Hex(authSecret, `meeting-guest-first-join:${meetingId}:${firstJoinKey}`)
     : crypto.randomUUID();
+}
+
+/** Permanent meeting links are stable entrances with no rolling expiry. */
+async function renewPermanentLink(
+  db: Database,
+  meetingLink: { id: string; reusePolicy: "reusable" | "one_time" },
+): Promise<void> {
+  if (meetingLink.reusePolicy === "one_time") return;
+  const renewedAt = new Date();
+  await db
+    .update(meetingLinks)
+    .set({ lastUsedAt: renewedAt, expiresAt: null, updatedAt: renewedAt })
+    .where(eq(meetingLinks.id, meetingLink.id));
 }
 
 /** Join through a meeting link and return LiveKit access for its open meeting. */
@@ -207,27 +221,23 @@ export async function joinMeetingImpl({
 
     const { participant } = reply;
     if (guestSecret && reply.newGuestAdmission) setGuestCookie(participant.admissionId, guestSecret, cookieOptions);
-    if (meetingLink.reusePolicy !== "one_time") {
-      // Permanent meeting links are stable entrances with no rolling expiry.
-      const renewedAt = new Date();
-      await db
-        .update(meetingLinks)
-        .set({ lastUsedAt: renewedAt, expiresAt: null, updatedAt: renewedAt })
-        .where(eq(meetingLinks.id, meetingLink.id));
-    }
-
-    const whiteboardDocument = await findMeetingWhiteboardDocument(db, meeting.id);
     const grantPrincipal = participant.userId
       ? { type: "user" as const, id: participant.userId }
       : { type: "guest_admission" as const, id: participant.admissionId };
     // An edit grant outlives a reconnect, so the join token must carry it like
     // every other mint does. A role-only token here disagreed with the room's
     // authority check, which answered "refresh" to every attempt it made.
-    const { capabilities: participantCapabilities } = await resolveWhiteboardCapabilities(db, {
-      meetingId: meeting.id,
-      principal: grantPrincipal,
-      base: whiteboardCapabilitiesForMeetingRole(participant.role),
-    });
+    //
+    // These three do not depend on one another, and each is a round trip to D1.
+    const [, whiteboardDocument, { capabilities: participantCapabilities }] = await Promise.all([
+      renewPermanentLink(db, meetingLink),
+      findMeetingWhiteboardDocument(db, meeting.id),
+      resolveWhiteboardCapabilities(db, {
+        meetingId: meeting.id,
+        principal: grantPrincipal,
+        base: whiteboardCapabilitiesForMeetingRole(participant.role),
+      }),
+    ]);
     const surface = await buildWhiteboardJoinAccessExtras(env, {
       meetingId: meeting.id,
       mediaNodeId: participant.nodeId,

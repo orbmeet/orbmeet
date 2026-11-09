@@ -31,7 +31,8 @@ describe("rendering", () => {
     expect(env(withKey["compose.env"]).WHITEBOARD_CONFIG).not.toBe(env(without["compose.env"]).WHITEBOARD_CONFIG);
   });
 
-  it("writes private files, the same each time", () => {
+  // Renders every node twice, which outruns the default timeout under `pnpm test`'s parallel load.
+  it("writes private files, the same each time", { timeout: 30_000 }, () => {
     const dir = mkdtempSync(join(tmpdir(), "ops-render-"));
     const inv = loadInventory(INVENTORY);
     const read = () => Object.fromEntries(readdirSync(dir, { recursive: true, withFileTypes: true })
