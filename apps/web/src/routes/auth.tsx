@@ -1,5 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { sanitizeInternalRedirect } from "@/modules/identity/contract/safe-redirect";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { sessionQueryOptions } from "@/app/query-client/queries/session";
+import { resolveAuthRedirect, sanitizeInternalRedirect } from "@/modules/identity/contract/safe-redirect";
 import { oneOf, optionalString } from "@/lib/search-params";
 import { createPageHead } from "@/lib/seo";
 import { lazy } from "react";
@@ -13,6 +14,14 @@ export const Route = createFileRoute("/auth")({
     error: optionalString(raw?.error),
   }),
   ssr: false,
+  // Already signed in: there is nothing to do here but go where this was heading.
+  beforeLoad: async ({ context, search }) => {
+    if (search.error) return;
+    const session = await context.queryClient
+      .fetchQuery({ ...sessionQueryOptions(), networkMode: "always" })
+      .catch(() => null);
+    if (session) throw redirect({ href: resolveAuthRedirect(search.redirect), replace: true });
+  },
   head: () =>
     createPageHead({
       title: "Sign In — Orb Meet",

@@ -218,6 +218,7 @@ const PUBLISHED_SERVER_FILES: Record<string, readonly string[]> = {
     "server/access/guest-cookie.server",
     "server/access/resource-access",
     "server/connection/state",
+    "server/history/meeting-list-enrichment",
     "server/history/summary-generation-policy",
     "server/room/connection-queries",
     "server/runtime/client.server",

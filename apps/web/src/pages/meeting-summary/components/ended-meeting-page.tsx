@@ -1,6 +1,8 @@
 import { useCallback, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { sessionQueryOptions } from "@/app/query-client/queries/session";
+import { meetingDisplayTitle } from "@/modules/meetings/client/components/meeting-format";
 import { meetingAttendanceQueryOptions } from "@/app/query-client/queries/meetings";
 import { formatMeetingLength, formatTimeRange } from "@/modules/meetings/client/components/meeting-format";
 import { FollowUpList, type FollowUpItem } from "@/modules/transcripts/client/follow-up-list";
@@ -223,6 +225,7 @@ export function EndedMeetingPage({
   backSpaceSlug?: string;
 }) {
   const queryClient = useQueryClient();
+  const viewerName = useQuery(sessionQueryOptions()).data?.user.name ?? undefined;
   const [seek, setSeek] = useState<RecordingSeek | null>(null);
   const {
     meeting,
@@ -285,9 +288,7 @@ export function EndedMeetingPage({
   const recording = meeting.recording ?? null;
   const startedAt = meeting.startedAt ? new Date(meeting.startedAt) : null;
   const endedAt = meeting.endedAt ? new Date(meeting.endedAt) : null;
-  const title =
-    meeting.title ||
-    (endedAt ? `Meeting on ${endedAt.toLocaleDateString([], { month: "long", day: "numeric" })}` : "Meeting");
+  const title = meetingDisplayTitle(meeting.title, meeting.participantNames, viewerName);
   // Each moment, with where it falls in the recording: a recording starts
   // when someone presses it, so its clock is not the meeting's.
   const moments = (existingSummary?.moments ?? []).map((moment) => ({

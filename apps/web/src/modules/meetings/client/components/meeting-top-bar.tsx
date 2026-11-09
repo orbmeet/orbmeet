@@ -6,6 +6,12 @@ import { space } from "@orbmeet/ui/tokens/space.stylex";
 import * as stylex from "@stylexjs/stylex";
 import type { ReactNode } from "react";
 
+/**
+ * A portrait tablet cannot hold the room's name and all its controls on one
+ * line: the name went under the controls, and the copy-link button with it.
+ */
+const TWO_ROWS = "@media (max-width: 899px)";
+
 const styles = stylex.create({
   /**
    * The page itself, not a band laid over it: each zone is its own white
@@ -26,7 +32,7 @@ const styles = stylex.create({
     // DESKTOP_TOP_BAR_HEIGHT_PX in chrome.ts — the band the stage reserves.
     // StyleX compiles this file statically, so the number is spelled out here
     // and pinned to that constant by meeting-top-bar.test.ts.
-    height: 60,
+    height: { default: 60, [TWO_ROWS]: 108 },
     boxSizing: "border-box",
     paddingTop: space.s2,
     paddingInline: space.s3,
@@ -38,11 +44,16 @@ const styles = stylex.create({
    */
   card: {
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) auto minmax(max-content, 1fr)",
+    gridTemplateColumns: {
+      default: "minmax(0, 1fr) auto minmax(max-content, 1fr)",
+      [TWO_ROWS]: "auto minmax(max-content, 1fr)",
+    },
     height: "100%",
     boxSizing: "border-box",
     alignItems: "center",
+    alignContent: "center",
     columnGap: space.s4,
+    rowGap: space.s1,
     paddingInlineStart: space.s2_5,
     paddingInlineEnd: space.s2,
     borderRadius: radii.card,
@@ -50,6 +61,7 @@ const styles = stylex.create({
     boxShadow: shadows.card,
   },
   lead: {
+    gridColumn: { default: "auto", [TWO_ROWS]: "1 / -1" },
     display: "flex",
     minWidth: 0,
     overflow: "hidden",

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Avatar, DotList } from "@orbmeet/ui/react";
 import { focus, layout, motion } from "@orbmeet/ui/styles/atoms";
 import { accent, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
@@ -98,7 +99,16 @@ function Outputs({ meeting }: { meeting: MeetingRowData }) {
  * Library, a Space: what the board looked like, what it was called, when and
  * how long, where, what came out of it, and who was there.
  */
-export function MeetingRow({ meeting, viewerName }: { meeting: MeetingRowData; viewerName?: string }) {
+export function MeetingRow({
+  meeting,
+  viewerName,
+  renderTitle,
+}: {
+  meeting: MeetingRowData;
+  viewerName?: string;
+  /** The title as drawn, for a search to mark what matched. */
+  renderTitle?: (title: string) => ReactNode;
+}) {
   const title = meetingDisplayTitle(meeting.title, meeting.participantNames, viewerName);
   const length = formatMeetingLength(meeting.startedAt, meeting.endedAt);
   const outputs = [meeting.hasSummary && "summary", meeting.hasWhiteboard && "board", meeting.hasRecording && "recording"]
@@ -122,7 +132,7 @@ export function MeetingRow({ meeting, viewerName }: { meeting: MeetingRowData; v
         )}
       </span>
       <span {...stylex.props(styles.body)}>
-        <span {...stylex.props(styles.title, layout.truncate)}>{title}</span>
+        <span {...stylex.props(styles.title, layout.truncate)}>{renderTitle ? renderTitle(title) : title}</span>
         <DotList sx={styles.meta}>
           {meeting.startedAt ? (
             <span {...stylex.props(styles.time)}>{formatTimeRange(meeting.startedAt, meeting.endedAt)}</span>

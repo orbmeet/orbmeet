@@ -11,6 +11,9 @@ import { BrandMark } from "@orbmeet/ui/react";
 import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
+/** One row, with the controls leaving the identity too little of it. */
+const SINGLE_ROW_TIGHT = "@media (min-width: 900px) and (max-width: 1179px)";
+
 const styles = stylex.create({
   /**
    * The leading half of the top bar: the room's name over one live line —
@@ -77,9 +80,9 @@ const styles = stylex.create({
   locked: { fontWeight: weight.medium, color: warning.w800 },
   transcribing: { fontWeight: weight.medium, color: live.l700 },
   /** The word gives way on a narrow bar; the padlock stays. */
-  lockedWord: { display: { default: "none", [bp.lg]: "inline" } },
+  lockedWord: { display: { default: "inline", [SINGLE_ROW_TIGHT]: "none" } },
   /** Likewise Orb's mark: a tablet in portrait clipped the word to "Transcrib". */
-  transcribingWord: { display: { default: "none", [bp.lg]: "inline" } },
+  transcribingWord: { display: { default: "inline", [SINGLE_ROW_TIGHT]: "none" } },
   recordingDot: { height: 6, width: 6, flexShrink: 0, borderRadius: radii.pill, backgroundColor: "currentColor" },
 });
 import type { MeetingClockSync } from "@/modules/meetings/client/meeting-clock";

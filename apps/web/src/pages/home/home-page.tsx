@@ -62,7 +62,7 @@ const styles = stylex.create({
    * already the frame: a box around them read as a room inside the room.
    */
   launch: { display: "flex", flexDirection: "column", gap: space.s2, flexGrow: 1, flexBasis: 420, maxWidth: 560 },
-  actions: { display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: { default: "flex-start", [bp.lg]: "flex-end" }, gap: space.s2 },
+  actions: { display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: { default: "flex-start", [bp.xl]: "flex-end" }, gap: space.s2 },
   start: {
     display: "inline-flex",
     alignItems: "center",

@@ -20,7 +20,7 @@ import { readStoredSnapshot } from "@/modules/whiteboards/server/sync-commands.s
 import type { WhiteboardSnapshotExport } from "@/modules/whiteboards/server/export.server";
 import type { ParticipantHandoffInput } from "./participant-handoff.functions";
 import type { ParticipantHandoffWhiteboardInput } from "./participant-handoff.functions";
-import { summaryStateOf } from "./summary-state";
+import { summaryStateOf, type SummarySkipReason, type SummaryState } from "./summary-state";
 
 async function listParticipantHandoffWhiteboards(db: Database, meetingId: string) {
   const rows = await db
@@ -101,6 +101,17 @@ export async function assertParticipantHandoffAccess(
   if (!(await verifyGuestSecret(admission.guestSecretHash, guestSecret))) throw Errors.FORBIDDEN();
 }
 
+/** How long after a meeting ends its last transcript lines may still be arriving. */
+const NO_SPEECH_GRACE_MS = 60_000;
+
+/** Why a guest gets no Summary, so the page can say so instead of "try again". */
+export type HandoffUnavailableReason = "no_speech" | SummarySkipReason | "failed";
+
+function unavailableReason(state: SummaryState, nobodySpoke: boolean): HandoffUnavailableReason {
+  if (nobodySpoke) return "no_speech";
+  return state.status === "skipped" ? state.reason : "failed";
+}
+
 export async function getParticipantHandoffSummaryImpl({
   data,
   context: { env, db, user, clientIP },
@@ -118,6 +129,7 @@ export async function getParticipantHandoffSummaryImpl({
       retainUntil: true,
       summaryStatus: true,
       summarySkipReason: true,
+      endedAt: true,
     },
   });
   if (!meeting) throw Errors.NOT_FOUND("Meeting");
@@ -149,7 +161,8 @@ export async function getParticipantHandoffSummaryImpl({
   // summary, so a stale row reads exactly as no row: whether one is still
   // coming depends only on the meeting's Summary status. Deciding the stale
   // case separately answered "pending" after a final outcome, forever.
-  const current = row && summaryMatchesTranscriptSnapshot(row, await getTranscriptSnapshot(db, meeting.id))
+  const transcript = await getTranscriptSnapshot(db, meeting.id);
+  const current = row && summaryMatchesTranscriptSnapshot(row, transcript)
     ? row
     : null;
   if (!current) {
@@ -159,11 +172,21 @@ export async function getParticipantHandoffSummaryImpl({
       summarySkipReason: meeting.summarySkipReason,
       configured: isSummaryGenerationConfigured(env),
     });
+    const retainUntil = meeting.retainUntil?.toISOString() ?? null;
+    // With no transcript there is nothing for the job to write, however long
+    // it takes to settle. The grace is for final lines still being ingested.
+    const nobodySpoke = transcript.segmentCount === 0
+      && (state.status !== "pending"
+        || Date.now() - (meeting.endedAt?.getTime() ?? 0) >= NO_SPEECH_GRACE_MS);
+    if (state.status === "pending" && !nobodySpoke) {
+      return { status: "pending" as const, summary: null, whiteboards, retainUntil };
+    }
     return {
-      status: state.status === "pending" ? ("pending" as const) : ("unavailable" as const),
+      status: "unavailable" as const,
+      reason: unavailableReason(state, nobodySpoke),
       summary: null,
       whiteboards,
-      retainUntil: meeting.retainUntil?.toISOString() ?? null,
+      retainUntil,
     };
   }
 

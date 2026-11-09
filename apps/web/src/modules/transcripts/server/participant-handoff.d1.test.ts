@@ -202,6 +202,35 @@ describe("participant handoff summary", () => {
     await expect(read()).resolves.toMatchObject({ status: "pending", summary: null });
   });
 
+  async function endWithoutSpeech(summaryStatus: "pending" | "settled", endedMsAgo: number) {
+    await insertHostAndMeeting("meeting_1");
+    await db
+      .update(meetings)
+      .set({
+        status: "ended",
+        summaryStatus,
+        transcriptSegmentCount: 0,
+        startedAt: new Date(Date.now() - endedMsAgo - 60_000),
+        endedAt: new Date(Date.now() - endedMsAgo),
+      })
+      .where(eq(meetings.id, "meeting_1"));
+  }
+
+  it("tells a guest nobody spoke rather than leaving the Summary pending", async () => {
+    await endWithoutSpeech("pending", 5 * 60_000);
+    await expect(read()).resolves.toMatchObject({ status: "unavailable", reason: "no_speech", summary: null });
+  });
+
+  it("stays pending just after the end, while the last lines may still arrive", async () => {
+    await endWithoutSpeech("pending", 1_000);
+    await expect(read()).resolves.toMatchObject({ status: "pending", summary: null });
+  });
+
+  it("reports a settled meeting with no transcript as nobody speaking", async () => {
+    await endWithoutSpeech("settled", 1_000);
+    await expect(read()).resolves.toMatchObject({ status: "unavailable", reason: "no_speech" });
+  });
+
   it("is ready when the row summarizes the transcript as it stands", async () => {
     await seed("settled", 60);
     await expect(read()).resolves.toMatchObject({ status: "ready", summary: { id: "summary_1" } });

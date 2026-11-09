@@ -7,6 +7,6 @@ describe("MeetingTopBar", () => {
     // StyleX needs a literal, so the bar's height cannot import the constant.
     // If the two drift, content slides under the bar or a strip opens above it.
     const source = readFileSync(new URL("./meeting-top-bar.tsx", import.meta.url), "utf8");
-    expect(source).toContain(`height: ${DESKTOP_TOP_BAR_HEIGHT_PX},`);
+    expect(source).toContain(`height: { default: ${DESKTOP_TOP_BAR_HEIGHT_PX},`);
   });
 });

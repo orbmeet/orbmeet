@@ -6,7 +6,7 @@ import { myMeetingsQueryOptions, myUpcomingMeetingSchedulesQueryOptions } from "
 import { useAuthenticatedSession } from "@/app/query-client/use-authenticated-session";
 import { meetingDisplayTitle } from "@/modules/meetings/client/components/meeting-format";
 import { UpcomingMeetings } from "@/modules/scheduling/client/upcoming-meetings";
-import { ScheduleMeetingDialog, type UpcomingMeetingSchedule } from "@/modules/scheduling/client/schedule-meeting-dialog";
+import { CancelScheduledMeetingDialog, ScheduleMeetingDialog, type UpcomingMeetingSchedule } from "@/modules/scheduling/client/schedule-meeting-dialog";
 import { useNow } from "@/lib/hooks/use-now";
 import { useResponsive } from "@/lib/hooks/use-responsive";
 import { BottomSheet, Button } from "@orbmeet/ui/react";
@@ -29,6 +29,8 @@ const HOUR = 52;
 const FIRST_VISIBLE_HOUR = 7;
 /** The hour labels' column, in px. */
 const GUTTER = 56;
+/** The 236px rail, the page's padding, a 480px week and a 260px panel need this much. */
+const DETAILS_BESIDE_WEEK_PX = 1140;
 /**
  * The least an event is drawn as, in minutes of grid. A finger needs a taller
  * block to hit than a pointer does; it is reserved in the layout too, so a
@@ -131,6 +133,8 @@ const styles = stylex.create({
     maxWidth: { default: "none", [bp.lg]: 340 },
     minWidth: 0,
     boxSizing: "border-box",
+    // Too narrow to sit beside the week, and it would wrap off the fitted page.
+    display: { default: "block", "@media (min-width: 1024px) and (max-width: 1139px)": "none" },
     padding: space.s6,
     borderRadius: 18,
     backgroundColor: surface.sunken,
@@ -420,6 +424,7 @@ function DayColumn({
             key={item.id}
             type="button"
             aria-pressed={selected}
+            title={`${item.title}, ${shortTime(item.start)}`}
             onClick={() => onSelect(item.id)}
             {...stylex.props(styles.event, eventStyle[item.kind], selected && styles.selected, block, motion.tint, focus.ring)}
           >
@@ -454,13 +459,14 @@ export function CalendarPage() {
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const [scheduling, setScheduling] = useState<{ startsAt?: string; schedule?: UpcomingMeetingSchedule } | null>(null);
+  const [canceling, setCanceling] = useState<UpcomingMeetingSchedule | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  // Below the width where the details sit beside the week they are under 24
+  // Below the width where the details fit beside the week they are under 24
   // hours of grid, so a tap opens them over it instead.
   const [sheetOpen, setSheetOpen] = useState(false);
   const pickEvent = (id: string) => {
     setSelectedId(id);
-    if (!window.matchMedia("(min-width: 1024px)").matches) setSheetOpen(true);
+    if (!window.matchMedia(`(min-width: ${DETAILS_BESIDE_WEEK_PX}px)`).matches) setSheetOpen(true);
   };
   // Nothing picked yet: what is on now, else the next thing still to come.
   const selected =
@@ -504,9 +510,9 @@ export function CalendarPage() {
     <div {...stylex.props(styles.page, view !== "agenda" && styles.pageFitsWindow, enter.fadeUp)}>
       <div {...stylex.props(styles.bar)}>
         <h1 {...stylex.props(styles.title)}>
-          {anchor.toLocaleDateString([], { month: "long", year: "numeric" })}
+          {view === "agenda" ? "Agenda" : anchor.toLocaleDateString([], { month: "long", year: "numeric" })}
         </h1>
-        <div {...stylex.props(styles.nav)}>
+        {view === "agenda" ? null : <div {...stylex.props(styles.nav)}>
           <button type="button" aria-label={view === "day" ? "Previous day" : "Previous week"} onClick={() => go(addDays(anchor, -step))} {...stylex.props(styles.navButton, motion.tint, focus.ring)}>
             <ChevronLeft size={16} aria-hidden="true" />
           </button>
@@ -516,7 +522,7 @@ export function CalendarPage() {
           <button type="button" aria-label={view === "day" ? "Next day" : "Next week"} onClick={() => go(addDays(anchor, step))} {...stylex.props(styles.navButton, motion.tint, focus.ring)}>
             <ChevronRight size={16} aria-hidden="true" />
           </button>
-        </div>
+        </div>}
         <span {...stylex.props(styles.zone)}>Times in {zone}</span>
         <span {...stylex.props(styles.spacer)} />
         <nav aria-label="Calendar view" {...stylex.props(styles.views)}>
@@ -554,7 +560,7 @@ export function CalendarPage() {
       ) : null}
 
       {view === "agenda" ? (
-        <UpcomingMeetings onSchedule={() => setScheduling({})} scheduleActionLabel="Schedule" />
+        <UpcomingMeetings onSchedule={() => setScheduling({})} />
       ) : (
         <div {...stylex.props(styles.split, styles.splitFills)}>
         <div ref={scroller} {...stylex.props(styles.scroller)}>
@@ -590,7 +596,7 @@ export function CalendarPage() {
         </div>
         <aside aria-label="Selected meeting" {...stylex.props(styles.detail)}>
           {selected ? (
-            <EventDetail event={selected} now={now} onEditSchedule={(schedule) => setScheduling({ schedule })} />
+            <EventDetail event={selected} now={now} onEditSchedule={(schedule) => setScheduling({ schedule })} onCancelSchedule={setCanceling} />
           ) : (
             <p {...stylex.props(styles.detailEmpty)}>Pick a meeting to see what it left, or what it picks up from last time.</p>
           )}
@@ -608,6 +614,10 @@ export function CalendarPage() {
                 setSheetOpen(false);
                 setScheduling({ schedule });
               }}
+              onCancelSchedule={(schedule) => {
+                setSheetOpen(false);
+                setCanceling(schedule);
+              }}
             />
           </div>
         </BottomSheet>
@@ -618,6 +628,11 @@ export function CalendarPage() {
         onOpenChange={(open) => !open && setScheduling(null)}
         schedule={scheduling?.schedule ?? null}
         initialStartsAt={scheduling?.startsAt}
+      />
+      <CancelScheduledMeetingDialog
+        schedule={canceling}
+        open={canceling !== null}
+        onOpenChange={(open) => !open && setCanceling(null)}
       />
     </div>
   );

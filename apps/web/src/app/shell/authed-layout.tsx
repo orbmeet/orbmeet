@@ -293,7 +293,7 @@ function AuthedLayoutContent() {
             button, so the shell's would only take rows from the board. */}
         {onCanvas ? null : (
           <div {...stylex.props(styles.mobileHeader)}>
-            <Link to="/" {...stylex.props(styles.mobileBrand)}>
+            <Link to="/home" {...stylex.props(styles.mobileBrand)}>
               <BrandMark size={28} />
               <span {...stylex.props(styles.mobileBrandName)}>
                 Orb Meet

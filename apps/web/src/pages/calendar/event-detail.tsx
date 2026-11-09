@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import * as stylex from "@stylexjs/stylex";
 import { endedMeetingQueryOptions } from "@/app/query-client/queries/meeting-summary";
 import { myThreadsQueryOptions } from "@/app/query-client/queries/meetings";
+import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
 import { beginMeetingEntryFlow } from "@/modules/meetings/client/entry-metrics";
 import { meetingEntryPath } from "@/modules/meetings/client/urls";
 import { FollowUpList } from "@/modules/transcripts/client/follow-up-list";
@@ -10,7 +11,7 @@ import type { UpcomingMeetingSchedule } from "@/modules/scheduling/client/schedu
 import { Avatar, BrandMark } from "@orbmeet/ui/react";
 import { enter } from "@orbmeet/ui/styles/animations";
 import { focus, layout, motion } from "@orbmeet/ui/styles/atoms";
-import { accent, border, ink, live, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
+import { accent, border, danger, ink, live, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
 import { env } from "@orbmeet/ui/tokens/media.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { fonts, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
@@ -85,6 +86,7 @@ const styles = stylex.create({
     color: ink.strong,
     backgroundColor: { default: "transparent", [env.hoverable]: { default: "transparent", ":hover": neutral.n100 } },
   },
+  quietDanger: { color: danger.d700 },
   label: { margin: 0, marginBottom: space.s2_5, fontSize: text.xs, fontWeight: weight.medium, color: ink.muted },
   people: { margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: space.s2 },
   person: { display: "flex", alignItems: "center", gap: space.s2_5, fontSize: text.sm, color: ink.strong },
@@ -196,11 +198,14 @@ export function EventDetail({
   event,
   now,
   onEditSchedule,
+  onCancelSchedule,
 }: {
   event: CalendarEvent;
   now: number;
   onEditSchedule: (schedule: UpcomingMeetingSchedule) => void;
+  onCancelSchedule: (schedule: UpcomingMeetingSchedule) => void;
 }) {
+  const { copied, copy } = useCopyToClipboard();
   const state = stateOf(event, now);
   const schedule = event.schedule;
   const spaceName = event.spaceName ?? schedule?.spaceName ?? null;
@@ -250,9 +255,23 @@ export function EventDetail({
             >
               Open meeting
             </a>
-            <button type="button" onClick={() => onEditSchedule(schedule)} {...stylex.props(styles.quiet, motion.tint, focus.ring)}>
-              Edit
+            <button
+              type="button"
+              onClick={() => void copy(`${window.location.origin}/${schedule.code}`)}
+              {...stylex.props(styles.quiet, motion.tint, focus.ring)}
+            >
+              {copied ? "Copied" : "Copy link"}
             </button>
+            {schedule.canManage ? (
+              <>
+                <button type="button" onClick={() => onEditSchedule(schedule)} {...stylex.props(styles.quiet, motion.tint, focus.ring)}>
+                  Edit
+                </button>
+                <button type="button" onClick={() => onCancelSchedule(schedule)} {...stylex.props(styles.quiet, styles.quietDanger, motion.tint, focus.ring)}>
+                  Cancel meeting
+                </button>
+              </>
+            ) : null}
           </>
         ) : null}
       </div>

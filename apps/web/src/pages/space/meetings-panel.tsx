@@ -3,10 +3,12 @@ import { Link } from "@tanstack/react-router";
 import {
   useInfiniteQuery,
   useMutation,
+  useQuery,
   useQueryClient,
   useSuspenseInfiniteQuery,
   useSuspenseQuery,
 } from "@tanstack/react-query";
+import { sessionQueryOptions } from "@/app/query-client/queries/session";
 import { listSpaceMeetings, renameOpenMeeting } from "@/modules/meetings/server/history/space-meeting-queries.functions";
 import {
   replaceSpaceMeetingLink,
@@ -332,6 +334,7 @@ export function MeetingsPanel({
 
 /** One past meeting on the Space's timeline: what it was, who was there, and what came of it. */
 function TimelineCard({ meeting, spaceSlug }: { meeting: SpaceMeeting; spaceSlug: string }) {
+  const { data: session } = useQuery(sessionQueryOptions());
   const hasBoard = meeting.hasWhiteboardState || meeting.hasWhiteboardPdf;
   const outputs = [
     meeting.hasSummary && "Summary",
@@ -365,7 +368,7 @@ function TimelineCard({ meeting, spaceSlug }: { meeting: SpaceMeeting; spaceSlug
             )}
           </span>
           <span {...stylex.props(styles.cardBody)}>
-            <span {...stylex.props(styles.cardTitle)}>{meetingDisplayTitle(meeting.title, meeting.participantNames)}</span>
+            <span {...stylex.props(styles.cardTitle)}>{meetingDisplayTitle(meeting.title, meeting.participantNames, session?.user.name ?? undefined)}</span>
             <span {...stylex.props(styles.cardMeta)}>
               {[formatMeetingLength(meeting.startedAt, meeting.endedAt), people].filter(Boolean).join(" · ")}
             </span>

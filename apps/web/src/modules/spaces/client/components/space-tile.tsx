@@ -54,7 +54,9 @@ interface SpaceTileProps {
 }
 
 export function SpaceTile({ name, size = "sm", personal, sx }: SpaceTileProps) {
-  const initial = Array.from(name.trim())[0]?.toUpperCase() ?? "·";
+  // The first letter or digit: "[QA test] space" is a Q, not a bracket.
+  const characters = Array.from(name.trim());
+  const initial = (characters.find((character) => /[\p{L}\p{N}]/u.test(character)) ?? characters[0])?.toUpperCase() ?? "·";
   return (
     <span
       aria-hidden="true"

@@ -6,6 +6,8 @@ const INTERNAL_ORIGIN = "https://internal.orbmeet.invalid";
 const MEETING_CODE_PATH = `(?:${MEETING_CODE_SOURCE})`;
 const ALLOWED_REDIRECT_PATHS = [
   /^\/home\/?$/,
+  /^\/calendar\/?$/,
+  /^\/library\/?$/,
   /^\/meetings\/?$/,
   /^\/meetings\/meeting_[0-7][0-9abcdefghjkmnpqrstvwxyz]{25}\/?$/,
   /^\/settings\/?$/,

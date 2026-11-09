@@ -117,6 +117,10 @@ const checkStyles = stylex.create({
  * A single yes/no cell. The glyph is decoration over a word, rather than the
  * only thing carrying the answer.
  */
+function formatFeatureValue(value: React.ReactNode): React.ReactNode {
+  return typeof value === "number" ? value.toLocaleString("en-US") : value;
+}
+
 function FeatureMark({ included }: { included: boolean }) {
   return (
     <span {...stylex.props(checkStyles.mark, included ? checkStyles.check : checkStyles.cross)}>
@@ -497,7 +501,7 @@ function PricingCard({
       {isCurrentPlan ? (
         <div {...stylex.props(cardStyles.badgeDock)}>
           <span {...stylex.props(cardStyles.badge, cardStyles.badgeCurrent)}>
-            Active Subscription
+            Your plan
           </span>
         </div>
       ) : tier.popular ? (
@@ -544,7 +548,7 @@ function PricingCard({
                   <FeatureMark included={feature.getIncluded(tier.id)} />
                 </span>
               ) : (
-                <span {...stylex.props(cardStyles.featureValue)}>{feature.getValue(tier.id)}</span>
+                <span {...stylex.props(cardStyles.featureValue)}>{formatFeatureValue(feature.getValue(tier.id))}</span>
               )}
             </li>
           ))}
@@ -577,7 +581,7 @@ function PricingCard({
               to="/home"
               {...stylex.props(pressable.base, focus.ring, cardStyles.cta, cardStyles.ctaSoft, motion.move)}
             >
-              Go home
+              Open Orb Meet
             </Link>
           ) : currentPlan && tier.id !== "free" ? (
             <>
@@ -600,6 +604,13 @@ function PricingCard({
                 <p {...stylex.props(cardStyles.ctaError)}>{error}</p>
               )}
             </>
+          ) : currentPlan ? (
+            <Link
+              to="/home"
+              {...stylex.props(pressable.base, focus.ring, cardStyles.cta, cardStyles.ctaSoft, motion.move)}
+            >
+              Open Orb Meet
+            </Link>
           ) : (
             <Link
               to="/auth"

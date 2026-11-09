@@ -3,7 +3,7 @@ import { queryKeys } from "@/app/query-client/query-keys";
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Clock, Users, FileText, AlertTriangle, PenTool, RefreshCw } from "lucide-react";
+import { Clock, Users, FileText, AlertTriangle, MicOff, PenTool, RefreshCw } from "lucide-react";
 import type { TLAssetStore } from "tldraw";
 import { BrandMark, Button, buttonStyles } from "@orbmeet/ui/react";
 import { Card } from "@orbmeet/ui/react";
@@ -21,6 +21,7 @@ import {
   participantHandoffQueryOptions,
 } from "@/app/query-client/queries/meeting-summary";
 import { getParticipantHandoffWhiteboard } from "@/modules/transcripts/server/participant-handoff.functions";
+import type { HandoffUnavailableReason } from "@/modules/transcripts/server/participant-handoff.server";
 import { roomSnapshotToStoreSnapshot } from "@orbmeet/whiteboard-client/react";
 import { whiteboardShapeUtils } from "@orbmeet/whiteboard-client/react";
 import { WHITEBOARD_TLDRAW_OPTIONS } from "@orbmeet/whiteboard-client/react";
@@ -31,6 +32,21 @@ import { glass } from "@orbmeet/ui/tokens/wash.stylex";
 import { buildWhiteboardAssetViewerUrl } from "@orbmeet/whiteboard-core/whiteboard-asset-key";
 
 const routeApi = getRouteApi("/handoff/$meetingId");
+
+/** Said in place of a Summary: the same reasons the host's recap gives. */
+const SUMMARY_MISSING: Record<HandoffUnavailableReason, { title: string; description: string }> = {
+  no_speech: {
+    title: "No summary for this meeting",
+    description: "Nobody spoke while captions were on, so there was nothing to summarize.",
+  },
+  no_transcript: { title: "No summary for this meeting", description: "Too little was said to summarize." },
+  transcript_too_large: {
+    title: "No summary for this meeting",
+    description: "This meeting's transcript was too large to summarize in one pass.",
+  },
+  ai_not_configured: { title: "Summary unavailable", description: "Summaries aren't turned on for this workspace." },
+  failed: { title: "Summary unavailable", description: "We couldn't prepare the meeting summary." },
+};
 
 /** How often to look for the Summary while the meeting's summary job owes one. */
 const SUMMARY_POLL_MS = 3_000;
@@ -516,14 +532,16 @@ export function PublicMeetingSummaryPage() {
 
   const summary = handoffQuery.data?.summary as SummaryData | null;
   if (!summary) {
+    const missing = handoffQuery.data?.status === "unavailable" ? handoffQuery.data.reason : "failed";
+    const { title, description } = SUMMARY_MISSING[missing];
     return (
       <PageShell>
         <EmptyState
-          icon={AlertTriangle}
-          title="Summary unavailable"
+          icon={missing === "no_speech" || missing === "no_transcript" ? MicOff : AlertTriangle}
+          title={title}
           titleAs="h1"
-          description="We couldn't prepare the meeting summary yet."
-          action={
+          description={description}
+          action={missing !== "failed" ? undefined : (
             <Button
               variant="secondary"
               size="sm"
@@ -536,7 +554,7 @@ export function PublicMeetingSummaryPage() {
               <RefreshCw size={14} {...stylex.props(styles.retryIcon)} />
               Retry
             </Button>
-          }
+          )}
         />
         {whiteboardSection}
       </PageShell>

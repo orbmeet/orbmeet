@@ -8,7 +8,7 @@ import type { getMyUpcomingMeetingSchedules } from "@/modules/scheduling/server/
 import { getErrorMessage } from "@/lib/error-inspection";
 import { queryKeys } from "@/app/query-client/query-keys";
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
-import { Button } from "@orbmeet/ui/react";
+import { Alert, Button } from "@orbmeet/ui/react";
 import {
   Dialog,
   DialogClose,
@@ -35,11 +35,30 @@ import {
   MeetingEntryModeField,
   type EntryModeChoice,
 } from "@/modules/meetings/client/components/meeting-policy-fields";
+import {
+  guestEmailProblem,
+  invalidGuestEmails,
+  parseGuestEmails,
+  readableScheduleError,
+} from "@/modules/scheduling/client/schedule-form";
 
 const MAX_NOTIFICATIONS = 10;
 
 const styles = stylex.create({
-  body: { display: "flex", flexDirection: "column", gap: space.s4 },
+  body: { display: "flex", flexDirection: "column", gap: space.s5 },
+  /**
+   * Outside the scrolling body, on purpose: an error at the end of the form
+   * landed below the fold, and pressing Schedule looked like doing nothing.
+   */
+  alertSlot: { flexShrink: 0, paddingInline: space.s6, paddingTop: space.s4 },
+  /** When it happens on one side, who it is for on the other. */
+  columns: {
+    display: "grid",
+    alignItems: "start",
+    gap: space.s5,
+    gridTemplateColumns: { default: "minmax(0, 1fr)", [bp.md]: "repeat(2, minmax(0, 1fr))" },
+  },
+  stack: { display: "flex", minWidth: 0, flexDirection: "column", gap: space.s4 },
   cancelBody: { display: "flex", flexDirection: "column", gap: space.s3 },
   grid: {
     display: "grid",
@@ -49,7 +68,7 @@ const styles = stylex.create({
   startGrid: {
     display: "grid",
     gap: space.s3,
-    gridTemplateColumns: { default: "minmax(0, 1fr)", [bp.sm]: "minmax(0, 1fr) 8rem" },
+    gridTemplateColumns: { default: "minmax(0, 1fr)", [bp.sm]: "minmax(0, 1fr) 7rem" },
   },
   /** A label that wraps its control, for the native inputs without a component. */
   label: {
@@ -61,10 +80,7 @@ const styles = stylex.create({
   },
   optional: { fontWeight: weight.normal, color: neutral.n400 },
   labelControl: { marginTop: space.s1_5 },
-  /**
-   * The native duration select and guest textarea: the same focus surface the
-   * `Input` component draws, restated because these predate it.
-   */
+  /** The guest and reason textareas: the same focus surface `Input` draws. */
   nativeControl: {
     height: 40,
     width: "100%",
@@ -88,6 +104,7 @@ const styles = stylex.create({
     resize: "none",
     "::placeholder": { color: neutral.n400 },
   },
+  controlInvalid: { borderColor: { default: danger.d600, ":focus-visible": danger.d600 } },
   count: {
     marginTop: space.s1,
     display: "block",
@@ -258,7 +275,8 @@ export function ScheduleMeetingDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="md">
+      {/* A new meeting asks when and who, side by side; a new time is one short column. */}
+      <DialogContent size={schedule ? "md" : "xl"}>
         <ScheduleMeetingDialogForm
           key={schedule?.id ?? initialSpace?.id ?? initialStartsAt ?? "new"}
           schedule={schedule}
@@ -332,6 +350,8 @@ function ScheduleMeetingDialogForm({
       : String(schedule.reminderMinutesBefore),
   );
   const [error, setError] = useState<string | null>(null);
+  const [guestProblem, setGuestProblem] = useState<string | null>(null);
+  const guestField = useRef<HTMLTextAreaElement>(null);
   const [created, setCreated] = useState<CreatedSchedule | null>(null);
   // One key per intent. A submit whose response never arrived — a dropped
   // connection, a reloaded tab, a second click while the first request is
@@ -369,11 +389,7 @@ function ScheduleMeetingDialogForm({
         });
         return null;
       }
-      const attendees = attendeeText
-        .split(/[\n,;]+/)
-        .map((email) => email.trim())
-        .filter(Boolean)
-        .map((email) => ({ email }));
+      const attendees = parseGuestEmails(attendeeText).map((email) => ({ email }));
       const request = {
         title: title.trim() || undefined,
         startsAt: startsAtIso,
@@ -412,14 +428,11 @@ function ScheduleMeetingDialogForm({
       setCreated(result);
     },
     onError: (caught) => {
-      setError(getErrorMessage(caught, "Could not save the scheduled meeting."));
+      setError(readableScheduleError(getErrorMessage(caught, "Could not save the scheduled meeting.")));
     },
   });
 
-  const attendeeCount = useMemo(
-    () => attendeeText.split(/[\n,;]+/).map((value) => value.trim()).filter(Boolean).length,
-    [attendeeText],
-  );
+  const attendeeCount = useMemo(() => parseGuestEmails(attendeeText).length, [attendeeText]);
   const manageableSpaces = useMemo(
     () => (spacesQuery.data?.spaces ?? []).filter((space) => space.capabilities.canManage),
     [spacesQuery.data?.spaces],
@@ -462,6 +475,19 @@ function ScheduleMeetingDialogForm({
       ? `Schedule the next meeting in ${selectedSpaceName ?? "this Space"}`
       : "Schedule a personal meeting";
 
+  const submit = () => {
+    const problem = isRescheduling || isSpaceMeeting
+      ? null
+      : guestEmailProblem(invalidGuestEmails(parseGuestEmails(attendeeText)));
+    setGuestProblem(problem);
+    if (problem) {
+      setError("Check the guest addresses before scheduling.");
+      guestField.current?.focus();
+      return;
+    }
+    mutation.mutate();
+  };
+
   if (created) {
     return (
       <ScheduledConfirmation
@@ -485,6 +511,12 @@ function ScheduleMeetingDialogForm({
                 : "Pick a time and invite guests by email or share the join link yourself."}
           </DialogDescription>
         </DialogHeader>
+
+        {error && (
+          <div {...stylex.props(styles.alertSlot)}>
+            <Alert variant="error">{error}</Alert>
+          </div>
+        )}
 
         <DialogBody sx={styles.body}>
           {!isRescheduling && (
@@ -527,110 +559,123 @@ function ScheduleMeetingDialogForm({
             </div>
           )}
 
-          <div {...stylex.props(styles.startGrid)}>
-            <Input
-              label="Starts"
-              type="datetime-local"
-              value={startsAt}
-              onChange={(event) => {
-                startsAtTouched.current = true;
-                setStartsAt(event.target.value);
-              }}
-              required
-            />
-            <label {...stylex.props(styles.label)}>
-              Duration
-              <select
-                value={duration}
-                onChange={(event) => setDuration(Number(event.target.value))}
-                {...stylex.props(styles.labelControl, styles.nativeControl, motion.tint)}
-              >
-                <option value={15}>15 min</option>
-                <option value={30}>30 min</option>
-                <option value={45}>45 min</option>
-                <option value={60}>1 hour</option>
-                <option value={90}>1.5 hours</option>
-                <option value={120}>2 hours</option>
-              </select>
-            </label>
-          </div>
+          <div {...stylex.props(!isRescheduling && styles.columns)}>
+            <div {...stylex.props(styles.stack)}>
+              <div {...stylex.props(styles.startGrid)}>
+                <Input
+                  label="Starts"
+                  type="datetime-local"
+                  value={startsAt}
+                  onChange={(event) => {
+                    startsAtTouched.current = true;
+                    setStartsAt(event.target.value);
+                  }}
+                  required
+                />
+                <Select
+                  label="Duration"
+                  value={String(duration)}
+                  onValueChange={(value) => setDuration(Number(value ?? duration))}
+                  options={[
+                    { label: "15 min", value: "15" },
+                    { label: "30 min", value: "30" },
+                    { label: "45 min", value: "45" },
+                    { label: "1 hour", value: "60" },
+                    { label: "1.5 hours", value: "90" },
+                    { label: "2 hours", value: "120" },
+                  ]}
+                />
+              </div>
 
-          <div>
-            <TimeZoneSelect
-              label="Time zone"
-              value={timeZone}
-              onChange={(value) => {
-                timeZoneTouched.current = true;
-                setTimeZone(value);
-              }}
-            />
-            <p {...stylex.props(styles.count, styles.countOk)}>
-              {isSpaceMeeting
-                ? "Defaults to this Space’s time zone. This meeting can override it."
-                : homeTimeZone
-                  ? "Defaults to your home time zone. This meeting can override it."
-                  : "Using this device’s time zone. Save a home time zone in Settings to keep it consistent across devices and the CLI."}
-            </p>
-          </div>
+              <div>
+                <TimeZoneSelect
+                  label="Time zone"
+                  value={timeZone}
+                  onChange={(value) => {
+                    timeZoneTouched.current = true;
+                    setTimeZone(value);
+                  }}
+                />
+                <p {...stylex.props(styles.count, styles.countOk)}>
+                  {isSpaceMeeting
+                    ? "Defaults to this Space’s time zone. This meeting can override it."
+                    : homeTimeZone
+                      ? "Defaults to your home time zone. This meeting can override it."
+                      : "Using this device’s time zone. Save a home time zone in Settings to keep it consistent across devices and the CLI."}
+                </p>
+              </div>
 
-          <label {...stylex.props(styles.label)}>
-              Email reminder
-              <select
-                value={reminder}
-                onChange={(event) => setReminder(event.target.value)}
-                {...stylex.props(styles.labelControl, styles.nativeControl, motion.tint)}
-              >
-                <option value="off">No reminder</option>
-                <option value="10">10 minutes before</option>
-                <option value="30">30 minutes before</option>
-                <option value="60">1 hour before</option>
-                <option value="120">2 hours before</option>
-                <option value="1440">1 day before</option>
-              </select>
-              <span {...stylex.props(styles.count, styles.countOk)}>
-                Sent to the same people as the invitation. Default is 1 hour before.
-              </span>
-          </label>
+              <div>
+                <Select
+                  label="Email reminder"
+                  value={reminder}
+                  onValueChange={(value) => setReminder(value ?? reminder)}
+                  options={[
+                    { label: "No reminder", value: "off" },
+                    { label: "10 minutes before", value: "10" },
+                    { label: "30 minutes before", value: "30" },
+                    { label: "1 hour before", value: "60" },
+                    { label: "2 hours before", value: "120" },
+                    { label: "1 day before", value: "1440" },
+                  ]}
+                />
+                <p {...stylex.props(styles.count, styles.countOk)}>
+                  Sent to the same people as the invitation. Default is 1 hour before.
+                </p>
+              </div>
+            </div>
 
-          {!isRescheduling && !isSpaceMeeting && (
-            <label {...stylex.props(styles.label)}>
-              Notify by email <span {...stylex.props(styles.optional)}>(optional)</span>
-              <textarea
-                value={attendeeText}
-                onChange={(event) => setAttendeeText(event.target.value)}
-                rows={2}
-                placeholder="maruf@example.com, sam@example.com"
-                {...stylex.props(styles.labelControl, styles.nativeControl, styles.textarea, motion.tint)}
-              />
-              <span
-                {...stylex.props(
-                  styles.count,
-                  attendeeCount > MAX_NOTIFICATIONS ? styles.countOver : styles.countOk,
+            {!isRescheduling && (
+              <div {...stylex.props(styles.stack)}>
+                {!isSpaceMeeting && (
+                  <label {...stylex.props(styles.label)}>
+                    Notify by email <span {...stylex.props(styles.optional)}>(optional)</span>
+                    <textarea
+                      ref={guestField}
+                      value={attendeeText}
+                      onChange={(event) => {
+                        setAttendeeText(event.target.value);
+                        if (guestProblem) {
+                          setGuestProblem(null);
+                          setError(null);
+                        }
+                      }}
+                      rows={4}
+                      placeholder="maruf@example.com, sam@example.com"
+                      aria-invalid={guestProblem ? true : undefined}
+                      {...stylex.props(styles.labelControl, styles.nativeControl, styles.textarea, guestProblem ? styles.controlInvalid : null, motion.tint)}
+                    />
+                    <span
+                      {...stylex.props(
+                        styles.count,
+                        guestProblem || attendeeCount > MAX_NOTIFICATIONS ? styles.countOver : styles.countOk,
+                      )}
+                    >
+                      {guestProblem
+                        ?? (attendeeCount > MAX_NOTIFICATIONS
+                          ? `Email notifications are limited to ${MAX_NOTIFICATIONS} per Meeting — remove ${attendeeCount - MAX_NOTIFICATIONS}.`
+                          : attendeeCount > 0
+                            ? `${attendeeCount} of ${MAX_NOTIFICATIONS} — each person gets the scheduled time and join link. Orb Meet does not collect RSVPs.`
+                            : "Skip this to share the join link yourself — you'll get it next.")}
+                    </span>
+                  </label>
                 )}
-              >
-                {attendeeCount > MAX_NOTIFICATIONS
-                  ? `Email notifications are limited to ${MAX_NOTIFICATIONS} per Meeting — remove ${attendeeCount - MAX_NOTIFICATIONS}.`
-                  : attendeeCount > 0
-                    ? `${attendeeCount} of ${MAX_NOTIFICATIONS} — each person gets the scheduled time and join link. Orb Meet does not collect RSVPs.`
-                    : "Skip this to share the join link yourself — you'll get it next."}
-              </span>
-            </label>
-          )}
 
-          {!isRescheduling && (
-            <MeetingEntryModeField
-              name="schedule-join-policy"
-              value={joinPolicy}
-              onChange={setJoinPolicy}
-              audience={isSpaceMeeting ? "space" : "link"}
-            />
-          )}
+                <MeetingEntryModeField
+                  name="schedule-join-policy"
+                  value={joinPolicy}
+                  onChange={setJoinPolicy}
+                  audience={isSpaceMeeting ? "space" : "link"}
+                />
 
-          {!isRescheduling && isSpaceMeeting && (
-            <p {...stylex.props(styles.note)}>
-              Current Space members are emailed the scheduled time. The permanent meeting link remains member-only, and membership at entry controls access.
-            </p>
-          )}
+                {isSpaceMeeting && (
+                  <p {...stylex.props(styles.note)}>
+                    Current Space members are emailed the scheduled time. The permanent meeting link remains member-only, and membership at entry controls access.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
 
           <p {...stylex.props(styles.finePrint)}>
             {isSpaceMeeting
@@ -639,8 +684,6 @@ function ScheduleMeetingDialogForm({
                 ? "Can start 15 minutes early · your permanent link also remains available for unscheduled Meetings."
                 : "Can start 15 minutes early · if unused, the one-time link expires 24 hours after the scheduled end."}
           </p>
-
-          {error && <p role="alert" {...stylex.props(styles.error)}>{error}</p>}
         </DialogBody>
 
         <DialogFooter>
@@ -649,7 +692,7 @@ function ScheduleMeetingDialogForm({
             size="sm"
             loading={mutation.isPending}
             disabled={!startsAt || !timeZone.trim() || (!isSpaceMeeting && attendeeCount > MAX_NOTIFICATIONS)}
-            onClick={() => mutation.mutate()}
+            onClick={submit}
           >
             {isRescheduling
               ? "Save new time"
@@ -792,7 +835,9 @@ function CancelScheduledMeetingDialogForm({
         <DialogHeader>
           <DialogTitle>Cancel scheduled meeting?</DialogTitle>
           <DialogDescription>
-            The join link will stop working and every guest will receive a cancellation email.
+            {schedule?.meetingLinkReusePolicy === "reusable"
+              ? "Every guest will receive a cancellation email. The permanent link keeps working for unscheduled meetings."
+              : "The join link will stop working and every guest will receive a cancellation email."}
           </DialogDescription>
         </DialogHeader>
         <DialogBody sx={styles.cancelBody}>

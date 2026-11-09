@@ -20,6 +20,8 @@ describe("safe redirect helpers", () => {
 
   it("allows the concrete protected route shapes", () => {
     expect(isSafeInternalRedirect("/home")).toBe(true);
+    expect(isSafeInternalRedirect("/calendar?view=week")).toBe(true);
+    expect(isSafeInternalRedirect("/library?q=planning")).toBe(true);
     expect(isSafeInternalRedirect("/meetings?q=planning#results")).toBe(true);
     expect(isSafeInternalRedirect("/meetings/meeting_01k0a6vp6wf5x8akz7e3r21n9c#summary")).toBe(true);
     expect(isSafeInternalRedirect("/settings?tab=security")).toBe(true);

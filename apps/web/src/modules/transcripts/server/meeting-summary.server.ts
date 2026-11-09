@@ -14,6 +14,7 @@ import { listTranscriptRowsPage } from "./query";
 import { summaryMatchesTranscriptSnapshot, type TranscriptSnapshot } from "@/modules/transcripts/server/generate-summary.server";
 import { DEFAULT_TRANSCRIPT_PAGE_SIZE } from "../contract/page";
 import { isSummaryGenerationConfigured } from "@/modules/meetings/server/history/summary-generation-policy";
+import { bucketParticipantNames, selectParticipantDisplayNames } from "@/modules/meetings/server/history/meeting-list-enrichment";
 import type { AuthFnContext } from "@/app/bootstrap/middleware";
 import { summaryStateOf } from "./summary-state";
 import { selectMeetingFollowUps } from "./follow-ups.server";
@@ -172,7 +173,7 @@ export async function getEndedMeetingImpl({
   // The Meeting enrichment and latest-Summary lookup are independent, so
   // they overlap. The transcript snapshot is already on `resolved` — read
   // from the same Meeting row — so Summary freshness costs no extra round-trip.
-  const [meeting, row, followUps] = await Promise.all([
+  const [meeting, row, followUps, admissions] = await Promise.all([
     buildEndedMeeting(db, resolved, user.id),
     db
       .select({
@@ -191,13 +192,19 @@ export async function getEndedMeetingImpl({
       .orderBy(desc(meetingSummaries.createdAt))
       .get(),
     selectMeetingFollowUps(db, resolved.meeting.meetingId),
+    selectParticipantDisplayNames(db, [resolved.meeting.meetingId]),
   ]);
 
   const snapshot = resolved.transcriptSnapshot;
   const currentRow = row && summaryMatchesTranscriptSnapshot(row, snapshot) ? row : null;
 
   return {
-    meeting: { ...meeting, hasTranscript: snapshot.segmentCount > 0 },
+    meeting: {
+      ...meeting,
+      hasTranscript: snapshot.segmentCount > 0,
+      // What the lists name an untitled meeting from, so the recap can agree.
+      participantNames: bucketParticipantNames(admissions).get(resolved.meeting.meetingId) ?? [],
+    },
     summary: currentRow,
     // Follow-ups outlive a stale Summary: what people agreed to do, and what
     // they have done since, is still true when the transcript grows.

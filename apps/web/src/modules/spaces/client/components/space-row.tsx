@@ -2,7 +2,6 @@ import { Badge } from "@orbmeet/ui/react";
 import { focus, layout, motion } from "@orbmeet/ui/styles/atoms";
 import { accent, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
 import { env } from "@orbmeet/ui/tokens/media.stylex";
-import { radii } from "@orbmeet/ui/tokens/radii.stylex";
 import { shadows } from "@orbmeet/ui/tokens/shadows.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { leading, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
@@ -23,18 +22,6 @@ const styles = stylex.create({
   head: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: space.s3 },
   footer: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: space.s2, paddingTop: space.s3, borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: neutral.n100, color: ink.muted, fontSize: text.xs },
   footerLabel: { display: "inline-flex", alignItems: "center", gap: space.s2 },
-  tile: {
-    display: "flex",
-    height: 44,
-    width: 44,
-    flexShrink: 0,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radii.control,
-    fontSize: text.sm,
-    fontWeight: weight.bold,
-    color: ink.onDark,
-  },
   body: { minWidth: 0, flexGrow: 1, width: "100%" },
   name: {
     display: "block",
@@ -58,7 +45,7 @@ const styles = stylex.create({
     transform: { default: "translateX(0)", [env.hoverable]: { default: "translateX(0)", [stylex.when.ancestor(":hover")]: "translateX(2px)" } },
   },
 });
-import { getSpaceGradient } from "@/modules/spaces/client/space-gradient";
+import { SpaceTile } from "@/modules/spaces/client/components/space-tile";
 import { spaceRoleBadgeVariant } from "@/modules/spaces/client/space-role-badge";
 
 interface SpaceRowProps {
@@ -79,7 +66,6 @@ export function SpaceRow({
   accessLevel,
   billingLabel,
 }: SpaceRowProps) {
-  const gradient = getSpaceGradient(name);
   const meta = description?.trim() || "Meet, share ideas, and keep your group’s work together.";
 
   return (
@@ -89,7 +75,7 @@ export function SpaceRow({
       {...stylex.props(styles.row, focus.ring, motion.tint, stylex.defaultMarker())}
     >
       <span {...stylex.props(styles.head)}>
-        <span {...stylex.props(styles.tile, gradient)}>{name.charAt(0).toUpperCase()}</span>
+        <SpaceTile name={name} size="md" />
         <Badge variant={spaceRoleBadgeVariant[accessLevel]} sx={styles.badge}>{accessLabel}</Badge>
       </span>
       <span {...stylex.props(styles.body)}>

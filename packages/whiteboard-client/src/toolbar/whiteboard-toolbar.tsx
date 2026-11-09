@@ -112,6 +112,13 @@ const styles = stylex.create({
    * some other way: the edge hiding content fades out. Without this the missing
    * control is indistinguishable from a control that does not exist.
    */
+  /** The palette's own edge fade: a short window hides its last tools below the fold. */
+  paletteFade: (start: boolean, end: boolean) => ({
+    maskImage:
+      start || end
+        ? `linear-gradient(to bottom, transparent 0, black ${start ? "32px" : "0px"}, black calc(100% - ${end ? "32px" : "0px"}), transparent 100%)`
+        : null,
+  }),
   toolbarFade: (start: boolean, end: boolean) => ({
     // `black` is an alpha stencil here, not a colour — the same convention the
     // page rail and the `atoms` fade use. Only the edges that are actually
@@ -391,6 +398,8 @@ export const WhiteboardToolbar = track(function WhiteboardToolbar() {
   );
   const { ref: overflowRef, overflow: toolbarOverflow } =
     useScrollOverflow<HTMLDivElement>();
+  const { ref: paletteRef, overflow: paletteOverflow } =
+    useScrollOverflow<HTMLDivElement>("y");
   const compact = variant !== "regular";
   const minimal = variant === "minimal";
   const [highlightColor, setHighlightColor] =
@@ -556,7 +565,12 @@ export const WhiteboardToolbar = track(function WhiteboardToolbar() {
               role="toolbar"
               aria-label="Whiteboard tools"
               aria-orientation="vertical"
-              {...stylex.props(styles.palette, layoutStyles.hideScrollbar)}
+              ref={paletteRef}
+              {...stylex.props(
+                styles.palette,
+                layoutStyles.hideScrollbar,
+                styles.paletteFade(paletteOverflow.start, paletteOverflow.end),
+              )}
             >
               {canEditWhiteboard && (
                 <>

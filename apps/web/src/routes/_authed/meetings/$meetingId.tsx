@@ -1,6 +1,7 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { endedMeetingQueryOptions } from "@/app/query-client/queries/meeting-summary";
 import { createPageHead } from "@/lib/seo";
+import { meetingDisplayTitle } from "@/modules/meetings/client/components/meeting-format";
 import { optionalString } from "@/lib/search-params";
 import { RoutePending } from "@/app/shell/route-state";
 import { lazy } from "react";
@@ -17,10 +18,17 @@ export const Route = createFileRoute("/_authed/meetings/$meetingId")({
       endedMeetingQueryOptions(params.meetingId),
     );
     if (!result.meeting) throw notFound();
-    return { meeting: result.meeting };
+    return {
+      meeting: result.meeting,
+      pageTitle: meetingDisplayTitle(
+        result.meeting.title,
+        result.meeting.participantNames,
+        context.session?.user.name ?? undefined,
+      ),
+    };
   },
   head: ({ loaderData }) => createPageHead({
-    title: `${loaderData?.meeting.title ?? "Meeting"} — Orb Meet`,
+    title: `${loaderData?.pageTitle ?? "Meeting"} — Orb Meet`,
     description: "View this meeting and its available outputs.",
     noindex: true,
     canonical: false,

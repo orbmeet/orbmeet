@@ -786,7 +786,7 @@ export function PreJoinScreen({
 
   return (
     <div {...stylex.props(styles.root)}>
-      <a href="/" {...stylex.props(focus.ring, styles.brand)}>
+      <a href={user ? "/home" : "/"} {...stylex.props(focus.ring, styles.brand)}>
         <BrandMark size={24} />
         Orb Meet
       </a>

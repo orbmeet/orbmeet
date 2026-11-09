@@ -80,7 +80,7 @@ function formatWhen(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
     month: "short",
     day: "numeric",
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
   });
 }
@@ -286,7 +286,7 @@ function Summary({
       <div {...stylex.props(styles.refreshRow)}>
         <span {...stylex.props(styles.updated)}>
           {fetchedAt
-            ? `Updated ${new Date(fetchedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
+            ? `Updated ${new Date(fetchedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`
             : "Checking…"}
         </span>
         <button

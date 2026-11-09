@@ -438,7 +438,12 @@ function MeetingResults({ search, viewerName }: { search: LibrarySearch; viewerN
                 <span {...stylex.props(styles.dayDate)}>{day.date}</span>
               </div>
               {day.meetings.map((meeting) => (
-                <MeetingRow key={meeting.meetingId} meeting={meeting} viewerName={viewerName} />
+                <MeetingRow
+                  key={meeting.meetingId}
+                  meeting={meeting}
+                  viewerName={viewerName}
+                  renderTitle={search.q ? (title) => <Highlight value={title} query={search.q ?? ""} /> : undefined}
+                />
               ))}
             </div>
           ))}
@@ -469,6 +474,13 @@ function BoardResults({ search, onlyMatches }: { search: LibrarySearch; onlyMatc
     if (!q) return true;
     return `${board.title} ${board.lastUsedIn ?? ""}`.toLowerCase().includes(q);
   });
+  // The filters run here, over what has been fetched: a board on a later page
+  // has to be fetched before it can be found.
+  const filtering = Boolean(q || search.scope || search.spaceId || search.within);
+  const { hasNextPage, isFetchingNextPage, isError, fetchNextPage } = query;
+  useEffect(() => {
+    if (filtering && hasNextPage && !isFetchingNextPage && !isError) void fetchNextPage();
+  }, [filtering, hasNextPage, isFetchingNextPage, isError, fetchNextPage]);
   const [creating, setCreating] = useState(false);
   const { data: spacesData } = useQuery({ ...mySpacesQueryOptions(), enabled: !onlyMatches });
   if (onlyMatches && boards.length === 0) return null;

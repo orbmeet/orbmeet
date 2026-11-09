@@ -127,7 +127,7 @@ const styles = stylex.create({
     borderRadius: 4,
   },
   headerLinkStrong: { color: ink.strong, fontWeight: weight.semibold },
-  wide: { display: { default: "none", [bp.sm]: "inline" } },
+  wide: { display: { default: "none", [bp.sm]: "inline-flex" } },
 
   /**
    * The water, edge to edge, with the words on it. It is dark, so the hero

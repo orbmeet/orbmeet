@@ -10,7 +10,7 @@ export interface ScrollOverflow {
 const NONE: ScrollOverflow = { start: false, end: false };
 
 /**
- * Report which edges of a horizontal scroller are hiding content.
+ * Report which edges of a scroller are hiding content.
  *
  * The whiteboard toolbar hides its scrollbar on purpose — a scrollbar across a
  * 52px strip of controls looks like damage. The cost is that when the strip
@@ -22,7 +22,7 @@ const NONE: ScrollOverflow = { start: false, end: false };
  * Chrome is sized so the toolbar fits (`whiteboard-chrome-fit.ts`); this is the
  * backstop for the control sets that still do not, not the primary mechanism.
  */
-export function useScrollOverflow<T extends HTMLElement>(): {
+export function useScrollOverflow<T extends HTMLElement>(axis: "x" | "y" = "x"): {
   ref: (node: T | null) => void;
   overflow: ScrollOverflow;
 } {
@@ -48,8 +48,10 @@ export function useScrollOverflow<T extends HTMLElement>(): {
     const measure = () => {
       // `scrollLeft` is negative in RTL in some engines; comparing against the
       // rounded magnitude keeps both directions honest.
-      const position = Math.abs(node.scrollLeft);
-      const maximum = node.scrollWidth - node.clientWidth;
+      const position = Math.abs(axis === "x" ? node.scrollLeft : node.scrollTop);
+      const maximum = axis === "x"
+        ? node.scrollWidth - node.clientWidth
+        : node.scrollHeight - node.clientHeight;
       const next: ScrollOverflow =
         maximum <= 1
           ? NONE
@@ -77,7 +79,7 @@ export function useScrollOverflow<T extends HTMLElement>(): {
       node.removeEventListener("scroll", measure);
       observer?.disconnect();
     };
-  }, []);
+  }, [axis]);
 
   return { ref, overflow };
 }
