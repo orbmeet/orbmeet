@@ -99,6 +99,8 @@ export class WhiteboardSession {
   private hiddenAtOpenRevision: number | null = null;
   /** This participant asked to open it; shown before the room confirms. */
   private opening = false;
+  /** Unlike `opening`, stays set when metadata reports the open before the call returns. */
+  private awaitingOpenAnswer = false;
   private canvas: WhiteboardCanvasStatus = "loading";
   /** Since when the canvas has been connecting with a usable credential. */
   private canvasLoadingSince: number | null = null;
@@ -196,6 +198,7 @@ export class WhiteboardSession {
     if (!this.canAttemptOpen || !this.canModerate) return;
     // Immediate feedback, and the canvas download overlaps the room's write.
     this.opening = true;
+    this.awaitingOpenAnswer = true;
     this.hiddenAtOpenRevision = null;
     this.options.onOpening?.();
     this.changed();
@@ -212,6 +215,7 @@ export class WhiteboardSession {
     } finally {
       // The room answered: from here its surface decides what shows.
       this.opening = false;
+      this.awaitingOpenAnswer = false;
       this.changed();
     }
   }
@@ -406,7 +410,10 @@ export class WhiteboardSession {
   }
 
   private mintWhenDue(now: number, wakes: number[]): void {
-    if (this.credentials.minting) return;
+    // The open's answer carries access, and the room's metadata can arrive
+    // before it does. Asking now would mint the same token twice; the answer
+    // converges again, and mints then if it brought none.
+    if (this.awaitingOpenAnswer || this.credentials.minting) return;
     if (now < this.mintRetryAt) {
       wakes.push(this.mintRetryAt);
       return;

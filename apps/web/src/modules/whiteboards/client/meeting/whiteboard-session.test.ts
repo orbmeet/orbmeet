@@ -185,6 +185,26 @@ describe("WhiteboardSession", () => {
     session.deactivate();
   });
 
+  it("waits for the open's answer when room metadata gets there first", async () => {
+    const server = fakeServer(surfaceState({ open: false, whiteboardId: null }));
+    let answer!: (value: MeetingSurfaceState) => void;
+    server.writeSurface.mockImplementationOnce(
+      () => new Promise<MeetingSurfaceState>((resolve) => { answer = resolve; }),
+    );
+    const session = await createSession({ api: server });
+    const opening = session.showBoard();
+    session.setSurface(surfaceState());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(server.mintAccess).not.toHaveBeenCalled();
+
+    // An answer with no access falls back to minting.
+    answer(surfaceState());
+    await opening;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(server.mintAccess).toHaveBeenCalledTimes(1);
+    session.deactivate();
+  });
+
   it("mints when an open hands back access to a different board", async () => {
     const server = fakeServer(surfaceState({ open: false, whiteboardId: null }));
     server.writeSurface.mockImplementationOnce(async () => {
