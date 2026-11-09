@@ -86,6 +86,15 @@ export function myMeetingsQueryOptions(input: {
   });
 }
 
+/**
+ * The ended meetings Home reads, enough to fill it once short calls are left
+ * out. The route prefetches exactly this, so the page renders what the server
+ * already fetched instead of asking again.
+ */
+export function homeRecentMeetingsQueryOptions() {
+  return myMeetingsQueryOptions({ status: "ended", limit: 12 });
+}
+
 export function spaceDefaultMeetingLinkQueryOptions(spaceId: string) {
   return queryOptions({
     queryKey: queryKeys.spaces.defaultMeetingLink(spaceId),

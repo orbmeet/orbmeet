@@ -1,4 +1,4 @@
-import { logInfo } from "@/lib/logger";
+import { emitMeetingEntryDiagnostic } from "./entry/diagnostics";
 
 const STORAGE_KEY = "orbmeet.meeting-entry-metrics.v1";
 const STALE_AFTER_MS = 10 * 60 * 1000;
@@ -88,7 +88,7 @@ function emitStage(stage: "livekit" | "whiteboard", state: EntryMetricsState) {
   state.loggedStages = [...loggedStages];
   writeState(state);
 
-  logInfo("[MeetingPerf]", {
+  emitMeetingEntryDiagnostic("meeting_entry_timing", {
     stage,
     flowId: state.flowId,
     source: state.source,

@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { useMemo, useState } from "react";
 import { useIsMuted, useIsSpeaking, useParticipants, useSpeakingParticipants } from "@livekit/components-react";
+import { CONNECTION_EVENTS } from "@/modules/meetings/client/use-livekit-connections";
 import { Track, type Participant } from "livekit-client";
 import { ChevronDown, ChevronUp, Hand, MicOff } from "lucide-react";
 import { Avatar, Tooltip } from "@orbmeet/ui/react";
@@ -224,7 +225,7 @@ export function RoomFaces({
   onCallOn,
 }: RoomFacesProps) {
   const [folded, setFolded] = useState(false);
-  const participants = useParticipants();
+  const participants = useParticipants({ updateOnlyOn: CONNECTION_EVENTS });
   const max =
     variant === "row"
       ? roomy ? MAX_FACES.rowWide : MAX_FACES.row

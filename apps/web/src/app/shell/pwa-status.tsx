@@ -9,7 +9,7 @@ import * as stylex from "@stylexjs/stylex";
 import { useEffect, useState } from "react";
 import { isMeetingDocumentPath } from "@/modules/meetings/contract/paths";
 import { glass, scrim } from "@orbmeet/ui/tokens/wash.stylex";
-import { captureInstallPrompt } from "./install-offer";
+import { captureInstallPrompt } from "./install-prompt";
 
 const styles = stylex.create({
   banner: {

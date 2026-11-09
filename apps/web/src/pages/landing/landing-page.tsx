@@ -27,7 +27,8 @@ const CREATE_ERROR_FALLBACK = "Failed to create meeting. Please try again.";
 const GITHUB_URL = "https://github.com/orbmeet/orbmeet";
 
 /** CC0, from StockSnap (stocksnap.io/photo/E5GUBD8MWN). */
-const HERO_PHOTO = "/images/landing/person-at-laptop.jpg";
+const HERO_PHOTO = "/images/landing/person-at-laptop-960.webp";
+const HERO_PHOTO_SRCSET = "/images/landing/person-at-laptop-640.webp 640w, /images/landing/person-at-laptop-960.webp 960w";
 
 function getCreateErrorMessage(error: unknown): string {
   switch (getServerErrorCode(error)) {
@@ -547,6 +548,8 @@ export function LandingPage() {
           </div>
           <img
             src={HERO_PHOTO}
+            srcSet={HERO_PHOTO_SRCSET}
+            sizes="(min-width: 1024px) 40rem, 100vw"
             alt="A woman in glasses smiling at her laptop in a bright studio"
             width={960}
             height={640}

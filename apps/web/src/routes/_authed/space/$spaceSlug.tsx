@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, lazyRouteComponent } from "@tanstack/react-router";
 import {
   spaceMeetingsQueryOptions,
   spaceMembersInfiniteQueryOptions,
@@ -12,9 +12,8 @@ import { primeSpaceDetailCache } from "@/modules/spaces/client/space-query-cache
 import { RouteError, RoutePending } from "@/app/shell/route-state";
 import { parseSpaceTab, type SpaceTab } from "@/modules/spaces/contract";
 import { createPageHead, SITE_NAME } from "@/lib/seo";
-import { lazy } from "react";
 
-const SpaceDetailPage = import.meta.env.SSR ? () => null : lazy(() => import("@/pages/space/space-detail-page").then((page) => ({ default: page.SpaceDetailPage })));
+const SpaceDetailPage = import.meta.env.SSR ? () => null : lazyRouteComponent(() => import("@/pages/space/space-detail-page"), "SpaceDetailPage");
 
 // The route owns framework registration; the Spaces module owns the screen.
 function SpaceRouteComponent() {
@@ -23,6 +22,10 @@ function SpaceRouteComponent() {
   const { tab } = Route.useSearch();
   return <SpaceDetailPage spaceSlug={spaceSlug} spaceId={spaceId} tab={tab} />;
 }
+
+// The router warms a route through its component's `preload`. This wrapper only
+// passes route state along, so it hands over the page's.
+SpaceRouteComponent.preload = "preload" in SpaceDetailPage ? SpaceDetailPage.preload : undefined;
 
 export const Route = createFileRoute("/_authed/space/$spaceSlug")({
   validateSearch: (search: Record<string, unknown>): { tab?: SpaceTab } => ({
@@ -100,5 +103,6 @@ export const Route = createFileRoute("/_authed/space/$spaceSlug")({
   // Space's local state to carry into another Space.
   remountDeps: ({ params }) => params.spaceSlug,
   component: SpaceRouteComponent,
+  codeSplitGroupings: [["errorComponent"], ["notFoundComponent"]],
   errorComponent: RouteError,
 });

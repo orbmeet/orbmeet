@@ -129,7 +129,8 @@ export const meetings = sqliteTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    index("meetings_link_status_idx").on(table.meetingLinkId, table.status),
+    // Started time and id let the newest Meeting per link be read off the index.
+    index("meetings_link_status_started_idx").on(table.meetingLinkId, table.status, table.startedAt, table.id),
     // Pin target: whiteboards, artifacts, and connections pin their space to
     // their meeting's space.
     uniqueIndex("meetings_id_space_id_unique_idx").on(table.id, table.spaceId),
@@ -142,7 +143,8 @@ export const meetings = sqliteTable(
     uniqueIndex("meetings_open_space_unique_idx")
       .on(table.spaceId)
       .where(sql`${table.status} = 'open' AND ${table.spaceKind} = 'shared'`),
-    index("meetings_space_id_status_idx").on(table.spaceId, table.status),
+    // As above, per Space.
+    index("meetings_space_status_started_idx").on(table.spaceId, table.status, table.startedAt, table.id),
     index("meetings_started_by_user_id_status_idx").on(table.startedByUserId, table.status),
     // Backs the organizer_user_id FK set-null on account deletion.
     index("meetings_organizer_user_id_idx").on(table.organizerUserId),

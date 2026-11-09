@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
 import { sessionsListQueryOptions, linkedAccountsQueryOptions, passkeysQueryOptions, personalAccessTokensQueryOptions, storageUsageQueryOptions } from "@/app/query-client/queries/settings";
 import { myOrganizationsQueryOptions } from "@/app/query-client/queries/organizations";
 import { isSettingsTabId, settingsPageOf, type SettingsTabId } from "@/pages/settings/settings-tabs";
@@ -7,7 +7,7 @@ import { createPageHead, SITE_NAME } from "@/lib/seo";
 import { lazy } from "react";
 
 const RouteError = import.meta.env.SSR ? () => null : lazy(() => import("@/app/shell/route-state").then((page) => ({ default: page.RouteError })));
-const SettingsPage = import.meta.env.SSR ? () => null : lazy(() => import("@/pages/settings/settings-page").then((page) => ({ default: page.SettingsPage })));
+const SettingsPage = import.meta.env.SSR ? () => null : lazyRouteComponent(() => import("@/pages/settings/settings-page"), "SettingsPage");
 
 export const Route = createFileRoute("/_authed/settings/")({
   validateSearch: (raw): { linked?: string; reason?: string; tab?: SettingsTabId } => ({
@@ -37,5 +37,6 @@ export const Route = createFileRoute("/_authed/settings/")({
     canonical: false,
   }),
   component: SettingsPage,
+  codeSplitGroupings: [["errorComponent"], ["notFoundComponent"]],
   errorComponent: RouteError,
 });

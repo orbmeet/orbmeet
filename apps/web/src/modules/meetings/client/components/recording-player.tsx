@@ -1,4 +1,4 @@
-import { Button, Spinner } from "@orbmeet/ui/react";
+import { Spinner } from "@orbmeet/ui/react";
 import { focus, motion, pressable } from "@orbmeet/ui/styles/atoms";
 import { surfaces } from "@orbmeet/ui/styles/surfaces";
 import { ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
@@ -13,7 +13,7 @@ import { MediaPlayer, MediaProvider, type MediaPlayerInstance } from "@vidstack/
 import { DefaultVideoLayout, defaultLayoutIcons } from "@vidstack/react/player/layouts/default";
 import "@vidstack/react/player/styles/default/theme.css";
 import "@vidstack/react/player/styles/default/layouts/video.css";
-import { getMeetingArtifactDownloadUrl } from "@/modules/meetings/server/history/output-downloads.functions";
+import { downloadRecording } from "@/modules/meetings/client/components/recording-download";
 import { recordingPlaybackQueryOptions } from "@/app/query-client/queries/artifacts";
 import { glass } from "@orbmeet/ui/tokens/wash.stylex";
 import { env } from "@orbmeet/ui/tokens/media.stylex";
@@ -52,43 +52,12 @@ const styles = stylex.create({
 interface RecordingPlayerProps {
   /** meeting_artifacts.id for the recording row. */
   artifactId: string;
-  filename?: string | null;
 }
 
 /** A point to play from: seconds into the recording, and a key that changes with every ask. */
 export interface RecordingSeek {
   seconds: number;
   key: number;
-}
-
-/**
- * Vidstack player for a meeting recording. The signed playback URL is fetched
- * declaratively by artifact so the player can stream from R2 rather than
- * forcing a download. A download affordance requests an explicit artifact URL
- * (attachment) path.
- */
-function downloadRecording(artifactId: string) {
-  void getMeetingArtifactDownloadUrl({ data: { artifactId } }).then((res) => {
-    // The URL is served as an attachment, so navigating to it downloads
-    // without leaving the page. A popup opened after this await has lost
-    // the click's user activation and is silently blocked.
-    window.location.assign(res.url);
-  });
-}
-
-/** The "Download" action that sits in the Recording section's header. */
-export function RecordingDownloadButton({ artifactId, filename }: RecordingPlayerProps) {
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      title={filename ?? "Download recording"}
-      onClick={() => downloadRecording(artifactId)}
-    >
-      <Download size={14} />
-      Download
-    </Button>
-  );
 }
 
 /**

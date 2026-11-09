@@ -9,7 +9,7 @@ vi.mock("@tanstack/react-query", () => ({
   useInfiniteQuery: feeds.meetings,
 }));
 vi.mock("@/app/query-client/queries/meetings", () => ({
-  myMeetingsQueryOptions: () => ({}),
+  homeRecentMeetingsQueryOptions: () => ({}),
   myUpcomingMeetingSchedulesQueryOptions: () => ({}),
 }));
 vi.mock("@/modules/scheduling/client/schedule-meeting-dialog", () => ({ ScheduleMeetingDialog: () => null }));

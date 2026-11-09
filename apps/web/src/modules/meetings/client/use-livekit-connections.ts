@@ -22,7 +22,8 @@ export interface ParticipantConnection {
 }
 
 /** What a connection shows: who is here, their role, and their camera and microphone. */
-const CONNECTION_EVENTS = [
+/** What changes a participant's name, role, or which of their tracks are on. */
+export const CONNECTION_EVENTS = [
   RoomEvent.ParticipantActive,
   RoomEvent.ParticipantAttributesChanged,
   RoomEvent.ParticipantNameChanged,

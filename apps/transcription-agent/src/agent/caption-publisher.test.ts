@@ -130,6 +130,25 @@ describe("CaptionPublisher", () => {
     expect(sent.map((caption) => caption.segmentId)).toContain("next");
   });
 
+  it("stops starting publishes while too many have not ended, and resumes when they do", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { fake, sent, stall } = transport();
+    const publisher = new CaptionPublisher({
+      transport: () => fake,
+      senderIdentity: "p",
+      publishTimeoutMs: 5,
+      maxUnsettledPublishes: 2,
+    });
+    const release = stall();
+    for (let index = 0; index < 6; index += 1) publisher.offer(update(`s${index}`, "stuck"));
+    await vi.waitFor(() => expect(fake.streamText).toHaveBeenCalledTimes(2));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(fake.streamText).toHaveBeenCalledTimes(2);
+
+    release();
+    await vi.waitFor(() => expect(sent).toHaveLength(6));
+  });
+
   it("sends a withdrawn segment as an empty final", async () => {
     const { fake, sent } = transport();
     const publisher = new CaptionPublisher({ transport: () => fake, senderIdentity: "p" });

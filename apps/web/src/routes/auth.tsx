@@ -1,11 +1,10 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, lazyRouteComponent } from "@tanstack/react-router";
 import { sessionQueryOptions } from "@/app/query-client/queries/session";
 import { resolveAuthRedirect, sanitizeInternalRedirect } from "@/modules/identity/contract/safe-redirect";
 import { oneOf, optionalString } from "@/lib/search-params";
 import { createPageHead } from "@/lib/seo";
-import { lazy } from "react";
 
-const AuthPage = import.meta.env.SSR ? () => null : lazy(() => import("@/pages/auth/auth-page").then((page) => ({ default: page.AuthPage })));
+const AuthPage = import.meta.env.SSR ? () => null : lazyRouteComponent(() => import("@/pages/auth/auth-page"), "AuthPage");
 
 export const Route = createFileRoute("/auth")({
   validateSearch: (raw): { mode?: "login" | "signup"; redirect?: string; error?: string } => ({
@@ -30,4 +29,5 @@ export const Route = createFileRoute("/auth")({
       canonical: false,
     }),
   component: AuthPage,
+  codeSplitGroupings: [["errorComponent"], ["notFoundComponent"]],
 });

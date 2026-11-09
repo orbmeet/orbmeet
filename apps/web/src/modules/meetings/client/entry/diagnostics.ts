@@ -49,7 +49,9 @@ export type MeetingEntryDiagnosticEvent =
   | "page_visible"
   // Another app's built-in browser, turned away before the app started. Sent
   // by the head script (app/shell/in-app-browser.ts), not by this emitter.
-  | "in_app_browser_blocked";
+  | "in_app_browser_blocked"
+  // How long each stage of getting into a meeting took (entry-metrics.ts).
+  | "meeting_entry_timing";
 
 const ENDPOINT = "/api/diagnostics/client-event";
 const REDACTED_PAYLOAD_KEYS = new Set(["code", "token", "serverUrl"]);

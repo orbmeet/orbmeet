@@ -17,7 +17,7 @@ import { logWarn } from "@/lib/logger";
 import type { AuthFnContext, RequestFnContext } from "@/app/bootstrap/middleware";
 import { enforceRateLimit } from "@/platform/http/rate-limit.server";
 import { assertPastMeetingManager } from "@/modules/meetings/server/access/access-assertions";
-import { ensureMeetingWhiteboardDocument, findMeetingWhiteboardDocument } from "@/modules/whiteboards/server/documents";
+import { ensureMeetingWhiteboardDocument, findMeetingWhiteboardDocument, type MeetingWhiteboardDocument } from "@/modules/whiteboards/server/documents";
 import { isWhiteboardCaptureConfigured, retryFailedWhiteboardCaptures } from "@/modules/whiteboards/server/meeting/capture";
 import { callCoordinator, requestSubject } from "@/modules/meetings/server/runtime/client.server";
 import { newCommandId, runSyncCommand, sendSyncCommand } from "@/modules/whiteboards/server/sync-commands.server";
@@ -119,7 +119,7 @@ export async function getWhiteboardTokenImpl({
   data: GetWhiteboardTokenInput;
   context: RequestFnContext;
 }) {
-  const { env, db, user } = context;
+  const { env, db } = context;
   if (!isWhiteboardConfigured(env)) {
     throw Errors.CONFIG_ERROR("Whiteboard not configured");
   }
@@ -137,7 +137,16 @@ export async function getWhiteboardTokenImpl({
   if (!document || document.status !== "active") {
     throw Errors.CONFLICT("The shared Whiteboard surface is closed");
   }
+  return mintMeetingWhiteboardAccess(context, meeting, callerIdentity, document);
+}
 
+/** A token for `document`, with its room placed and open. */
+async function mintMeetingWhiteboardAccess(
+  { env, db, user }: RequestFnContext,
+  meeting: WhiteboardCaller["meeting"],
+  callerIdentity: WhiteboardCaller["callerIdentity"],
+  document: MeetingWhiteboardDocument,
+) {
   // The board goes where the Meeting's media is, unless another live Meeting
   // has it on its own node.
   const placement = await placeBoard(db, env, document.syncRoomId, {
@@ -303,7 +312,20 @@ export async function setWhiteboardSurfaceStateImpl({
   const subject = await requestSubject(db, meeting.id, context.user, {
     attemptId: callerIdentity.connectionId,
   });
-  return setMeetingSurface(env, meeting.id, subject, data.open, fallback);
+  if (!data.open || !fallback || fallback.status !== "active") {
+    return setMeetingSurface(env, meeting.id, subject, data.open, fallback);
+  }
+  // The person opening the board needs its token next. Issuing it here saves a
+  // round trip and a second authorization, and the room opens while the
+  // coordinator answers. Best effort: without it the client mints as usual.
+  const [surface, access] = await Promise.all([
+    setMeetingSurface(env, meeting.id, subject, data.open, fallback),
+    mintMeetingWhiteboardAccess(context, meeting, callerIdentity, fallback).catch((error: unknown) => {
+      logWarn("[whiteboard] could not issue access alongside opening the board", { meetingId: meeting.id, error });
+      return null;
+    }),
+  ]);
+  return { ...surface, access };
 }
 
 export async function setWhiteboardNavigationControllerImpl({

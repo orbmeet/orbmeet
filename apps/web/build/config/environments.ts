@@ -62,6 +62,11 @@ export function createBuildEnvironments(analyze: boolean) {
                 },
                 // Base UI and Floating UI also initialize cross-module state;
                 // entry-aware splitting can execute consumers before exports.
+                //
+                // Ranked above the whiteboard groups, whose Radix packages depend
+                // on Floating UI too: whichever group claims it first owns it, and
+                // owned by surface-core it would pull that chunk into every
+                // signed-in page. A whole number on purpose: 8.7 changed nothing.
                 {
                   name: "vendor-base-ui",
                   test: (id: string) =>
@@ -69,7 +74,7 @@ export function createBuildEnvironments(analyze: boolean) {
                     id.includes("/node_modules/@floating-ui/") ||
                     id.includes("/node_modules/tabbable/") ||
                     id.includes("/node_modules/react-remove-scroll"),
-                  priority: 6,
+                  priority: 9,
                 },
                 {
                   name: "vendor-whiteboard-core",

@@ -1,14 +1,13 @@
-import { createFileRoute, notFound } from "@tanstack/react-router";
+import { createFileRoute, notFound, lazyRouteComponent } from "@tanstack/react-router";
 import { endedMeetingQueryOptions } from "@/app/query-client/queries/meeting-summary";
 import { createPageHead } from "@/lib/seo";
 import { meetingDisplayTitle } from "@/modules/meetings/client/components/meeting-format";
 import { optionalString } from "@/lib/search-params";
 import { RoutePending } from "@/app/shell/route-state";
-import { lazy } from "react";
 
 type MeetingView = "pdf" | "recording" | "transcript";
 
-const EndedMeetingPage = import.meta.env.SSR ? () => null : lazy(() => import("@/pages/meeting-summary/components/ended-meeting-page").then((page) => ({ default: page.EndedMeetingPage })));
+const EndedMeetingPage = import.meta.env.SSR ? () => null : lazyRouteComponent(() => import("@/pages/meeting-summary/components/ended-meeting-page"), "EndedMeetingPage");
 
 export const Route = createFileRoute("/_authed/meetings/$meetingId")({
   validateSearch: (search: Record<string, unknown>): { fromSpace?: string; view?: MeetingView } => ({
@@ -38,6 +37,7 @@ export const Route = createFileRoute("/_authed/meetings/$meetingId")({
   }),
   pendingComponent: RoutePending,
   component: HistoricalMeetingPage,
+  codeSplitGroupings: [["errorComponent"], ["notFoundComponent"]],
 });
 
 function HistoricalMeetingPage() {
@@ -45,3 +45,7 @@ function HistoricalMeetingPage() {
   const { fromSpace, view } = Route.useSearch();
   return <EndedMeetingPage meetingId={meetingId} backSpaceSlug={fromSpace} view={view} />;
 }
+
+// The router warms a route through its component's `preload`. This wrapper only
+// passes route state along, so it hands over the page's.
+HistoricalMeetingPage.preload = "preload" in EndedMeetingPage ? EndedMeetingPage.preload : undefined;

@@ -12,7 +12,8 @@ import type {
 
 import type { Database } from "@orbmeet/db";
 import { meetingConnections, meetingLinks, meetingSummaries, meetings } from "@orbmeet/db/schema";
-import { and, count, eq, exists, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, exists, inArray, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { boundedStatements } from "@/platform/database/db-batching";
 import { selectDashboardMeetingLinks, type DashboardUser } from "../history/dashboard-queries";
 import { selectSpacesForUser } from "@/modules/spaces/server/helpers";
@@ -62,36 +63,39 @@ async function selectOpenMeetings(
         .innerJoin(meetingLinks, eq(meetings.meetingLinkId, meetingLinks.id))
         .where(and(eq(meetings.status, "open"), inArray(column, chunk))));
 
-  for (const lookup of [...openOn(meetings.meetingLinkId, linkIds), ...openOn(meetings.spaceId, spaceIds)]) {
-    collect(await lookup);
-  }
-
-  collect(
-    await db
-      .select(openMeetingSelection)
-      .from(meetings)
-      .innerJoin(meetingLinks, eq(meetings.meetingLinkId, meetingLinks.id))
-      .where(
-        and(
-          eq(meetings.status, "open"),
-          exists(
-            db
-              .select({ id: meetingConnections.id })
-              .from(meetingConnections)
-              .where(
-                and(
-                  eq(meetingConnections.meetingId, meetings.id),
-                  eq(meetingConnections.userId, userId),
-                  // A token issued and never used is ended by the meeting's
-                  // room once it looks, so it cannot keep a thread open with
-                  // nobody in it.
-                  connectionIsUnfinished(),
-                ),
+  const connected = db
+    .select(openMeetingSelection)
+    .from(meetings)
+    .innerJoin(meetingLinks, eq(meetings.meetingLinkId, meetingLinks.id))
+    .where(
+      and(
+        eq(meetings.status, "open"),
+        exists(
+          db
+            .select({ id: meetingConnections.id })
+            .from(meetingConnections)
+            .where(
+              and(
+                eq(meetingConnections.meetingId, meetings.id),
+                eq(meetingConnections.userId, userId),
+                // A token issued and never used is ended by the meeting's
+                // room once it looks, so it cannot keep a thread open with
+                // nobody in it.
+                connectionIsUnfinished(),
               ),
-          ),
+            ),
         ),
       ),
-  );
+    );
+
+  // Each await is a round trip to D1, so these leave together.
+  for (const rows of await Promise.all([
+    ...openOn(meetings.meetingLinkId, linkIds),
+    ...openOn(meetings.spaceId, spaceIds),
+    connected,
+  ])) {
+    collect(rows);
+  }
 
   return byMeetingId;
 }
@@ -129,53 +133,41 @@ interface LatestMeetingRow {
 }
 
 /**
- * Latest ended Meeting per thread (link or Space), one row per thread via a
- * window function so the whole lookup stays one statement per chunk.
+ * Latest ended Meeting per thread (link or Space). Each thread is one probe of
+ * its index, however many Meetings it has held, and the ids travel as a single
+ * JSON parameter, so the lookup stays one statement.
  */
 async function selectLatestMeetings(
   db: Database,
-  partitionColumn: typeof meetings.meetingLinkId | typeof meetings.spaceId,
+  threadColumn: "meetingLinkId" | "spaceId",
   ids: string[],
 ): Promise<Map<string, LatestMeetingRow>> {
   const byThreadId = new Map<string, LatestMeetingRow>();
+  if (ids.length === 0) return byThreadId;
 
-  const lookups = boundedStatements(ids, (chunk) => {
-    const ranked = db
-      .select({
-        threadId: sql<string>`${partitionColumn}`.as("thread_id"),
-        meetingId: meetings.id,
-        code: meetingLinks.code,
-        title: meetings.title,
-        startedAt: meetings.startedAt,
-        endedAt: meetings.endedAt,
-        hasSummary: sql<string | null>`${meetingSummaries.id}`.as("summary_id"),
-        meetingRank: sql<number>`row_number() over (
-          partition by ${partitionColumn}
-          order by ${meetings.startedAt} desc, ${meetings.id} desc
-        )`.as("meeting_rank"),
-      })
-      .from(meetings)
-      .innerJoin(meetingLinks, eq(meetings.meetingLinkId, meetingLinks.id))
-      .leftJoin(meetingSummaries, eq(meetingSummaries.meetingId, meetings.id))
-      .where(and(eq(meetings.status, "ended"), inArray(partitionColumn, chunk)))
-      .as("ranked_meetings");
+  const candidate = alias(meetings, "latest_candidate");
+  const latestId = db
+    .select({ id: candidate.id })
+    .from(candidate)
+    .where(and(eq(candidate[threadColumn], sql`thread.value`), eq(candidate.status, "ended")))
+    .orderBy(desc(candidate.startedAt), desc(candidate.id))
+    .limit(1);
 
-    return db
-      .select({
-        threadId: ranked.threadId,
-        meetingId: ranked.meetingId,
-        code: ranked.code,
-        title: ranked.title,
-        startedAt: ranked.startedAt,
-        endedAt: ranked.endedAt,
-        hasSummary: ranked.hasSummary,
-      })
-      .from(ranked)
-      .where(eq(ranked.meetingRank, 1));
-  });
-  for (const lookup of lookups) {
-    for (const row of await lookup) byThreadId.set(row.threadId, row);
-  }
+  const rows = await db
+    .select({
+      threadId: sql<string>`thread.value`,
+      meetingId: meetings.id,
+      code: meetingLinks.code,
+      title: meetings.title,
+      startedAt: meetings.startedAt,
+      endedAt: meetings.endedAt,
+      hasSummary: sql<string | null>`${meetingSummaries.id}`,
+    })
+    .from(sql`json_each(${JSON.stringify(ids)}) as thread`)
+    .innerJoin(meetings, sql`${meetings.id} = (${latestId})`)
+    .innerJoin(meetingLinks, eq(meetings.meetingLinkId, meetingLinks.id))
+    .leftJoin(meetingSummaries, eq(meetingSummaries.meetingId, meetings.id));
+  for (const row of rows) byThreadId.set(row.threadId, row);
 
   return byThreadId;
 }
@@ -219,12 +211,12 @@ export async function selectMyThreads(db: Database, user: DashboardUser) {
   const linkIds = links.map((link) => link.id);
   const spaceIds = spacesForUser.map((space) => space.id);
 
-  const openByMeetingId = await selectOpenMeetings(db, user.id, linkIds, spaceIds);
-  const [connectedCounts, latestByLinkId, latestBySpaceId] = await Promise.all([
-    selectConnectedCounts(db, Array.from(openByMeetingId.keys())),
-    selectLatestMeetings(db, meetings.meetingLinkId, linkIds),
-    selectLatestMeetings(db, meetings.spaceId, spaceIds),
+  const [openByMeetingId, latestByLinkId, latestBySpaceId] = await Promise.all([
+    selectOpenMeetings(db, user.id, linkIds, spaceIds),
+    selectLatestMeetings(db, "meetingLinkId", linkIds),
+    selectLatestMeetings(db, "spaceId", spaceIds),
   ]);
+  const connectedCounts = await selectConnectedCounts(db, Array.from(openByMeetingId.keys()));
 
   const linkIdSet = new Set(linkIds);
   const spaceIdSet = new Set(spaceIds);

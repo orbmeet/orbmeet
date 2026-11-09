@@ -7,61 +7,12 @@ import { leading, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
 import { Download, X } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { clearCapturedPrompt, emit, getPrompt, subscribe } from "./install-prompt";
 import {
   getPlatformEnvironment,
   installsViaShareSheet,
   isStandaloneDisplayMode,
 } from "@/lib/browser-capabilities";
-
-/* ── The captured browser prompt ─────────────────────────────────────────── */
-
-interface InstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
-}
-
-/**
- * `beforeinstallprompt` fires once, early, on whatever page the visit started
- * on — usually before the authed shell that shows the offer has mounted. So the
- * event is captured at the root (`PwaStatus`) into this module-level store, and
- * the offer reads it whenever it appears.
- */
-let capturedPrompt: InstallPromptEvent | null = null;
-const listeners = new Set<() => void>();
-
-function emit() {
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-function getPrompt() {
-  return capturedPrompt;
-}
-
-/** Starts capturing the install prompt. Returns the cleanup. */
-export function captureInstallPrompt(): () => void {
-  // Capturing keeps the offer available; whether it is *shown* is the
-  // dismissal record's call, so this must not clear it.
-  const handlePrompt = (event: Event) => {
-    event.preventDefault();
-    capturedPrompt = event as InstallPromptEvent;
-    emit();
-  };
-  const handleInstalled = () => {
-    capturedPrompt = null;
-    emit();
-  };
-  window.addEventListener("beforeinstallprompt", handlePrompt);
-  window.addEventListener("appinstalled", handleInstalled);
-  return () => {
-    window.removeEventListener("beforeinstallprompt", handlePrompt);
-    window.removeEventListener("appinstalled", handleInstalled);
-  };
-}
 
 /* ── Dismissal ───────────────────────────────────────────────────────────── */
 
@@ -111,7 +62,7 @@ export function InstallMenuItem() {
         void prompt.prompt()
           .then(() => prompt.userChoice)
           .then(() => {
-            capturedPrompt = null;
+            clearCapturedPrompt();
             emit();
           })
           .catch(() => {
@@ -225,7 +176,7 @@ export function InstallOffer({ variant }: { variant: "strip" | "card" }) {
         void prompt.prompt()
           .then(() => prompt.userChoice)
           .then(() => {
-            capturedPrompt = null;
+            clearCapturedPrompt();
             emit();
           })
           .catch(() => {
@@ -262,7 +213,7 @@ export function InstallOffer({ variant }: { variant: "strip" | "card" }) {
               void prompt.prompt()
                 .then(() => prompt.userChoice)
                 .then(() => {
-                  capturedPrompt = null;
+                  clearCapturedPrompt();
                   emit();
                 })
                 .catch(() => {
@@ -297,7 +248,7 @@ export function InstallOffer({ variant }: { variant: "strip" | "card" }) {
 
 /** Test seam: reset module state between cases. */
 export function resetInstallOfferForTests() {
-  capturedPrompt = null;
+  clearCapturedPrompt();
   dismissed = false;
   emit();
 }

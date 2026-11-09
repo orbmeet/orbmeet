@@ -1,8 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
 import { myMeetingsQueryOptions } from "@/app/query-client/queries/meetings";
 import { oneOf, optionalString } from "@/lib/search-params";
 import { createPageHead, SITE_NAME } from "@/lib/seo";
-import { lazy } from "react";
 
 export type LibraryType = "meetings" | "boards" | "recordings";
 export type LibraryWithin = "week" | "month" | "year";
@@ -51,7 +50,7 @@ export function toLibraryMeetingsInput(search: LibrarySearch) {
 // Library — every past meeting, board and recording, and what was said in
 // them, searchable. Its state lives in the URL so a search can be shared and
 // survives a refresh.
-const LibraryPage = import.meta.env.SSR ? () => null : lazy(() => import("@/pages/library/library-page").then((page) => ({ default: page.LibraryPage })));
+const LibraryPage = import.meta.env.SSR ? () => null : lazyRouteComponent(() => import("@/pages/library/library-page"), "LibraryPage");
 
 export const Route = createFileRoute("/_authed/library/")({
   validateSearch: (raw: Record<string, unknown>): LibrarySearch => {
@@ -86,4 +85,5 @@ export const Route = createFileRoute("/_authed/library/")({
     canonical: false,
   }),
   component: LibraryPage,
+  codeSplitGroupings: [["errorComponent"], ["notFoundComponent"]],
 });

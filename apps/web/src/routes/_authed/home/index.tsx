@@ -1,15 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
 import {
-  myMeetingsQueryOptions,
+  homeRecentMeetingsQueryOptions,
   myThreadsQueryOptions,
   myUpcomingMeetingSchedulesQueryOptions,
 } from "@/app/query-client/queries/meetings";
 import { RouteError, RoutePending } from "@/app/shell/route-state";
 import { optionalString } from "@/lib/search-params";
 import { createPageHead, SITE_NAME } from "@/lib/seo";
-import { lazy } from "react";
 
-const HomePage = import.meta.env.SSR ? () => null : lazy(() => import("@/pages/home/home-page").then((page) => ({ default: page.HomePage })));
+const HomePage = import.meta.env.SSR ? () => null : lazyRouteComponent(() => import("@/pages/home/home-page"), "HomePage");
 
 export const Route = createFileRoute("/_authed/home/")({
   // `left`: the meeting you just walked out of, so Home can lead to its recap.
@@ -25,7 +24,7 @@ export const Route = createFileRoute("/_authed/home/")({
     await Promise.all([
       context.queryClient.prefetchQuery(myThreadsQueryOptions()),
       context.queryClient.prefetchInfiniteQuery(myUpcomingMeetingSchedulesQueryOptions()),
-      context.queryClient.prefetchInfiniteQuery(myMeetingsQueryOptions({ status: "ended", limit: 6 })),
+      context.queryClient.prefetchInfiniteQuery(homeRecentMeetingsQueryOptions()),
     ]);
   },
   head: () => createPageHead({
@@ -36,5 +35,6 @@ export const Route = createFileRoute("/_authed/home/")({
   }),
   pendingComponent: RoutePending,
   component: HomePage,
+  codeSplitGroupings: [["errorComponent"], ["notFoundComponent"]],
   errorComponent: RouteError,
 });

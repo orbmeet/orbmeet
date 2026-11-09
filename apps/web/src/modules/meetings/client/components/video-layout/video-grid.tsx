@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { type TrackReference, useParticipants } from "@livekit/components-react";
+import { CONNECTION_EVENTS } from "@/modules/meetings/client/use-livekit-connections";
 import {
   byLabel,
   chainComparators,
@@ -12,7 +13,7 @@ import {
   preferFlag,
   trackLabel,
 } from "../participant-order";
-import { type Participant } from "livekit-client";
+import { RoomEvent, type Participant } from "livekit-client";
 import { Users } from "lucide-react";
 import { blur, glow } from "@orbmeet/ui/styles/surfaces";
 import { accent, decor, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
@@ -37,6 +38,9 @@ import { getTrackRenderKey, useActiveVideoTracks } from "./tracks";
 import { GridAvatarTile, ParticipantVideoTile, useVoiceGlow } from "./tiles";
 import { TileHandBadge } from "./hand-badge";
 import { shared } from "./shared-styles";
+
+/** A tile shows who is speaking and muted straight off the participant, so it needs both. */
+const VIDEO_GRID_EVENTS = [...CONNECTION_EVENTS, RoomEvent.ActiveSpeakersChanged];
 
 const styles = stylex.create({
   /** The phone gallery lives inside the shell's stage rect, never edge to edge. */
@@ -199,7 +203,7 @@ export function VideoGrid({
   // the distinction moot, which is why `isTablet` is no longer consulted here.
   const { isPhone, isLandscape } = useResponsive();
   const rawActiveTracks = useActiveVideoTracks({ includeScreenShare });
-  const allParticipants = useParticipants();
+  const allParticipants = useParticipants({ updateOnlyOn: VIDEO_GRID_EVENTS });
   const activeTracks = useMemo(
     () =>
       excludeLocalParticipant

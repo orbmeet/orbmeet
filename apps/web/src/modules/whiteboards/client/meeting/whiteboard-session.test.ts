@@ -167,6 +167,41 @@ describe("WhiteboardSession", () => {
     session.deactivate();
   });
 
+  it("uses the access an open hands back instead of minting", async () => {
+    const server = fakeServer(surfaceState({ open: false, whiteboardId: null }));
+    server.writeSurface.mockImplementationOnce(async () => {
+      const opened = surfaceState();
+      server.setSurface(opened);
+      return {
+        ...opened,
+        access: { token: token(opened.whiteboardId!), whiteboardUrl: URL_BASE, documentId: opened.whiteboardId!, documentTitle: "Board" },
+      };
+    });
+    const session = await createSession({ api: server });
+    await session.showBoard();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(server.mintAccess).not.toHaveBeenCalled();
+    expect(session.getSnapshot().accessReady).toBe(true);
+    session.deactivate();
+  });
+
+  it("mints when an open hands back access to a different board", async () => {
+    const server = fakeServer(surfaceState({ open: false, whiteboardId: null }));
+    server.writeSurface.mockImplementationOnce(async () => {
+      const opened = surfaceState();
+      server.setSurface(opened);
+      return {
+        ...opened,
+        access: { token: token("wb_other"), whiteboardUrl: URL_BASE, documentId: "wb_other", documentTitle: "Other" },
+      };
+    });
+    const session = await createSession({ api: server });
+    await session.showBoard();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(server.mintAccess).toHaveBeenCalledTimes(1);
+    session.deactivate();
+  });
+
   it("keeps trying when access fails after an open, instead of hanging on a spinner", async () => {
     const server = fakeServer();
     server.failMints = Number.POSITIVE_INFINITY;

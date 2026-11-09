@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useIsSpeaking, useParticipants } from "@livekit/components-react";
+import { CONNECTION_EVENTS } from "@/modules/meetings/client/use-livekit-connections";
 import { Track, type Participant } from "livekit-client";
 import * as stylex from "@stylexjs/stylex";
 import { Avatar } from "@orbmeet/ui/react";
@@ -53,7 +54,7 @@ const styles = stylex.create({
  * usual stable order, so the pile does not reshuffle as people talk.
  */
 export function PeopleFacepile() {
-  const participants = useParticipants();
+  const participants = useParticipants({ updateOnlyOn: CONNECTION_EVENTS });
   const cameraTracks = useActiveVideoTracks({ includeScreenShare: false });
   const cameraByIdentity = useMemo(() => {
     const map = new Map<string, VideoTrackRef>();

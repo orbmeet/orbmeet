@@ -1,4 +1,4 @@
-import { createFileRoute, notFound, rootRouteId } from "@tanstack/react-router";
+import { createFileRoute, notFound, rootRouteId, lazyRouteComponent } from "@tanstack/react-router";
 import * as React from "react";
 import { AppPending } from "@/app/shell/app-pending";
 import { DeadEnd } from "@/app/shell/dead-end";
@@ -8,7 +8,6 @@ import { sessionQueryOptions } from "@/app/query-client/queries/session";
 import {lookupMeeting} from "@/modules/meetings/server/history/meeting-lookup.functions";
 import { SITE_NAME, createPageHead } from "@/lib/seo";
 import { MeetingCodeRetryForm } from "@/modules/meetings/client/components/meeting-code-retry-form";
-import { lazy } from "react";
 
 function MeetingNotFoundComponent() {
   return (
@@ -31,7 +30,7 @@ function MeetingPendingComponent() {
   return <AppPending />;
 }
 
-const MeetingRoute = import.meta.env.SSR ? () => null : lazy(() => import("@/pages/meeting/meeting-page").then((page) => ({ default: page.MeetingRoute })));
+const MeetingRoute = import.meta.env.SSR ? () => null : lazyRouteComponent(() => import("@/pages/meeting/meeting-page"), "MeetingRoute");
 
 export const Route = createFileRoute("/$code")({
   params: {
@@ -84,4 +83,5 @@ export const Route = createFileRoute("/$code")({
       canonical: false,
     }),
   component: MeetingRoute,
+  codeSplitGroupings: [["errorComponent"], ["notFoundComponent"]],
 });

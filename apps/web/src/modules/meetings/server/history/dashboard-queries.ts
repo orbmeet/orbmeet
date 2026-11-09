@@ -1,8 +1,7 @@
 import type { Database } from "@orbmeet/db";
-import { meetingLinks } from "@orbmeet/db/schema";
+import { meetingLinks, spaces } from "@orbmeet/db/schema";
 import { and, desc, eq, gte, isNull, or } from "drizzle-orm";
 import type { SubscriptionTier } from "@/modules/billing/contract/types";
-import { findPersonalSpaceId } from "@/modules/spaces/server/personal";
 
 export interface DashboardUser {
   id: string;
@@ -10,9 +9,8 @@ export interface DashboardUser {
 }
 
 export async function selectDashboardMeetingLinks(db: Database, user: DashboardUser) {
-  // Explicit reusable links owned by the user's personal space.
-  const personalSpaceId = await findPersonalSpaceId(db, user.id);
-  if (!personalSpaceId) return { links: [] };
+  // Explicit reusable links owned by the user's personal space, found in the
+  // same statement: each separate query is a round trip to D1.
   const linkRows = await db
     .select({
       id: meetingLinks.id,
@@ -24,9 +22,11 @@ export async function selectDashboardMeetingLinks(db: Database, user: DashboardU
       expiresAt: meetingLinks.expiresAt,
     })
     .from(meetingLinks)
+    .innerJoin(spaces, eq(spaces.id, meetingLinks.spaceId))
     .where(
       and(
-        eq(meetingLinks.spaceId, personalSpaceId),
+        eq(spaces.kind, "personal"),
+        eq(spaces.ownerUserId, user.id),
         eq(meetingLinks.reusePolicy, "reusable"),
         isNull(meetingLinks.archivedAt),
         or(isNull(meetingLinks.expiresAt), gte(meetingLinks.expiresAt, new Date())),

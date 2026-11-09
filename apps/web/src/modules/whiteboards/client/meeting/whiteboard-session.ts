@@ -41,7 +41,11 @@ export interface WhiteboardSessionSnapshot {
 
 export interface WhiteboardSessionApi {
   mintAccess(): Promise<MintedWhiteboardAccess>;
-  writeSurface(open: boolean): Promise<MeetingSurfaceState>;
+  /**
+   * Opening may answer with access to the board as well. It is an optimisation:
+   * without it, or for another board than the room shows, the session mints.
+   */
+  writeSurface(open: boolean): Promise<MeetingSurfaceState & { access?: MintedWhiteboardAccess | null }>;
 }
 
 export interface WhiteboardSessionOptions {
@@ -196,7 +200,12 @@ export class WhiteboardSession {
     this.options.onOpening?.();
     this.changed();
     try {
-      this.setSurface(await this.options.api.writeSurface(true));
+      const { access, ...surface } = await this.options.api.writeSurface(true);
+      // Taken first, so the surface change that follows finds it and does not mint.
+      if (access && access.documentId === surface.whiteboardId) {
+        this.credentials.accept(access, surface.revision);
+      }
+      this.setSurface(surface);
     } catch (error) {
       this.options.logError("[whiteboard] Failed to open the shared surface", error);
       throw error;
@@ -254,7 +263,8 @@ export class WhiteboardSession {
       return;
     }
     try {
-      this.setSurface(await this.options.api.writeSurface(false));
+      const { access: _access, ...surface } = await this.options.api.writeSurface(false);
+      this.setSurface(surface);
     } catch (error) {
       this.options.logError("[whiteboard] Failed to close the shared surface", error);
       throw error;

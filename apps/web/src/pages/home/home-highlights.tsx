@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { useInfiniteQuery, useSuspenseInfiniteQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import * as stylex from "@stylexjs/stylex";
-import { myMeetingsQueryOptions, myUpcomingMeetingSchedulesQueryOptions } from "@/app/query-client/queries/meetings";
+import { homeRecentMeetingsQueryOptions, myUpcomingMeetingSchedulesQueryOptions } from "@/app/query-client/queries/meetings";
 import { meetingDisplayTitle } from "@/modules/meetings/client/components/meeting-format";
 import { beginMeetingEntryFlow } from "@/modules/meetings/client/entry-metrics";
 import { ScheduleMeetingDialog } from "@/modules/scheduling/client/schedule-meeting-dialog";
@@ -129,7 +129,7 @@ export function JustEnded({
   const [watchUntil] = useState(() => Date.now() + JUST_ENDED_WATCH_MS);
   const isThis = (meeting: { meetingId: string }) => meeting.meetingId === meetingId;
   const query = useInfiniteQuery({
-    ...myMeetingsQueryOptions({ status: "ended", limit: 6 }),
+    ...homeRecentMeetingsQueryOptions(),
     refetchInterval: (current) =>
       current.state.data?.pages[0]?.meetings.some(isThis) || Date.now() > watchUntil ? false : JUST_ENDED_POLL_MS,
   });

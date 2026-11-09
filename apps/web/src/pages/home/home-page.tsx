@@ -14,7 +14,7 @@ import { useInstantMeeting } from "@/modules/meetings/client/use-instant-meeting
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
 import { useNow } from "@/lib/hooks/use-now";
 import { useAuthenticatedSession } from "@/app/query-client/use-authenticated-session";
-import { myMeetingsQueryOptions, myThreadsQueryOptions } from "@/app/query-client/queries/meetings";
+import { homeRecentMeetingsQueryOptions, myThreadsQueryOptions } from "@/app/query-client/queries/meetings";
 import type { Thread } from "@/modules/meetings/contract/threads";
 import { Spinner } from "@orbmeet/ui/react";
 import { CreatePersonalMeetingLinkDialog } from "@/modules/meetings/client/dashboard/create-personal-meeting-link-dialog";
@@ -34,8 +34,6 @@ import * as stylex from "@stylexjs/stylex";
 
 const routeApi = getRouteApi("/_authed/home/");
 
-/** How many past meetings Home reads, enough to fill it once short calls are left out. */
-const RECENT_FETCH = 12;
 /** How many it lists under the latest one before handing over to the Library. */
 const EARLIER_LIMIT = 4;
 
@@ -367,7 +365,7 @@ function Latest({ meeting, viewerName }: { meeting: MeetingRowData; viewerName: 
 
 function Recent({ viewerName }: { viewerName: string }) {
   // Must never hold up starting or joining, so it does not suspend.
-  const query = useInfiniteQuery(myMeetingsQueryOptions({ status: "ended", limit: RECENT_FETCH }));
+  const query = useInfiniteQuery(homeRecentMeetingsQueryOptions());
   const meetings: MeetingRowData[] = (query.data?.pages[0]?.meetings ?? [])
     .map((meeting) => ({ ...meeting, hasWhiteboard: meeting.hasWhiteboardState || meeting.hasWhiteboardPdf }))
     .filter((meeting) => !isShortCall(meeting));

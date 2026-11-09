@@ -67,6 +67,29 @@ function touch(dir: string, value: string): void {
 }
 
 describe("saving rooms to R2", () => {
+  it("saves at most two rooms at once, however many separate calls ask", async () => {
+    const gated = gatedObjects();
+    const { manager } = await openRoom(gated.store);
+    const others = ["meet-saves-b", "meet-saves-c", "meet-saves-d"] as WhiteboardRoomId[];
+    for (const [index, room] of others.entries()) {
+      await dispatchSyncCommand(
+        "open",
+        { whiteboardRoomId: room, whiteboardId: `wb_saves_${index}`, commandId: `cmd-open-${index}`, generation: 1 },
+        manager,
+      );
+    }
+    const before = gated.puts();
+
+    const saves = [ROOM, ...others].map((room) => manager.saveRooms([room], { fresh: true }));
+    await expect.poll(() => gated.puts()).toBe(before + 2);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(gated.puts()).toBe(before + 2);
+
+    for (let released = 0; released < 4; released += 1) await gated.releaseNext();
+    await Promise.all(saves);
+    expect(gated.puts()).toBe(before + 4);
+  });
+
   it("joins a save already running for a room instead of queueing another behind it", async () => {
     const gated = gatedObjects();
     const { manager } = await openRoom(gated.store);

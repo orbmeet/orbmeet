@@ -122,6 +122,24 @@ export class WhiteboardCredentials {
     return expiresAt ? expiresAt - WHITEBOARD_TOKEN_REFRESH_BUFFER_MS : null;
   }
 
+  /**
+   * Take a credential the server issued alongside opening the surface at
+   * `revision`, sparing the separate mint. Only a newer answer replaces the
+   * held one, as with a mint.
+   */
+  accept(minted: MintedWhiteboardAccess, revision: number): void {
+    if (this.currentValue && this.currentValue.revision > revision) return;
+    this.currentValue = {
+      access: accessFromToken(minted.token, minted.whiteboardUrl),
+      documentId: minted.documentId,
+      documentTitle: minted.documentTitle,
+      revision,
+      mintedAt: this.now(),
+    };
+    this.minted = true;
+    this.droppedSinceMint = false;
+  }
+
   /** Mint for the surface at `revision`. Concurrent callers share one request. */
   mint(revision: number): Promise<WhiteboardCredential> {
     if (this.inFlight) return this.inFlight;

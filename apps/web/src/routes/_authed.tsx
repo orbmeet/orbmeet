@@ -1,8 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
 import { resolveSessionGate } from "@/modules/identity/client/auth-gate";
 import { lazy } from "react";
 
-const AuthedLayout = import.meta.env.SSR ? () => null : lazy(() => import("@/app/shell/authed-layout").then((page) => ({ default: page.AuthedLayout })));
+const AuthedLayout = import.meta.env.SSR ? () => null : lazyRouteComponent(() => import("@/app/shell/authed-layout"), "AuthedLayout");
 const AuthedErrorComponent = import.meta.env.SSR ? () => null : lazy(() => import("@/app/shell/authed-layout").then((page) => ({ default: page.AuthedErrorComponent })));
 
 export const Route = createFileRoute("/_authed")({
@@ -11,5 +11,6 @@ export const Route = createFileRoute("/_authed")({
     return resolveSessionGate(context, location);
   },
   component: AuthedLayout,
+  codeSplitGroupings: [["errorComponent"], ["notFoundComponent"]],
   errorComponent: AuthedErrorComponent,
 });

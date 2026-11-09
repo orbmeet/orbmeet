@@ -1,6 +1,6 @@
 import { getRouteApi } from "@tanstack/react-router";
 import { queryKeys } from "@/app/query-client/query-keys";
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Clock, Users, FileText, AlertTriangle, MicOff, PenTool, RefreshCw } from "lucide-react";
@@ -22,10 +22,6 @@ import {
 } from "@/app/query-client/queries/meeting-summary";
 import { getParticipantHandoffWhiteboard } from "@/modules/transcripts/server/participant-handoff.functions";
 import type { HandoffUnavailableReason } from "@/modules/transcripts/server/participant-handoff.server";
-import { roomSnapshotToStoreSnapshot } from "@orbmeet/whiteboard-client/react";
-import { whiteboardShapeUtils } from "@orbmeet/whiteboard-client/react";
-import { WHITEBOARD_TLDRAW_OPTIONS } from "@orbmeet/whiteboard-client/react";
-import { WhiteboardTldraw } from "@/modules/whiteboards/client/surface/whiteboard-canvas";
 import { useNow } from "@/lib/hooks/use-now";
 import { formatDuration, formatTimeAgo } from "@/pages/meeting-summary/lib/format";
 import { glass } from "@orbmeet/ui/tokens/wash.stylex";
@@ -61,6 +57,10 @@ type SummaryData = {
   transcribedParticipantCount: number | null;
   createdAt: Date | null;
 };
+
+/** The whiteboard engine, fetched only when this meeting has a board to show. */
+const HandoffBoard = lazy(() =>
+  import("@/pages/meeting-summary/components/handoff-board").then((module) => ({ default: module.HandoffBoard })));
 
 const styles = stylex.create({
   shell: {
@@ -324,12 +324,6 @@ export function PublicMeetingSummaryPage() {
     // failure must not strand the handoff screen until a manual reload.
     retry: 2,
   });
-  const whiteboardSnapshot = useMemo(
-    () => whiteboardQuery.data?.snapshot
-      ? roomSnapshotToStoreSnapshot(whiteboardQuery.data.snapshot)
-      : null,
-    [whiteboardQuery.data],
-  );
   const selectedWhiteboardIdForAssets = selectedWhiteboard?.whiteboardId;
   const selectedRevisionIdForAssets = selectedWhiteboard?.revisionId;
   const whiteboardAssets = useMemo<TLAssetStore>(() => ({
@@ -403,17 +397,16 @@ export function PublicMeetingSummaryPage() {
           <div {...stylex.props(styles.boardSpinner)}>
             <Spinner size="md" brand />
           </div>
-        ) : whiteboardSnapshot ? (
-          <WhiteboardTldraw
-            snapshot={whiteboardSnapshot}
-            assets={whiteboardAssets}
-            shapeUtils={whiteboardShapeUtils}
-            onMount={(editor) => {
-              editor.updateInstanceState({ isReadonly: true });
-            }}
-            options={WHITEBOARD_TLDRAW_OPTIONS}
-            licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY || undefined}
-          />
+        ) : whiteboardQuery.data?.snapshot ? (
+          <Suspense
+            fallback={(
+              <div {...stylex.props(styles.boardSpinner)}>
+                <Spinner size="md" brand />
+              </div>
+            )}
+          >
+            <HandoffBoard snapshot={whiteboardQuery.data.snapshot} assets={whiteboardAssets} />
+          </Suspense>
         ) : (
           <div {...stylex.props(styles.boardError)}>
             This Meeting Whiteboard could not be loaded.

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { lazy, Suspense, useCallback, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { sessionQueryOptions } from "@/app/query-client/queries/session";
@@ -12,7 +12,7 @@ import { useEndedMeeting, type EndedMeeting } from "@/pages/meeting-summary/lib/
 import { queryKeys } from "@/app/query-client/query-keys";
 import { Avatar, Button, Card, DotList, EmptyState, Spinner } from "@orbmeet/ui/react";
 import { QueryErrorNotice } from "@/app/query-client/query-error-notice";
-import { RecordingDownloadButton, RecordingPlayer } from "@/modules/meetings/client/components/recording-player";
+import { RecordingDownloadButton } from "@/modules/meetings/client/components/recording-download";
 import { BackLink } from "@/app/shell/back-link";
 import { List, ListGlyph, ListRow } from "@/app/shell/list";
 import { Page } from "@/app/shell/page";
@@ -27,6 +27,10 @@ import { fonts, leading, text, weight } from "@orbmeet/ui/tokens/typography.styl
 import { AlertTriangle, Clock, Download, MicOff, PenTool, RefreshCw } from "lucide-react";
 
 export type MeetingView = "pdf" | "recording" | "transcript";
+
+/** Vidstack is most of this page's own code, and only the Recording tab needs it. */
+const RecordingPlayer = lazy(() =>
+  import("@/modules/meetings/client/components/recording-player").then((module) => ({ default: module.RecordingPlayer })));
 
 const VIEW_LABELS: Record<MeetingView, string> = { pdf: "PDF", recording: "Recording", transcript: "Transcript" };
 
@@ -268,7 +272,9 @@ export function EndedMeetingPage({
           ) : null}
           {active === "recording" && recording ? (
             <div role="tabpanel" id="meeting-panel-recording" aria-labelledby="meeting-tab-recording" {...stylex.props(styles.panel)}>
-              <RecordingPlayer artifactId={recording.id} filename={recording.filename} seek={null} />
+              <Suspense fallback={<Spinner size="md" brand />}>
+                <RecordingPlayer artifactId={recording.id} seek={null} />
+              </Suspense>
             </div>
           ) : null}
           {active === "transcript" ? (

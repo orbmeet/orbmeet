@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { useMemo } from "react";
 import { useParticipants } from "@livekit/components-react";
+import { CONNECTION_EVENTS } from "@/modules/meetings/client/use-livekit-connections";
 import { MeetingVideoTrack } from "../meeting-video-track";
 import { Mic, MicOff, Monitor } from "lucide-react";
 import { ambient } from "@orbmeet/ui/styles/animations";
@@ -212,7 +213,7 @@ export function SpeakerStage({
   onRefreshVideoDevices,
 }: SpeakerStageProps) {
   const { isPhone } = useResponsive();
-  const allParticipants = useParticipants();
+  const allParticipants = useParticipants({ updateOnlyOn: CONNECTION_EVENTS });
   const participants = useMemo(
     () =>
       excludeLocalParticipant

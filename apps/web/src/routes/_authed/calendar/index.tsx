@@ -1,15 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
 import { myUpcomingMeetingSchedulesQueryOptions } from "@/app/query-client/queries/meetings";
 import { optionalString } from "@/lib/search-params";
 import { createPageHead, SITE_NAME } from "@/lib/seo";
-import { lazy } from "react";
 
 export interface CalendarSearch {
   /** The date shown, as YYYY-MM-DD. Absent: today. */
   date?: string;
 }
 
-const CalendarPage = import.meta.env.SSR ? () => null : lazy(() => import("@/pages/calendar/calendar-page").then((page) => ({ default: page.CalendarPage })));
+const CalendarPage = import.meta.env.SSR ? () => null : lazyRouteComponent(() => import("@/pages/calendar/calendar-page"), "CalendarPage");
 
 // Calendar — every meeting on a date, and where a new one is scheduled.
 export const Route = createFileRoute("/_authed/calendar/")({
@@ -29,4 +28,5 @@ export const Route = createFileRoute("/_authed/calendar/")({
     canonical: false,
   }),
   component: CalendarPage,
+  codeSplitGroupings: [["errorComponent"], ["notFoundComponent"]],
 });

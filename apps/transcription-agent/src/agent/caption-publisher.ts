@@ -5,6 +5,12 @@ import { logWarn } from "../log.js";
 
 const PUBLISH_TIMEOUT_MS = 5_000;
 const MAX_PENDING_SEGMENTS = 32;
+/**
+ * Publishes past their deadline that have not ended. A deadline only stops the
+ * wait, and each one still holds a stream, so past this nothing new is started
+ * until one ends: updates wait in their bounded slots meanwhile.
+ */
+const MAX_UNSETTLED_PUBLISHES = 8;
 
 interface CaptionWriter {
   write(text: string): Promise<void>;
@@ -40,6 +46,7 @@ export class CaptionPublisher {
   private readonly pending = new Map<string, PendingCaption>();
   private readonly revisions = new Map<string, number>();
   private loop: Promise<void> | null = null;
+  private unsettled = 0;
   private closed = false;
 
   constructor(
@@ -48,6 +55,7 @@ export class CaptionPublisher {
       senderIdentity: string;
       publishTimeoutMs?: number;
       maxPendingSegments?: number;
+      maxUnsettledPublishes?: number;
     },
   ) {}
 
@@ -65,9 +73,7 @@ export class CaptionPublisher {
     while (this.pending.size > maxPending) {
       this.pending.delete(this.pending.keys().next().value!);
     }
-    this.loop ??= this.drain().finally(() => {
-      this.loop = null;
-    });
+    this.startDrain();
   }
 
   /** Stop accepting captions and give the ones already offered up to `graceMs` to go out. */
@@ -79,13 +85,30 @@ export class CaptionPublisher {
     this.revisions.clear();
   }
 
+  private canPublish(): boolean {
+    return this.pending.size > 0 && this.unsettled < (this.options.maxUnsettledPublishes ?? MAX_UNSETTLED_PUBLISHES);
+  }
+
+  private startDrain(): void {
+    this.loop ??= this.drain().finally(() => {
+      this.loop = null;
+      // A publish may have ended between the last check and here.
+      if (this.canPublish()) this.startDrain();
+    });
+  }
+
   private async drain(): Promise<void> {
-    while (this.pending.size > 0) {
+    while (this.canPublish()) {
       const [segmentId, caption] = this.pending.entries().next().value!;
       this.pending.delete(segmentId);
+      this.unsettled += 1;
+      const publishing = this.publish(caption).finally(() => {
+        this.unsettled -= 1;
+        if (this.canPublish()) this.startDrain();
+      });
       try {
         await withDeadline(
-          this.publish(caption),
+          publishing,
           this.options.publishTimeoutMs ?? PUBLISH_TIMEOUT_MS,
           "LiveKit caption publish timed out",
         );

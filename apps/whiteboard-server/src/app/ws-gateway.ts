@@ -10,6 +10,7 @@ import type { TldrawSocket } from "../rooms/room-types.ts";
 import { SYNC_SUBPROTOCOL, type SocketAdmission, type WsFatalCloseReason } from "../http/socket-admission.ts";
 import { Reply, refuseUpgrade } from "../http/reply.ts";
 import { logError, logInfo, logWarn } from "../lib/log.ts";
+import { OutboundBacklog } from "./outbound-backlog.ts";
 
 /**
  * Every live socket is pinged this often, and one that has not answered the
@@ -51,6 +52,7 @@ export function createWebSocketGateway({ roomManager, isShuttingDown, admit }: W
     handleProtocols: (protocols) => (protocols.has(SYNC_SUBPROTOCOL) ? SYNC_SUBPROTOCOL : false),
   });
 
+  const backlog = new OutboundBacklog(() => wss.clients);
   const awaitingPong = new WeakSet<WebSocket>();
   const heartbeat = setInterval(() => {
     for (const ws of wss.clients) {
@@ -82,8 +84,9 @@ export function createWebSocketGateway({ roomManager, isShuttingDown, admit }: W
     const { tldrawSessionId, whiteboardRoomId } = session;
     const socket: TldrawSocket = {
       send(data) {
-        if (ws.bufferedAmount > MAX_BUFFERED_BYTES) {
+        if (ws.bufferedAmount > MAX_BUFFERED_BYTES || backlog.shouldShed(ws.bufferedAmount)) {
           logWarn(`[ws] dropping ${tldrawSessionId}: ${ws.bufferedAmount} bytes queued`);
+          backlog.release(ws.bufferedAmount);
           ws.terminate();
           return;
         }

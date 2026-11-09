@@ -78,6 +78,8 @@ export class RoomManager {
   private readonly newBoardGenerations = new Map<WhiteboardRoomId, number>();
   /** Each room's save in flight. A room is saved by at most one at a time. */
   private readonly saves = new Map<WhiteboardRoomId, Promise<number | null>>();
+  private activeSaves = 0;
+  private readonly saveWaiters: Array<() => void> = [];
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly snapshots: SnapshotStore;
   private tickTimer: ReturnType<typeof setInterval> | null = null;
@@ -297,12 +299,13 @@ export class RoomManager {
     if (running && !fresh) return running;
     const save: Promise<number | null> = (running ?? Promise.resolve())
       .catch(() => undefined)
-      .then(() => {
-        // A board being deleted is not saved: its copy would outlive the purge.
+      .then(() => this.withSaveSlot(() => {
+        // Checked once it is this save's turn: a board being deleted is not
+        // saved, because its copy would outlive the purge.
         if (this.purges.has(whiteboardRoomId)) return null;
         this.assertStorageWriterOwned();
         return saveRoomCopy({ dataDir: this.dataDir, objects: this.options.objects, whiteboardRoomId });
-      })
+      }))
       .finally(() => {
         if (this.saves.get(whiteboardRoomId) === save) this.saves.delete(whiteboardRoomId);
       });
@@ -311,10 +314,28 @@ export class RoomManager {
   }
 
   /**
-   * Save each of these rooms that changed, a few at a time: each save copies
-   * a database on libuv's small thread pool and uploads it. A failure is
-   * logged and the room tried again next round.
+   * Run one save under the node-wide limit. Periodic rounds, rooms going idle,
+   * handoffs and shutdown each start saves of their own, so the limit has to
+   * sit here, where they meet: each save copies a database on libuv's small
+   * thread pool, reads it into memory and uploads it.
    */
+  private async withSaveSlot<T>(save: () => T | Promise<T>): Promise<T> {
+    if (this.activeSaves >= RoomManager.SAVE_CONCURRENCY) {
+      // The save that finishes hands its slot straight to this one.
+      await new Promise<void>((resolve) => this.saveWaiters.push(resolve));
+    } else {
+      this.activeSaves += 1;
+    }
+    try {
+      return await save();
+    } finally {
+      const next = this.saveWaiters.shift();
+      if (next) next();
+      else this.activeSaves -= 1;
+    }
+  }
+
+  /** Save each of these rooms that changed. A failure is logged and the room tried again next round. */
   async saveRooms(whiteboardRoomIds: readonly WhiteboardRoomId[], { fresh }: { fresh: boolean }): Promise<void> {
     await mapWithConcurrency(whiteboardRoomIds, RoomManager.SAVE_CONCURRENCY, async (whiteboardRoomId) => {
       try {
