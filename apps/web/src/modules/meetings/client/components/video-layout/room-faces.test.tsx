@@ -77,7 +77,7 @@ describe("RoomFaces", () => {
     expect([...markup.matchAll(/<div role="img"/g)]).toHaveLength(5);
     expect(markup).toContain('aria-label="You"');
     expect(markup).not.toContain("Show everyone");
-    expect(markup).toContain("In the room");
+    expect(markup).toContain("In the meeting");
   });
 
   it("puts people with their camera on ahead of silent ones without, whoever joined first", () => {

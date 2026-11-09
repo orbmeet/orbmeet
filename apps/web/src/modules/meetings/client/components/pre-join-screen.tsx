@@ -1,8 +1,6 @@
 import { BrandMark } from "@orbmeet/ui/react";
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
 import {
-  ArrowUpRight,
   CameraOff,
   Mic,
   MicOff,
@@ -32,7 +30,6 @@ import type { MeetingWaitingReason } from "@/modules/meetings/client/entry/join-
 import { useNodeLatencyPrefetch } from "@/modules/meetings/client/entry/use-node-latency-prefetch";
 import type { PreJoinSubmission } from "@/modules/meetings/client/types";
 import { resolvePreJoinMediaEnabled, selectedDeviceLabel } from "@/modules/meetings/client/device-selection";
-import { getPreviousSession } from "@/modules/meetings/server/history/previous-session.functions";
 import {
   getDevicePickerPlaceholder,
   getToggleBlockedReason,
@@ -49,7 +46,6 @@ import {
   SPEECH_LANGUAGE_OPTIONS,
   speechLanguageDisplayName,
 } from "@/modules/meetings/client/captions/languages";
-import { queryKeys } from "@/app/query-client/query-keys";
 import {
   usePreJoinDevices,
   stopWarmupAudio as _stopWarmupAudio,
@@ -292,35 +288,6 @@ const styles = stylex.create({
   dot: { height: 3, width: 3, borderRadius: radii.pill, backgroundColor: neutral.n300 },
 
   /** What happened last time, so walking back in is a return, not a restart. */
-  previous: {
-    marginTop: space.s5,
-    borderRadius: radii.control,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: neutral.n150,
-    backgroundColor: neutral.n50,
-    paddingInline: space.s4,
-    paddingBlock: space.s3,
-  },
-  previousHead: {
-    margin: 0,
-    fontSize: text.xs2,
-    fontWeight: weight.semibold,
-    letterSpacing: tracking.wider,
-    textTransform: "uppercase",
-    color: neutral.n500,
-  },
-  previousBody: { margin: 0, marginTop: space.s1_5, fontSize: text.sm, lineHeight: 1.55, color: neutral.n700 },
-  previousLink: {
-    marginTop: space.s2,
-    display: "inline-flex",
-    alignItems: "center",
-    gap: space.s1,
-    fontSize: text.xs,
-    fontWeight: weight.semibold,
-    color: { default: accent.a700, [env.hoverable]: { default: accent.a700, ":hover": accent.a800 } },
-    textDecorationLine: "none",
-  },
 
   fieldLabel: {
     display: "block",
@@ -777,13 +744,6 @@ export function PreJoinScreen({
     `Captions in ${languageOption ? speechLanguageDisplayName(languageOption) : captionLanguage}`,
   ].join(" · ");
 
-  const previous = useQuery({
-    queryKey: queryKeys.meetings.previousSession(meetingCode),
-    queryFn: () => getPreviousSession({ data: { code: meetingCode! } }),
-    enabled: Boolean(meetingCode && user),
-    staleTime: 60_000,
-  }).data;
-
   return (
     <div {...stylex.props(styles.root)}>
       <a href={user ? "/home" : "/"} {...stylex.props(focus.ring, styles.brand)}>
@@ -893,27 +853,6 @@ export function PreJoinScreen({
               </>
             )}
           </p>
-
-          {previous && (
-            <section aria-label="Last session" {...stylex.props(styles.previous)}>
-              <p {...stylex.props(styles.previousHead)}>
-                Last session · {formatPreviousDate(previous.endedAt)}
-                {previous.durationSeconds ? ` · ${Math.max(1, Math.round(previous.durationSeconds / 60))} min` : ""}
-              </p>
-              <p {...stylex.props(styles.previousBody)}>
-                {previous.excerpt ?? "Its summary is still being written."}
-              </p>
-              <a
-                href={`/meetings/${previous.meetingId}`}
-                target="_blank"
-                rel="noreferrer"
-                {...stylex.props(focus.ring, styles.previousLink)}
-              >
-                Open the record
-                <ArrowUpRight size={13} />
-              </a>
-            </section>
-          )}
 
           {!user && (
             <>
@@ -1063,12 +1002,6 @@ export function PreJoinScreen({
   );
 }
 /* oxlint-enable react/immutability, react/refs */
-
-function formatPreviousDate(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short" }).format(date);
-}
 
 function PreviewToggle({
   on,

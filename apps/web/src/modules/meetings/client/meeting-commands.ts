@@ -40,10 +40,10 @@ import {
 } from "lucide-react";
 import type { SurfaceToolbarControls } from "@/modules/meetings/client/components/dock-controls";
 
-export type MeetingCommandGroup = "You" | "People" | "Stage" | "Board" | "Room" | "Leave";
+export type MeetingCommandGroup = "You" | "People" | "Stage" | "Board" | "Meeting" | "Leave";
 
 /** Display order of the groups; matching never reorders them. */
-export const MEETING_COMMAND_GROUPS: readonly MeetingCommandGroup[] = ["You", "People", "Stage", "Board", "Room", "Leave"];
+export const MEETING_COMMAND_GROUPS: readonly MeetingCommandGroup[] = ["You", "People", "Stage", "Board", "Meeting", "Leave"];
 
 export interface MeetingCommand {
   id: string;
@@ -244,7 +244,7 @@ export function buildMeetingCommands(input: MeetingCommandInput): MeetingCommand
 
   commands.push({
     id: "timeline",
-    group: "Room",
+    group: "Meeting",
     label: input.timeline.open ? "Close the conversation" : "Open the conversation",
     keywords: ["chat", "messages", "captions", "transcript", "hands"],
     shortcut: "C",
@@ -253,7 +253,7 @@ export function buildMeetingCommands(input: MeetingCommandInput): MeetingCommand
   });
   commands.push({
     id: "captions",
-    group: "Room",
+    group: "Meeting",
     label: input.captions.shown ? "Hide captions" : "Show captions",
     keywords: ["captions", "subtitles", "cc", "closed captions"],
     icon: Captions,
@@ -261,7 +261,7 @@ export function buildMeetingCommands(input: MeetingCommandInput): MeetingCommand
   });
   commands.push({
     id: "speech",
-    group: "Room",
+    group: "Meeting",
     label: input.speech.shown ? "Hide what's said in the conversation" : "Show what's said in the conversation",
     keywords: ["transcript", "speech", "what's said"],
     icon: MessageSquareText,
@@ -270,7 +270,7 @@ export function buildMeetingCommands(input: MeetingCommandInput): MeetingCommand
   if (input.people) {
     commands.push({
       id: "people",
-      group: "Room",
+      group: "Meeting",
       label: input.people.open ? "Close the people list" : "Show everyone in the meeting",
       keywords: ["people", "participants", "attendees"],
       icon: LayoutGrid,
@@ -279,7 +279,7 @@ export function buildMeetingCommands(input: MeetingCommandInput): MeetingCommand
   }
   commands.push({
     id: "copy-link",
-    group: "Room",
+    group: "Meeting",
     label: "Copy the meeting link",
     keywords: ["invite", "link", "url", "share"],
     icon: Link2,
@@ -289,7 +289,7 @@ export function buildMeetingCommands(input: MeetingCommandInput): MeetingCommand
     const { recording } = input;
     commands.push({
       id: "record",
-      group: "Room",
+      group: "Meeting",
       label: recording.recording ? "Stop recording" : "Record meeting",
       keywords: ["record", "recording", "rec"],
       icon: recording.recording ? Square : CircleDot,
@@ -303,7 +303,7 @@ export function buildMeetingCommands(input: MeetingCommandInput): MeetingCommand
     const { security } = input;
     commands.push({
       id: "lock",
-      group: "Room",
+      group: "Meeting",
       label: security.secured ? "Unlock meeting" : "Lock meeting",
       hint: security.secured ? "Anyone with the link will be able to join" : "Approval will be required to join",
       keywords: ["lock", "security", "admission", "approval"],

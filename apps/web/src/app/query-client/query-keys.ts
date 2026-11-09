@@ -24,15 +24,12 @@ export const queryKeys = {
     upcomingSchedules: (spaceId?: string) => spaceId
       ? (["meetings", "scheduled", "upcoming", "space", spaceId] as const)
       : (["meetings", "scheduled", "upcoming"] as const),
-    // What happened last time at this link, shown before joining it again.
-    previousSession: (code: string | undefined) => ["meetings", "previous-session", code] as const,
     summary: (meetingId: string) => ["meetings", "summary", meetingId] as const,
     summaries: () => ["meetings", "summary"] as const,
     transcripts: (meetingId: string) => ["meetings", "transcripts", meetingId] as const,
     // Library search: lines said in past meetings that match the search text.
     spoken: <T>(input: T) => ["meetings", "spoken", input] as const,
     // Follow-ups still open across the viewer's recent meetings (Home).
-    openFollowUps: () => ["meetings", "follow-ups", "open"] as const,
   },
   whiteboards: {
     list: (status?: "active" | "archived") => status

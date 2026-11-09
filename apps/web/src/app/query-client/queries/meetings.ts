@@ -4,7 +4,6 @@ import { getMyMeetings } from "@/modules/meetings/server/history/personal-meetin
 import { getMyLastReusableMeeting } from "@/modules/meetings/server/history/last-reusable-meeting.functions";
 import { getMyThreads } from "@/modules/meetings/server/room/threads.functions";
 import { searchMySpokenLines } from "@/modules/transcripts/server/spoken-search.functions";
-import { listMyOpenFollowUps } from "@/modules/transcripts/server/follow-ups.functions";
 import { getSpaceDefaultMeetingLink } from "@/modules/meetings/server/space-default-meeting-link.functions";
 import { getMyUpcomingMeetingSchedules } from "@/modules/scheduling/server/queries.functions";
 import { queryKeys } from "@/app/query-client/query-keys";
@@ -43,16 +42,6 @@ export function myThreadsQueryOptions() {
     queryKey: queryKeys.threads(),
     queryFn: ({ signal }) => getMyThreads({ signal }),
     staleTime: 10_000,
-    gcTime: 300_000,
-  });
-}
-
-/** Follow-ups not yet done from the viewer's recent meetings. */
-export function myOpenFollowUpsQueryOptions(limit = 5) {
-  return queryOptions({
-    queryKey: [...queryKeys.meetings.openFollowUps(), limit],
-    queryFn: ({ signal }) => listMyOpenFollowUps({ data: { limit }, signal }),
-    staleTime: 30_000,
     gcTime: 300_000,
   });
 }

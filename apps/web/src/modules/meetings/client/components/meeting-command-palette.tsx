@@ -329,7 +329,7 @@ export function MeetingCommandPalette({ open, onOpenChange, commands, onAskOrb }
             {row.kind === "command" ? row.command.label : `Ask ${ORB_NAME} “${row.query}”`}
           </span>
           {command?.hint && <span {...stylex.props(styles.optionHint, layout.truncate)}>{command.hint}</span>}
-          {!command && <span {...stylex.props(styles.optionHint, layout.truncate)}>In the Room · everyone sees the answer</span>}
+          {!command && <span {...stylex.props(styles.optionHint, layout.truncate)}>In the meeting · everyone sees the answer</span>}
         </span>
         {!grouped && command && <span {...stylex.props(styles.optionGroup)}>{command.group}</span>}
         {command?.shortcut && <kbd {...stylex.props(styles.kbd)}>{command.shortcut}</kbd>}

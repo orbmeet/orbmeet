@@ -237,6 +237,7 @@ const PUBLISHED_SERVER_FILES: Record<string, readonly string[]> = {
     "server/config.server",
     "server/document-revisions",
     "server/documents",
+    "server/export.functions",
     "server/handout-pages",
     "server/meeting/authority.server",
     "server/meeting/capture",

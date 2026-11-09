@@ -1,281 +1,140 @@
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { CalendarPlus, ChevronLeft, ChevronRight, ChevronUp } from "lucide-react";
+import { CalendarPlus, ChevronLeft, ChevronRight } from "lucide-react";
 import { myMeetingsQueryOptions, myUpcomingMeetingSchedulesQueryOptions } from "@/app/query-client/queries/meetings";
 import { useAuthenticatedSession } from "@/app/query-client/use-authenticated-session";
 import { meetingDisplayTitle } from "@/modules/meetings/client/components/meeting-format";
-import { UpcomingMeetings } from "@/modules/scheduling/client/upcoming-meetings";
+import { MeetingOutputActions, type MeetingOutputs } from "@/modules/meetings/client/components/meeting-output-actions";
+import { beginMeetingEntryFlow } from "@/modules/meetings/client/entry-metrics";
+import { meetingEntryPath } from "@/modules/meetings/client/urls";
 import { CancelScheduledMeetingDialog, ScheduleMeetingDialog, type UpcomingMeetingSchedule } from "@/modules/scheduling/client/schedule-meeting-dialog";
 import { useNow } from "@/lib/hooks/use-now";
-import { useResponsive } from "@/lib/hooks/use-responsive";
-import { BottomSheet, Button } from "@orbmeet/ui/react";
+import { Button } from "@orbmeet/ui/react";
 import { enter } from "@orbmeet/ui/styles/animations";
 import { focus, layout, motion } from "@orbmeet/ui/styles/atoms";
 import { accent, border, danger, ink, live, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
 import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
-import { shadows } from "@orbmeet/ui/tokens/shadows.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { fonts, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
-import { addDays, eventsAboveHour, fromDateParam, openingHour, placeDay, sameDay, startOfWeek, toDateParam } from "./calendar-week";
-import { EventDetail, type CalendarEvent, type EventKind } from "./event-detail";
+import { addDays, fromDateParam, sameDay, startOfWeek, toDateParam } from "./calendar-week";
 
 const routeApi = getRouteApi("/_authed/calendar/");
 
-/** One hour of the grid, in px. */
-const HOUR = 52;
-/** The grid opens scrolled to this hour, a working morning. */
-const FIRST_VISIBLE_HOUR = 7;
-/** The hour labels' column, in px. */
-const GUTTER = 56;
-/** The 236px rail, the page's padding, a 480px week and a 260px panel need this much. */
-const DETAILS_BESIDE_WEEK_PX = 1140;
-/**
- * The least an event is drawn as, in minutes of grid. A finger needs a taller
- * block to hit than a pointer does; it is reserved in the layout too, so a
- * short call never sits on top of the next one.
- */
-const MIN_EVENT_MINUTES = { pointer: 20, touch: 40 };
-/**
- * The least block height, in px, that holds an event's time under its title:
- * 4px padding each end, a 15px title, a 1px gap, a 13px time, and a planned
- * event's 1.5px border each end. Under it the time is read out but not drawn,
- * rather than drawn cut in half, as a 40-minute touch block (33px) drew it.
- */
-const EVENT_TIME_FITS_PX = 41;
+type CalendarEvent = {
+  id: string;
+  title: string;
+  start: Date;
+  end: Date;
+  detail: string | null;
+} & (
+  | { kind: "past"; outputs: MeetingOutputs }
+  | { kind: "live"; code: string }
+  | { kind: "planned"; schedule: UpcomingMeetingSchedule }
+);
 
 const styles = stylex.create({
-  page: { display: "flex", flexDirection: "column", gap: space.s5, paddingTop: { default: space.s4, [bp.lg]: space.s6 } },
-  /**
-   * The week fits the window on a desktop: the page is the window less the
-   * shell's `<main>` chrome around it (its 12px margins, 1px border, s4 top and
-   * s16 bottom padding — see authed-layout), and the grid takes what the bar
-   * leaves, one line or wrapped. A `100vh - 190px` grid guessed at the bar and
-   * missed by 8px, scrolling the whole page under the grid's own scroll.
-   */
-  pageFitsWindow: {
-    height: {
-      default: "auto",
-      [bp.lg]: `calc(100dvh - 2 * ${space.s3} - 2px - ${space.s4} - ${space.s16})`,
-    },
-    boxSizing: "border-box",
-  },
-  bar: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: space.s3 },
+  page: { maxWidth: 1100, marginInline: "auto", display: "flex", flexDirection: "column", gap: space.s5, paddingTop: { default: space.s4, [bp.lg]: space.s7 } },
+  bar: { display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: space.s3 },
+  heading: { display: "flex", flexDirection: "column", gap: space.s1, flexGrow: 1, flexBasis: 280, minWidth: 0 },
+  relative: { fontSize: "0.8125rem", fontWeight: weight.semibold, color: accent.a700, minHeight: 18 },
   title: {
     margin: 0,
-    marginInlineEnd: space.s2,
     fontFamily: fonts.heading,
     fontWeight: weight.semibold,
-    fontSize: { default: "1.75rem", [bp.sm]: "2rem" },
-    letterSpacing: "-0.04em",
+    fontSize: { default: "2rem", [bp.sm]: "2.5rem" },
+    lineHeight: 1.05,
+    letterSpacing: "-0.045em",
     color: ink.strong,
   },
   nav: { display: "flex", gap: space.s1 },
   navButton: {
     display: "grid",
     placeItems: "center",
-    minWidth: 36,
-    height: 36,
-    paddingInline: space.s2_5,
+    minWidth: 44,
+    height: 44,
+    paddingInline: space.s3,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: border.base,
+    borderRadius: 12,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    fontSize: text.sm,
+    fontWeight: weight.medium,
+    color: ink.strong,
+    backgroundColor: { default: surface.raised, [env.hoverable]: { default: surface.raised, ":hover": neutral.n50 } },
+  },
+  /** The week around the date shown: a press goes to that day. */
+  week: { display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: space.s1_5 },
+  day: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 1,
+    minHeight: 76,
+    paddingBlock: space.s2,
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: border.subtle,
-    borderRadius: 10,
-    fontSize: "0.84375rem",
-    fontWeight: weight.medium,
+    borderRadius: 14,
     color: ink.strong,
     textDecorationLine: "none",
     backgroundColor: { default: surface.raised, [env.hoverable]: { default: surface.raised, ":hover": neutral.n50 } },
   },
-  // Gives way on a tablet, where it is what pushes Schedule onto its own row.
-  zone: { display: { default: "inline", [bp.md]: "none", [bp.xl]: "inline" }, fontSize: "0.8125rem", color: ink.muted },
-  /** Meetings above the hour the grid opens at, which would otherwise look like none. */
-  earlier: {
-    alignSelf: "flex-start",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: space.s1_5,
-    height: { default: 36, [env.touch]: 44 },
-    paddingInline: space.s3,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: accent.a200,
-    borderRadius: 10,
-    cursor: "pointer",
-    fontFamily: "inherit",
-    fontSize: "0.8125rem",
-    fontWeight: weight.medium,
-    color: accent.a700,
-    backgroundColor: { default: accent.a50, [env.hoverable]: { default: accent.a50, ":hover": accent.a100 } },
-  },
-  spacer: { flexGrow: 1 },
-  views: { display: "flex", padding: 3, borderRadius: 11, backgroundColor: neutral.n100 },
-  viewLink: {
-    display: "inline-flex",
-    alignItems: "center",
-    height: { default: 30, [env.touch]: 38 },
-    paddingInline: space.s3,
-    borderRadius: 8,
-    fontSize: "0.84375rem",
-    color: ink.body,
-    textDecorationLine: "none",
-  },
-  viewOn: { fontWeight: weight.medium, color: ink.strong, backgroundColor: surface.raised, boxShadow: shadows.hairline },
-
-  /** The week, and beside it the meeting you picked. Stacked on a narrow screen. */
-  split: { display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: space.s6 },
-  splitFills: { flexGrow: { default: 0, [bp.lg]: 1 }, minHeight: 0 },
-  detail: {
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: { default: 300, [bp.lg]: 260 },
-    maxWidth: { default: "none", [bp.lg]: 340 },
-    minWidth: 0,
-    boxSizing: "border-box",
-    // Too narrow to sit beside the week, and it would wrap off the fitted page.
-    display: { default: "block", "@media (min-width: 1024px) and (max-width: 1139px)": "none" },
-    padding: space.s6,
-    borderRadius: 18,
-    backgroundColor: surface.sunken,
-  },
-  detailEmpty: { margin: 0, fontSize: text.sm, lineHeight: 1.5, color: ink.muted },
-  sheetBody: { height: "100%", overflowY: "auto", boxSizing: "border-box", paddingInline: space.s5, paddingBottom: space.s8 },
-  scroller: {
-    flexGrow: 999,
-    flexShrink: 1,
-    // Small enough on a landscape tablet that the details stay beside the week.
-    flexBasis: { default: 640, [bp.lg]: 480 },
-    minWidth: 0,
-    overflow: "auto",
-    maxHeight: { default: "70vh", [bp.lg]: "100%" },
-    minHeight: 420,
-    borderTopWidth: 1,
-    borderTopStyle: "solid",
-    borderTopColor: border.subtle,
-  },
-  grid: { display: "grid", minWidth: { default: 680, [bp.lg]: 520 } },
-  gridDay: { minWidth: 0 },
-  head: {
-    position: "sticky",
-    top: 0,
-    zIndex: 3,
+  dayOn: { borderColor: accent.a600, color: ink.onAccent, backgroundColor: accent.a600 },
+  dow: { fontSize: "0.8125rem" },
+  num: { fontSize: "1.25rem", fontWeight: weight.semibold, lineHeight: 1.2 },
+  count: { fontSize: text.xs, minHeight: 16 },
+  list: { margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", borderRadius: 18, boxShadow: `0 0 0 1px ${border.subtle}`, backgroundColor: surface.raised },
+  row: {
     display: "flex",
-    flexDirection: "column",
+    flexWrap: "wrap",
     alignItems: "center",
-    gap: space.s1,
-    paddingBlock: space.s2_5,
-    backgroundColor: surface.raised,
-    borderBottomWidth: 1,
+    columnGap: space.s4,
+    rowGap: space.s2,
+    paddingBlock: space.s3,
+    paddingInline: space.s5,
+    borderBottomWidth: { default: 1, ":last-child": 0 },
     borderBottomStyle: "solid",
     borderBottomColor: border.subtle,
   },
-  // The corner stays put both ways, above the day heads and the hour gutter.
-  headCorner: { position: "sticky", top: 0, insetInlineStart: 0, zIndex: 4, backgroundColor: surface.raised, borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: border.subtle },
-  dow: { fontSize: text.xs, fontWeight: weight.medium, color: ink.muted },
-  num: { display: "grid", placeItems: "center", width: 32, height: 32, borderRadius: "50%", fontSize: "0.9375rem", fontWeight: weight.semibold, color: ink.strong },
-  numToday: { color: ink.onAccent, backgroundColor: accent.a600 },
-  // A week scrolled sideways on a narrow screen keeps its hours in view.
-  gutter: { position: "sticky", insetInlineStart: 0, zIndex: 2, height: HOUR * 24, backgroundColor: surface.raised },
-  hour: {
-    position: "absolute",
-    insetInlineEnd: space.s2_5,
-    transform: "translateY(-50%)",
-    fontFamily: fonts.mono,
-    fontSize: "0.6875rem",
-    color: ink.muted,
+  time: { flexShrink: 0, width: { default: "100%", [bp.sm]: 160 }, fontFamily: fonts.mono, fontSize: "0.8125rem", color: ink.body },
+  timeLive: { color: live.l700, fontWeight: weight.semibold },
+  body: { display: "flex", flexDirection: "column", gap: 2, flexGrow: 1, flexBasis: 200, minWidth: 0 },
+  eventTitle: { margin: 0, fontSize: text.base, fontWeight: weight.medium, color: ink.strong },
+  eventLink: { color: "inherit", textDecorationLine: "none" },
+  detail: { margin: 0, fontSize: "0.8125rem", color: ink.muted },
+  actions: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: space.s2 },
+  join: {
+    display: "inline-flex",
+    alignItems: "center",
+    height: 40,
+    paddingInline: 18,
+    borderRadius: 999,
+    fontSize: text.sm,
+    fontWeight: weight.medium,
+    textDecorationLine: "none",
+    color: ink.onAccent,
+    backgroundColor: { default: accent.a600, [env.hoverable]: { default: accent.a600, ":hover": accent.a700 } },
   },
-  column: {
-    position: "relative",
-    borderInlineStartWidth: 1,
-    borderInlineStartStyle: "solid",
-    borderInlineStartColor: border.subtle,
-    height: HOUR * 24,
-    backgroundImage: `repeating-linear-gradient(to bottom, ${neutral.n100} 0, ${neutral.n100} 1px, transparent 1px, transparent ${HOUR}px)`,
-  },
-  /**
-   * An empty hour of a day, to schedule in. Out of the tab order: 168 stops
-   * would bury the grid's events, and the Schedule button does the same job
-   * from the keyboard.
-   */
-  slot: {
-    position: "absolute",
-    insetInline: 0,
-    height: HOUR,
-    padding: 0,
-    borderWidth: 0,
-    cursor: "copy",
-    backgroundColor: { default: "transparent", [env.hoverable]: { default: "transparent", ":hover": neutral.n50 } },
-  },
-  columnWeekend: { backgroundColor: surface.sunken },
-  columnToday: { backgroundColor: accent.a50 },
-  event: {
-    position: "absolute",
-    display: "flex",
-    flexDirection: "column",
-    gap: 1,
-    overflow: "hidden",
-    boxSizing: "border-box",
-    paddingInline: 7,
-    paddingBlock: 4,
+  quiet: {
+    minHeight: 40,
+    paddingInline: space.s2,
     borderWidth: 0,
     borderRadius: 8,
     cursor: "pointer",
-    textAlign: "start",
     fontFamily: "inherit",
-    fontSize: text.xs,
-    lineHeight: 1.25,
-    textDecorationLine: "none",
-    transitionProperty: { default: "transform, box-shadow, opacity", [env.reducedMotion]: "none" },
-    transitionDuration: "180ms",
-    transform: { default: "none", [env.hoverable]: { default: "none", ":hover": "translateY(-1px)" } },
+    fontSize: text.sm,
+    fontWeight: weight.medium,
+    color: ink.body,
+    backgroundColor: "transparent",
   },
-  // What is over steps back; what is on and what is coming stand out.
-  past: { color: ink.body, backgroundColor: neutral.n100, opacity: 0.75 },
-  pastSpace: { color: accent.a800, backgroundColor: accent.a100, opacity: 0.75 },
-  live: { color: live.l800, backgroundColor: live.l100, boxShadow: `inset 0 0 0 1.5px ${live.l500}` },
-  selected: { opacity: 1, boxShadow: `0 0 0 2px ${surface.raised}, 0 0 0 4px ${accent.a500}`, zIndex: 1 },
-  planned: {
-    color: accent.a700,
-    backgroundColor: accent.a50,
-    borderWidth: 1.5,
-    borderStyle: "dashed",
-    borderColor: accent.a400,
-  },
-  eventTitle: { flexShrink: 0, fontWeight: weight.semibold },
-  // The time gives way first: a short block shows its name, not its clock
-  // (`EVENT_TIME_FITS_PX`). It keeps to one line, cut short, where a narrow
-  // lane would wrap it a word a line.
-  eventTime: {
-    minHeight: 0,
-    overflow: "hidden",
-    whiteSpace: "nowrap",
-    textOverflow: "ellipsis",
-    fontFamily: fonts.mono,
-    fontSize: "0.65625rem",
-    opacity: 0.85,
-  },
-  now: { position: "absolute", insetInline: 0, height: 2, backgroundColor: danger.d600, pointerEvents: "none" },
-  nowDot: { position: "absolute", insetInlineStart: -5, top: -4, width: 10, height: 10, borderRadius: "50%", backgroundColor: danger.d600 },
+  quietDanger: { color: danger.d700 },
+  empty: { margin: 0, paddingBlock: space.s8, textAlign: "center", fontSize: text.sm, color: ink.muted },
 });
-
-/** Where things sit in the grid: worked out per item, so set as dynamic styles. */
-const placement = stylex.create({
-  columns: (columns: string) => ({ gridTemplateColumns: columns }),
-  top: (top: string) => ({ top }),
-  block: (top: string, height: string, start: string, width: string) => ({ top, height, insetInlineStart: start, width }),
-});
-
-const eventStyle: Record<EventKind, stylex.StyleXStyles> = {
-  past: styles.past,
-  pastSpace: styles.pastSpace,
-  live: styles.live,
-  planned: styles.planned,
-};
-
-function isWeekend(day: Date): boolean {
-  return day.getDay() === 0 || day.getDay() === 6;
-}
 
 function shortTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -317,16 +176,21 @@ function useEvents(days: Date[], viewerName: string, now: number): CalendarEvent
       if (!meeting.startedAt) continue;
       const start = new Date(meeting.startedAt);
       if (start.getTime() >= to) continue;
+      const others = meeting.participantNames.filter((name) => name !== viewerName);
       events.push({
         id: `m:${meeting.id}`,
         title: meetingDisplayTitle(meeting.title, meeting.participantNames, viewerName),
         start,
         end: new Date(meeting.endedAt ?? meeting.startedAt),
-        kind: meeting.spaceName ? "pastSpace" : "past",
-        meetingId: meeting.id,
-        spaceId: meeting.spaceId,
-        spaceName: meeting.spaceName,
-        participantNames: meeting.participantNames,
+        detail: [others.join(", "), meeting.spaceName].filter(Boolean).join(" · ") || null,
+        kind: "past",
+        outputs: {
+          meetingId: meeting.id,
+          hasWhiteboard: meeting.hasWhiteboardState || meeting.hasWhiteboardPdf,
+          hasWhiteboardPdf: meeting.hasWhiteboardPdf,
+          hasRecording: meeting.hasRecording,
+          hasSummary: meeting.hasSummary,
+        },
       });
     }
     for (const meeting of open.data?.pages.flatMap((page) => page.meetings) ?? []) {
@@ -336,11 +200,9 @@ function useEvents(days: Date[], viewerName: string, now: number): CalendarEvent
         title: meeting.title || meeting.spaceName || "Meeting",
         start: new Date(meeting.startedAt),
         end: new Date(Math.max(now, Date.parse(meeting.startedAt))),
+        detail: meeting.spaceName,
         kind: "live",
         code: meeting.code,
-        spaceId: meeting.spaceId,
-        spaceName: meeting.spaceName,
-        participantNames: meeting.participantNames,
       });
     }
     for (const schedule of planned.data?.pages.flatMap((page) => page.schedules) ?? []) {
@@ -352,95 +214,87 @@ function useEvents(days: Date[], viewerName: string, now: number): CalendarEvent
         title: schedule.title?.trim() || "Scheduled meeting",
         start,
         end: new Date(schedule.endsAt),
+        detail: schedule.spaceName ?? `Organized by ${schedule.organizerName}`,
         kind: "planned",
-        spaceId: schedule.spaceId,
-        spaceName: schedule.spaceName,
         schedule,
       });
     }
-    return events;
+    return events.sort((a, b) => a.start.getTime() - b.start.getTime());
   }, [past.data, open.data, planned.data, from, to, now, viewerName]);
 }
 
-function DayColumn({
-  day,
-  today,
-  now,
-  events,
-  selectedId,
-  minMinutes,
-  onPick,
-  onSelect,
+function relativeLabel(day: Date, today: Date): string {
+  if (sameDay(day, today)) return "Today";
+  if (sameDay(day, addDays(today, 1))) return "Tomorrow";
+  if (sameDay(day, addDays(today, -1))) return "Yesterday";
+  return "";
+}
+
+function EventRow({
+  event,
+  onEdit,
+  onCancel,
 }: {
-  day: Date;
-  today: boolean;
-  now: number;
-  events: CalendarEvent[];
-  selectedId: string | null;
-  minMinutes: number;
-  onPick: (at: Date) => void;
-  onSelect: (id: string) => void;
+  event: CalendarEvent;
+  onEdit: (schedule: UpcomingMeetingSchedule) => void;
+  onCancel: (schedule: UpcomingMeetingSchedule) => void;
 }) {
-  const placed = placeDay(events, day, minMinutes);
-  const nowMinute = (now - new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime()) / 60_000;
-  const dayLabel = day.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
   return (
-    <div {...stylex.props(styles.column, isWeekend(day) && styles.columnWeekend, today && styles.columnToday)}>
-      {/* An empty stretch of the day is a time to schedule at, to the quarter hour. */}
-      {Array.from({ length: 24 }, (_, hour) => (
-        <button
-          key={hour}
-          type="button"
-          tabIndex={-1}
-          aria-label={`Schedule ${dayLabel} at ${new Date(2000, 0, 1, hour).toLocaleTimeString([], { hour: "numeric" })}`}
-          onClick={(event) => {
-            const quarter = Math.min(3, Math.floor((event.nativeEvent.offsetY / HOUR) * 4));
-            onPick(new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour, quarter * 15));
-          }}
-          {...stylex.props(styles.slot, placement.top(`${hour * HOUR}px`))}
-        />
-      ))}
-      {placed.map(({ item, fromMinute, toMinute, lane, lanes }) => {
-        const heightPx = Math.max(20, ((toMinute - fromMinute) / 60) * HOUR - 2);
-        const block = placement.block(
-          `${(fromMinute / 60) * HOUR}px`,
-          `${heightPx}px`,
-          `calc(${(lane / lanes) * 100}% + 3px)`,
-          `calc(${100 / lanes}% - 6px)`,
-        );
-        const body = (
-          <>
-            <span {...stylex.props(styles.eventTitle, layout.truncate)}>{item.title}</span>
-            {/* Out of sight on a short block, but still part of its name. */}
-            <span {...stylex.props(heightPx >= EVENT_TIME_FITS_PX ? styles.eventTime : layout.srOnly)}>
-              {shortTime(item.start)}
-              {item.kind === "live" ? " · now" : `–${shortTime(item.end)}`}
-            </span>
-          </>
-        );
-        const selected = item.id === selectedId;
-        return (
-          <button
-            key={item.id}
-            type="button"
-            aria-pressed={selected}
-            title={`${item.title}, ${shortTime(item.start)}`}
-            onClick={() => onSelect(item.id)}
-            {...stylex.props(styles.event, eventStyle[item.kind], selected && styles.selected, block, motion.tint, focus.ring)}
-          >
-            {body}
-          </button>
-        );
-      })}
-      {today && nowMinute >= 0 && nowMinute < 24 * 60 ? (
-        <span aria-hidden="true" {...stylex.props(styles.now, placement.top(`${(nowMinute / 60) * HOUR}px`))}>
-          <span {...stylex.props(styles.nowDot)} />
-        </span>
+    <li {...stylex.props(styles.row)}>
+      <span {...stylex.props(styles.time, event.kind === "live" && styles.timeLive)}>
+        {event.kind === "live" ? "Happening now" : `${shortTime(event.start)}–${shortTime(event.end)}`}
+      </span>
+      <div {...stylex.props(styles.body)}>
+        <h2 {...stylex.props(styles.eventTitle, layout.truncate)}>
+          {event.kind === "past" ? (
+            <Link to="/meetings/$meetingId" params={{ meetingId: event.outputs.meetingId }} {...stylex.props(styles.eventLink, focus.ring)}>
+              {event.title}
+            </Link>
+          ) : (
+            event.title
+          )}
+        </h2>
+        {event.detail ? <p {...stylex.props(styles.detail, layout.truncate)}>{event.detail}</p> : null}
+      </div>
+      {event.kind === "past" ? <MeetingOutputActions meeting={event.outputs} title={event.title} /> : null}
+      {event.kind === "live" ? (
+        <a
+          href={meetingEntryPath(event.code)}
+          onClick={() => beginMeetingEntryFlow({ source: "calendar-live", code: event.code })}
+          {...stylex.props(styles.join, motion.tint, focus.ring)}
+        >
+          Join
+        </a>
       ) : null}
-    </div>
+      {event.kind === "planned" ? (
+        <div {...stylex.props(styles.actions)}>
+          {event.schedule.canManage ? (
+            <>
+              <button type="button" onClick={() => onEdit(event.schedule)} {...stylex.props(styles.quiet, motion.tint, focus.ring)}>
+                Edit
+              </button>
+              <button type="button" onClick={() => onCancel(event.schedule)} {...stylex.props(styles.quiet, styles.quietDanger, motion.tint, focus.ring)}>
+                Cancel
+              </button>
+            </>
+          ) : null}
+          <a
+            href={meetingEntryPath(event.schedule.code)}
+            onClick={() => beginMeetingEntryFlow({ source: "meetings-upcoming", code: event.schedule.code })}
+            {...stylex.props(styles.join, motion.tint, focus.ring)}
+          >
+            Join
+          </a>
+        </div>
+      ) : null}
+    </li>
   );
 }
 
+/**
+ * One date at a time: the arrows move a day, the strip jumps within the week,
+ * and every meeting on that date is listed at once, whatever hour it was.
+ */
 export function CalendarPage() {
   const search = routeApi.useSearch();
   const navigate = useNavigate();
@@ -450,184 +304,78 @@ export function CalendarPage() {
   const today = new Date(now);
   // Midnight, not now: a day shown from now on would leave out what already happened today.
   const anchor = fromDateParam(search.date, new Date(today.getFullYear(), today.getMonth(), today.getDate()));
-  const { isPhone } = useResponsive();
-  const view = search.view ?? (isPhone ? "day" : "week");
-  // Whether a finger points doesn't change while the page is open.
-  const [coarse] = useState(() => window.matchMedia("(pointer: coarse)").matches);
-  const days = view === "day" ? [anchor] : Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor), i));
+  const days = Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor), i));
   const events = useEvents(days, session.user.name ?? "", now);
-  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const onDay = (day: Date) => events.filter((event) => sameDay(event.start, day));
+  const shown = onDay(anchor);
 
-  const [scheduling, setScheduling] = useState<{ startsAt?: string; schedule?: UpcomingMeetingSchedule } | null>(null);
+  const [scheduling, setScheduling] = useState<{ schedule?: UpcomingMeetingSchedule } | null>(null);
   const [canceling, setCanceling] = useState<UpcomingMeetingSchedule | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  // Below the width where the details fit beside the week they are under 24
-  // hours of grid, so a tap opens them over it instead.
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const pickEvent = (id: string) => {
-    setSelectedId(id);
-    if (!window.matchMedia(`(min-width: ${DETAILS_BESIDE_WEEK_PX}px)`).matches) setSheetOpen(true);
-  };
-  // Nothing picked yet: what is on now, else the next thing still to come.
-  const selected =
-    events.find((event) => event.id === selectedId) ??
-    events.find((event) => event.kind === "live") ??
-    events
-      .filter((event) => event.kind === "planned" && event.end.getTime() > now)
-      .sort((a, b) => a.start.getTime() - b.start.getTime())[0] ??
-    null;
-  const scroller = useRef<HTMLDivElement>(null);
-  const firstHour = openingHour(events, days, FIRST_VISIBLE_HOUR);
-  useEffect(() => {
-    // A little above the hour, so its label is read whole rather than cut by the header.
-    if (scroller.current) scroller.current.scrollTop = firstHour * HOUR - 16;
-  }, [view, firstHour]);
-  const weekKey = days[0].toDateString();
-  // What today (or the one day shown) has above where the grid opens. Once
-  // revealed, the row has done its job for this week.
-  const [revealed, setRevealed] = useState<string | null>(null);
-  const earlierDay = view === "day" ? anchor : days.find((day) => sameDay(day, today));
-  const earlier =
-    view === "agenda" || !earlierDay || revealed === `${view}:${weekKey}`
-      ? []
-      : eventsAboveHour(events, earlierDay, firstHour);
-  useEffect(() => {
-    // A week wider than the screen opens on today rather than on Monday.
-    const el = scroller.current;
-    const head = el?.querySelector<HTMLElement>("[data-today]");
-    if (!el) return;
-    el.scrollLeft =
-      head && el.scrollWidth > el.clientWidth
-        ? head.getBoundingClientRect().left - el.getBoundingClientRect().left + el.scrollLeft - GUTTER
-        : 0;
-  }, [view, weekKey]);
 
-  const step = view === "day" ? 1 : 7;
   const go = (date: Date | undefined) =>
-    void navigate({ to: "/calendar", search: { view: search.view, date: date ? toDateParam(date) : undefined } });
+    void navigate({ to: "/calendar", search: { date: date ? toDateParam(date) : undefined } });
 
   return (
-    <div {...stylex.props(styles.page, view !== "agenda" && styles.pageFitsWindow, enter.fadeUp)}>
+    <div {...stylex.props(styles.page, enter.fadeUp)}>
       <div {...stylex.props(styles.bar)}>
-        <h1 {...stylex.props(styles.title)}>
-          {view === "agenda" ? "Agenda" : anchor.toLocaleDateString([], { month: "long", year: "numeric" })}
-        </h1>
-        {view === "agenda" ? null : <div {...stylex.props(styles.nav)}>
-          <button type="button" aria-label={view === "day" ? "Previous day" : "Previous week"} onClick={() => go(addDays(anchor, -step))} {...stylex.props(styles.navButton, motion.tint, focus.ring)}>
+        <div {...stylex.props(styles.heading)}>
+          <span {...stylex.props(styles.relative)}>{relativeLabel(anchor, today)}</span>
+          <h1 aria-live="polite" {...stylex.props(styles.title)}>
+            {anchor.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
+          </h1>
+        </div>
+        <div {...stylex.props(styles.nav)}>
+          <button type="button" aria-label="Previous day" onClick={() => go(addDays(anchor, -1))} {...stylex.props(styles.navButton, motion.tint, focus.ring)}>
             <ChevronLeft size={16} aria-hidden="true" />
           </button>
           <button type="button" onClick={() => go(undefined)} {...stylex.props(styles.navButton, motion.tint, focus.ring)}>
             Today
           </button>
-          <button type="button" aria-label={view === "day" ? "Next day" : "Next week"} onClick={() => go(addDays(anchor, step))} {...stylex.props(styles.navButton, motion.tint, focus.ring)}>
+          <button type="button" aria-label="Next day" onClick={() => go(addDays(anchor, 1))} {...stylex.props(styles.navButton, motion.tint, focus.ring)}>
             <ChevronRight size={16} aria-hidden="true" />
           </button>
-        </div>}
-        <span {...stylex.props(styles.zone)}>Times in {zone}</span>
-        <span {...stylex.props(styles.spacer)} />
-        <nav aria-label="Calendar view" {...stylex.props(styles.views)}>
-          {([["day", "Day"], ["week", "Week"], ["agenda", "Agenda"]] as const).map(([value, label]) => (
-            <Link
-              key={label}
-              to="/calendar"
-              search={{ date: search.date, view: value }}
-              aria-current={view === value ? "page" : undefined}
-              {...stylex.props(styles.viewLink, motion.tint, focus.ring, view === value && styles.viewOn)}
-            >
-              {label}
-            </Link>
-          ))}
-        </nav>
+        </div>
         <Button onClick={() => setScheduling({})}>
-          <CalendarPlus size={16} aria-hidden="true" /> Schedule
+          <CalendarPlus size={16} aria-hidden="true" /> Schedule a meeting
         </Button>
       </div>
 
-      {earlier.length > 0 ? (
-        <button
-          type="button"
-          onClick={() => {
-            if (scroller.current) scroller.current.scrollTop = earlier[0].start.getHours() * HOUR - 16;
-            setRevealed(`${view}:${weekKey}`);
-          }}
-          {...stylex.props(styles.earlier, motion.tint, focus.ring)}
-        >
-          <ChevronUp size={14} aria-hidden="true" />
-          {earlier.length === 1
-            ? `Earlier: ${earlier[0].title}, ${shortTime(earlier[0].start)}`
-            : `${earlier.length} earlier meetings`}
-        </button>
-      ) : null}
+      <nav aria-label="Choose a date" {...stylex.props(styles.week)}>
+        {days.map((day) => {
+          const on = sameDay(day, anchor);
+          const count = onDay(day).length;
+          return (
+            <Link
+              key={day.toDateString()}
+              to="/calendar"
+              search={{ date: toDateParam(day) }}
+              aria-current={on ? "date" : undefined}
+              aria-label={`${day.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}, ${count} ${count === 1 ? "meeting" : "meetings"}`}
+              {...stylex.props(styles.day, motion.tint, focus.ring, on && styles.dayOn)}
+            >
+              <span {...stylex.props(styles.dow)}>{day.toLocaleDateString([], { weekday: "short" })}</span>
+              <span {...stylex.props(styles.num)}>{day.getDate()}</span>
+              <span {...stylex.props(styles.count)}>{count > 0 ? count : ""}</span>
+            </Link>
+          );
+        })}
+      </nav>
 
-      {view === "agenda" ? (
-        <UpcomingMeetings onSchedule={() => setScheduling({})} />
+      {shown.length > 0 ? (
+        <ul aria-label="Meetings on this date" {...stylex.props(styles.list)}>
+          {shown.map((event) => (
+            <EventRow key={event.id} event={event} onEdit={(schedule) => setScheduling({ schedule })} onCancel={setCanceling} />
+          ))}
+        </ul>
       ) : (
-        <div {...stylex.props(styles.split, styles.splitFills)}>
-        <div ref={scroller} {...stylex.props(styles.scroller)}>
-          <div {...stylex.props(styles.grid, view === "day" && styles.gridDay, placement.columns(`${GUTTER}px repeat(${days.length}, minmax(0, 1fr))`))}>
-            <span {...stylex.props(styles.headCorner)} />
-            {days.map((day) => (
-              <div key={day.toDateString()} data-today={sameDay(day, today) || undefined} {...stylex.props(styles.head)}>
-                <span {...stylex.props(styles.dow)}>{day.toLocaleDateString([], { weekday: "short" })}</span>
-                <span {...stylex.props(styles.num, sameDay(day, today) && styles.numToday)}>{day.getDate()}</span>
-              </div>
-            ))}
-            <div {...stylex.props(styles.gutter)} aria-hidden="true">
-              {Array.from({ length: 23 }, (_, i) => i + 1).map((hour) => (
-                <span key={hour} {...stylex.props(styles.hour, placement.top(`${hour * HOUR}px`))}>
-                  {new Date(2000, 0, 1, hour).toLocaleTimeString([], { hour: "numeric" })}
-                </span>
-              ))}
-            </div>
-            {days.map((day) => (
-              <DayColumn
-                key={day.toDateString()}
-                day={day}
-                today={sameDay(day, today)}
-                now={now}
-                events={events}
-                selectedId={selected?.id ?? null}
-                minMinutes={coarse ? MIN_EVENT_MINUTES.touch : MIN_EVENT_MINUTES.pointer}
-                onPick={(at) => setScheduling({ startsAt: at.toISOString() })}
-                onSelect={pickEvent}
-              />
-            ))}
-          </div>
-        </div>
-        <aside aria-label="Selected meeting" {...stylex.props(styles.detail)}>
-          {selected ? (
-            <EventDetail event={selected} now={now} onEditSchedule={(schedule) => setScheduling({ schedule })} onCancelSchedule={setCanceling} />
-          ) : (
-            <p {...stylex.props(styles.detailEmpty)}>Pick a meeting to see what it left, or what it picks up from last time.</p>
-          )}
-        </aside>
-        </div>
+        <p {...stylex.props(styles.empty)}>No meetings on this date.</p>
       )}
-
-      {selected ? (
-        <BottomSheet open={sheetOpen} onClose={() => setSheetOpen(false)} title={selected.title}>
-          <div {...stylex.props(styles.sheetBody)}>
-            <EventDetail
-              event={selected}
-              now={now}
-              onEditSchedule={(schedule) => {
-                setSheetOpen(false);
-                setScheduling({ schedule });
-              }}
-              onCancelSchedule={(schedule) => {
-                setSheetOpen(false);
-                setCanceling(schedule);
-              }}
-            />
-          </div>
-        </BottomSheet>
-      ) : null}
 
       <ScheduleMeetingDialog
         open={scheduling !== null}
         onOpenChange={(open) => !open && setScheduling(null)}
         schedule={scheduling?.schedule ?? null}
-        initialStartsAt={scheduling?.startsAt}
+        initialStartsAt={sameDay(anchor, today) ? undefined : new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), 9).toISOString()}
       />
       <CancelScheduledMeetingDialog
         schedule={canceling}

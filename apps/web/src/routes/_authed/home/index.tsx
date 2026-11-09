@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
   myMeetingsQueryOptions,
-  myOpenFollowUpsQueryOptions,
   myThreadsQueryOptions,
   myUpcomingMeetingSchedulesQueryOptions,
 } from "@/app/query-client/queries/meetings";
@@ -23,7 +22,6 @@ export const Route = createFileRoute("/_authed/home/")({
   // the whole route.
   loader: async ({ context }) => {
     // Home never waits on follow-ups; they start loading with the rest.
-    void context.queryClient.prefetchQuery(myOpenFollowUpsQueryOptions());
     await Promise.all([
       context.queryClient.prefetchQuery(myThreadsQueryOptions()),
       context.queryClient.prefetchInfiniteQuery(myUpcomingMeetingSchedulesQueryOptions()),
@@ -32,7 +30,7 @@ export const Route = createFileRoute("/_authed/home/")({
   },
   head: () => createPageHead({
     title: `Home — ${SITE_NAME}`,
-    description: "Your meetings, what is still to do, and your room.",
+    description: "Your meetings, what is coming up, and your meeting link.",
     noindex: true,
     canonical: false,
   }),

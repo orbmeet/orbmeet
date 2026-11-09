@@ -1,25 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { myUpcomingMeetingSchedulesQueryOptions } from "@/app/query-client/queries/meetings";
-import { oneOf, optionalString } from "@/lib/search-params";
+import { optionalString } from "@/lib/search-params";
 import { createPageHead, SITE_NAME } from "@/lib/seo";
 import { lazy } from "react";
 
 export interface CalendarSearch {
-  /** A day in the week shown, as YYYY-MM-DD. Absent: this week. */
+  /** The date shown, as YYYY-MM-DD. Absent: today. */
   date?: string;
-  /** Absent: a week, or a day on a phone, where seven columns do not fit. */
-  view?: "day" | "week" | "agenda";
 }
 
 const CalendarPage = import.meta.env.SSR ? () => null : lazy(() => import("@/pages/calendar/calendar-page").then((page) => ({ default: page.CalendarPage })));
 
-// Calendar — what is planned, by week, and where a new meeting is scheduled.
+// Calendar — every meeting on a date, and where a new one is scheduled.
 export const Route = createFileRoute("/_authed/calendar/")({
   validateSearch: (raw: Record<string, unknown>): CalendarSearch => {
     const date = optionalString(raw.date);
     return {
       date: date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : undefined,
-      view: oneOf(raw.view, ["day", "week", "agenda"] as const),
     };
   },
   loader: ({ context }) => {
@@ -27,7 +24,7 @@ export const Route = createFileRoute("/_authed/calendar/")({
   },
   head: () => createPageHead({
     title: `Calendar — ${SITE_NAME}`,
-    description: "What is planned, and what has happened, by week.",
+    description: "Every meeting on a date, past and planned.",
     noindex: true,
     canonical: false,
   }),

@@ -9,7 +9,7 @@ import { myWhiteboardsQueryOptions } from "@/app/query-client/queries/whiteboard
 import { useAuthenticatedSession } from "@/app/query-client/use-authenticated-session";
 import { QueryErrorNotice } from "@/app/query-client/query-error-notice";
 import { sinceFor, toLibraryMeetingsInput, type LibrarySearch, type LibraryType } from "../../routes/_authed/library/index";
-import { groupMeetingsByDay, MeetingRow } from "@/modules/meetings/client/components/meeting-row";
+import { groupMeetingsByDay, isShortCall, MeetingRow } from "@/modules/meetings/client/components/meeting-row";
 import { meetingDisplayTitle, formatMeetingDate } from "@/modules/meetings/client/components/meeting-format";
 import { beginMeetingEntryFlow } from "@/modules/meetings/client/entry-metrics";
 import { meetingEntryPath } from "@/modules/meetings/client/urls";
@@ -58,7 +58,6 @@ const styles = stylex.create({
     letterSpacing: "-0.045em",
     color: ink.strong,
   },
-  lede: { margin: 0, marginTop: `calc(-1 * ${space.s2})`, fontSize: "0.9375rem", color: ink.muted },
   head: { display: "flex", flexDirection: "column", gap: space.s4 },
   search: {
     display: "flex",
@@ -90,8 +89,6 @@ const styles = stylex.create({
     color: ink.strong,
     "::placeholder": { color: neutral.n400 },
   },
-  // Under the box rather than inside it, where it crowded what you type.
-  hint: { margin: 0, marginTop: `calc(-1 * ${space.s2})`, fontSize: "0.78125rem", color: ink.muted },
   join: {
     display: "flex",
     alignItems: "center",
@@ -173,6 +170,8 @@ const styles = stylex.create({
   sectionHead: { display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: space.s3, paddingBottom: space.s2 },
   sectionTitle: { margin: 0, fontSize: text.base, fontWeight: weight.semibold, color: ink.strong },
   sectionNote: { fontSize: "0.8125rem", color: ink.muted },
+  sectionTools: { display: "inline-flex", alignItems: "center", gap: space.s3 },
+  shortToggle: { display: "inline-flex", alignItems: "center", gap: space.s1_5, minHeight: 32, fontSize: "0.84375rem", color: ink.body, cursor: "pointer" },
   day: { display: "flex", flexDirection: "column", gap: space.s0_5, paddingTop: space.s3 },
   dayHead: { display: "flex", alignItems: "baseline", gap: space.s2, paddingBottom: space.s1_5 },
   dayLabel: { fontSize: "0.8125rem", fontWeight: weight.semibold, color: ink.strong },
@@ -324,7 +323,7 @@ function HappeningNow() {
             <div {...stylex.props(styles.liveText)}>
               <span {...stylex.props(styles.liveTitle, layout.truncate)}>{meeting.title || meeting.spaceName || "Meeting"}</span>
               <span {...stylex.props(styles.liveMeta)}>
-                {inRoom > 0 ? `${inRoom} in the room` : "Waiting for others"}
+                {inRoom > 0 ? `${inRoom} in the meeting` : "Waiting for others"}
                 {meeting.spaceName && meeting.title ? ` · ${meeting.spaceName}` : ""}
               </span>
             </div>
@@ -403,7 +402,10 @@ function MeetingResults({ search, viewerName }: { search: LibrarySearch; viewerN
     ...meeting,
     hasWhiteboard: meeting.hasWhiteboardState || meeting.hasWhiteboardPdf,
   }));
-  const days = groupMeetingsByDay(meetings);
+  // Short calls are mostly mic checks. A search, or asking for them, shows them anyway.
+  const [showShort, setShowShort] = useState(false);
+  const hideShort = !showShort && !search.q && search.type !== "recordings";
+  const days = groupMeetingsByDay(hideShort ? meetings.filter((meeting) => !isShortCall(meeting)) : meetings);
   const filtered = Boolean(search.q || search.scope || search.spaceId || search.person || search.within);
   const narrowed = filtered || Boolean(search.type);
   // Asking for recordings and having none isn't a search that came up empty.
@@ -415,7 +417,15 @@ function MeetingResults({ search, viewerName }: { search: LibrarySearch; viewerN
         <h2 id="library-meetings" {...stylex.props(styles.sectionTitle)}>
           {search.type === "recordings" ? "Recordings" : "Meetings"}
         </h2>
-        {query.isFetching && !query.isFetchingNextPage ? <Spinner size="sm" /> : null}
+        <span {...stylex.props(styles.sectionTools)}>
+          {query.isFetching && !query.isFetchingNextPage ? <Spinner size="sm" /> : null}
+          {!search.q && search.type !== "recordings" ? (
+            <label {...stylex.props(styles.shortToggle)}>
+              <input type="checkbox" checked={showShort} onChange={(event) => setShowShort(event.target.checked)} />
+              Show short calls
+            </label>
+          ) : null}
+        </span>
       </div>
       {query.isPending ? (
         <p {...stylex.props(styles.quiet)}>Loading…</p>
@@ -427,7 +437,7 @@ function MeetingResults({ search, viewerName }: { search: LibrarySearch; viewerN
             ? "No recordings yet. Meetings you record land here."
             : narrowed
             ? "Nothing matches. Try other words, or fewer filters."
-            : "No past meetings yet. When a meeting ends, it lands here with its board, recording and recap."}
+            : "No past meetings yet. When a meeting ends, it lands here."}
         </p>
       ) : (
         <>
@@ -620,21 +630,18 @@ export function LibraryPage() {
     <div {...stylex.props(styles.page)}>
       <header {...stylex.props(styles.head, enter.fadeUp)}>
         <h1 {...stylex.props(styles.title)}>Library</h1>
-        <p {...stylex.props(styles.lede)}>Everything your meetings left behind: what was said, drawn and decided.</p>
         <form role="search" onSubmit={(event) => event.preventDefault()} {...stylex.props(styles.search)}>
           <Search size={20} strokeWidth={1.9} aria-hidden="true" />
           <input
             ref={inputRef}
             type="search"
             aria-label="Search meetings, boards and what was said"
-            // Short enough to read whole on a phone; the hint under it says the rest.
-            placeholder="Search your meetings and boards"
+            placeholder="Search meetings and transcripts"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             {...stylex.props(styles.searchInput)}
           />
         </form>
-        <p {...stylex.props(styles.hint)}>Searches titles, recaps, transcripts and board names in the spaces you belong to.</p>
         {code ? (
           <div {...stylex.props(styles.join)}>
             <Video size={18} strokeWidth={1.75} aria-hidden="true" />

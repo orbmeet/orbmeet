@@ -26,7 +26,7 @@ const styles = stylex.create({
 /**
  * Your room: the one link people can always use to reach you. What a
  * meeting in it is called and who may walk straight in live behind
- * "Room settings".
+ * "Link settings".
  */
 export function MeetingsSection() {
   const { data } = useQuery(myThreadsQueryOptions());
@@ -39,7 +39,7 @@ export function MeetingsSection() {
     <SettingsSection title="Meetings">
       <div {...stylex.props(settings.itemRow, styles.row)}>
         <div {...stylex.props(styles.body)}>
-          <p {...stylex.props(settings.itemName)}>Your room link</p>
+          <p {...stylex.props(settings.itemName)}>Your meeting link</p>
           <p {...stylex.props(settings.itemMeta, settings.itemMetaSpaced)}>
             {room ? (
               <>
@@ -63,12 +63,12 @@ export function MeetingsSection() {
               {copied ? "Copied" : "Copy link"}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setSettingsOpen(true)}>
-              <Settings2 size={14} aria-hidden="true" /> Room settings
+              <Settings2 size={14} aria-hidden="true" /> Link settings
             </Button>
           </div>
         ) : data ? (
           <Button variant="secondary" size="sm" onClick={() => setCreating(true)}>
-            Make a room link
+            Make a meeting link
           </Button>
         ) : null}
       </div>

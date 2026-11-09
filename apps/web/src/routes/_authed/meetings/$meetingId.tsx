@@ -6,11 +6,14 @@ import { optionalString } from "@/lib/search-params";
 import { RoutePending } from "@/app/shell/route-state";
 import { lazy } from "react";
 
+type MeetingView = "pdf" | "recording" | "transcript";
+
 const EndedMeetingPage = import.meta.env.SSR ? () => null : lazy(() => import("@/pages/meeting-summary/components/ended-meeting-page").then((page) => ({ default: page.EndedMeetingPage })));
 
 export const Route = createFileRoute("/_authed/meetings/$meetingId")({
-  validateSearch: (search: Record<string, unknown>): { fromSpace?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { fromSpace?: string; view?: MeetingView } => ({
     fromSpace: optionalString(search.fromSpace),
+    view: search.view === "pdf" || search.view === "recording" || search.view === "transcript" ? search.view : undefined,
   }),
   loader: async ({ context, params }) => {
     if (!params.meetingId.trim()) throw notFound();
@@ -39,6 +42,6 @@ export const Route = createFileRoute("/_authed/meetings/$meetingId")({
 
 function HistoricalMeetingPage() {
   const { meetingId } = Route.useParams();
-  const { fromSpace } = Route.useSearch();
-  return <EndedMeetingPage meetingId={meetingId} backSpaceSlug={fromSpace} />;
+  const { fromSpace, view } = Route.useSearch();
+  return <EndedMeetingPage meetingId={meetingId} backSpaceSlug={fromSpace} view={view} />;
 }

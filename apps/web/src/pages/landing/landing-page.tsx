@@ -1,7 +1,6 @@
 import { Link, useRouter } from "@tanstack/react-router";
 import { useState, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy } from "lucide-react";
 import {
   getErrorMessage,
   getServerErrorCode,
@@ -14,12 +13,10 @@ import { EXAMPLE_MEETING_CODE, MEETING_CODE_REGEX } from "@/modules/meetings/con
 import { createMeetingLink } from "@/modules/meetings/server/lifecycle/create.functions";
 import { sessionQueryOptions } from "@/app/query-client/queries/session";
 import { myLastReusableMeetingQueryOptions } from "@/app/query-client/queries/meetings";
-import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
 import { MAIN_CONTENT_ID, SkipLink } from "@/app/shell/skip-link";
-import { Spinner } from "@orbmeet/ui/react";
-import { enter, stagger } from "@orbmeet/ui/styles/animations";
+import { BrandMark, Spinner } from "@orbmeet/ui/react";
 import { focus, motion, pressable, touch } from "@orbmeet/ui/styles/atoms";
-import { accent, danger, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
+import { accent, border, danger, ink, neutral, surface, violet } from "@orbmeet/ui/tokens/colors.stylex";
 import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { fonts, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
@@ -27,8 +24,10 @@ import * as stylex from "@stylexjs/stylex";
 import type { ReactNode } from "react";
 
 const CREATE_ERROR_FALLBACK = "Failed to create meeting. Please try again.";
-const INSTALL_COMMAND = "npm i -g @orbmeet/cli";
 const GITHUB_URL = "https://github.com/orbmeet/orbmeet";
+
+/** CC0, from StockSnap (stocksnap.io/photo/E5GUBD8MWN). */
+const HERO_PHOTO = "/images/landing/person-at-laptop.jpg";
 
 function getCreateErrorMessage(error: unknown): string {
   switch (getServerErrorCode(error)) {
@@ -45,49 +44,65 @@ function getCreateErrorMessage(error: unknown): string {
   }
 }
 
-/**
- * The pictures, rendered in Blender at a few widths by
- * `scripts/landing-images/build.sh`: the hero's water, and three views of one
- * room, so the pictures below share the same light on the same table.
- */
-const IMAGE_ROOT = "/images/landing";
-
-function srcSet(name: string, widths: readonly number[]): string {
-  return widths.map((width) => `${IMAGE_ROOT}/${name}-${width}.webp ${width}w`).join(", ");
-}
-
-/** What a meeting leaves you with, a photograph and a line each. */
-const KEPT: readonly { image: string; alt: string; title: string; body: string }[] = [
+/** What Orb is for, in words a first-time visitor would use, each with a real exchange. */
+const ORB_EXAMPLES: readonly {
+  ask: string;
+  answer: string;
+  title: string;
+  body: string;
+  /** "Only you" where Orb's answer is private. */
+  note?: string;
+  undo?: boolean;
+  isPrivate?: boolean;
+}[] = [
   {
-    image: "board",
-    alt: "A board leaning on a sunlit wall, with a sign-up flow drawn on it twice, the second time in violet",
-    title: "The board stays",
-    body: "Named after the meeting it was drawn in, ready to pick up next time.",
+    ask: "draw our sign-up steps",
+    answer: "Drew the sign-up steps on this page.",
+    undo: true,
+    title: "Hard to explain? Orb can draw it.",
+    body: "Say what you need and it appears on the board for everyone.",
   },
   {
-    image: "recap",
-    alt: "Two pages of notes and a pencil on an oak table, in a shaft of sunlight",
-    title: "The recap writes itself",
-    body: "A summary, the moments worth going back to, and who agreed to do what.",
+    ask: "does our trip budget add up?",
+    answer: "Almost. Flights and hotel on the board come to 2,000, not 2,100.",
+    title: "Not sure? Orb can check.",
+    body: "It sees the board, so you can ask if something looks right.",
   },
   {
-    image: "orb",
-    alt: "The violet orb on the oak table, catching the window",
-    title: "Orb is in the room",
-    body: "Ask it to check a step or draw on the board. Every word it hears is kept, and searchable.",
+    ask: "catch me up",
+    answer: "You agreed to launch on Friday, and Sam is writing the email.",
+    note: "Only you can see this",
+    isPrivate: true,
+    title: "Stepped away? Orb fills you in.",
+    body: "Get a quick private summary without interrupting anyone.",
   },
 ];
 
+const FOOTER_LINKS = [
+  { to: "/status", label: "Status" },
+  { to: "/terms", label: "Terms" },
+  { to: "/privacy", label: "Privacy" },
+  { to: "/refund", label: "Refunds" },
+] as const;
+
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
-/** Small capitals, tracked wide: the page's one typographic signature. */
-const CAPS = { textTransform: "uppercase", letterSpacing: "0.18em" } as const;
+const revealAsk = stylex.keyframes({
+  "0%, 3%": { opacity: 0, transform: "translateY(6px)" },
+  "7%, 92%": { opacity: 1, transform: "none" },
+  "98%, 100%": { opacity: 0, transform: "none" },
+});
+
+const revealAnswer = stylex.keyframes({
+  "0%, 16%": { opacity: 0, transform: "translateY(6px)" },
+  "20%, 92%": { opacity: 1, transform: "none" },
+  "98%, 100%": { opacity: 0, transform: "none" },
+});
 
 /**
- * Black on white, centred, with type and space doing the work: small tracked
- * capitals for every label, one heavy headline, one black pill, and a dark
- * footer that carries the name. No boxes, drawings or glow. Light whatever the
- * visitor's own setting; the app follows each person's choice once they have one.
+ * One light page, on one ground: a plain promise and a person, then what Orb
+ * helps with. Light whatever the visitor's own setting; the app follows each
+ * person's choice once they have one.
  */
 const styles = stylex.create({
   page: {
@@ -95,229 +110,215 @@ const styles = stylex.create({
     display: "flex",
     minHeight: "100svh",
     flexDirection: "column",
-    backgroundColor: surface.raised,
+    backgroundColor: accent.a50,
     color: ink.strong,
     fontFamily: fonts.sans,
   },
   wrap: {
     width: "100%",
-    maxWidth: "72rem",
+    maxWidth: "74rem",
     marginInline: "auto",
-    paddingInline: { default: space.s5, [bp.sm]: space.s10 },
+    paddingInline: { default: space.s4, [bp.sm]: space.s10 },
     boxSizing: "border-box",
   },
-
-  header: { display: "flex", alignItems: "center", gap: space.s7, height: 88 },
-  wordmark: {
-    ...CAPS,
-    letterSpacing: "0.08em",
+  header: { display: "flex", alignItems: "center", gap: space.s6, minHeight: 80 },
+  brand: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: space.s2_5,
     marginInlineEnd: "auto",
     color: ink.strong,
     textDecorationLine: "none",
     fontFamily: fonts.heading,
-    fontWeight: 750,
-    fontSize: "1rem",
-    borderRadius: 4,
+    fontWeight: weight.bold,
+    fontSize: "1.1875rem",
+    letterSpacing: "-0.02em",
+    borderRadius: 6,
   },
   headerLink: {
-    ...CAPS,
-    fontSize: "0.75rem",
-    color: { default: ink.muted, [env.hoverable]: { default: ink.muted, ":hover": ink.strong } },
+    fontSize: text.base,
+    color: { default: ink.body, [env.hoverable]: { default: ink.body, ":hover": ink.strong } },
     textDecorationLine: "none",
-    borderRadius: 4,
+    borderRadius: 6,
   },
-  headerLinkStrong: { color: ink.strong, fontWeight: weight.semibold },
-  wide: { display: { default: "none", [bp.sm]: "inline-flex" } },
-
-  /**
-   * The water, edge to edge, with the words on it. It is dark, so the hero
-   * takes the dark side of every token: white type, a white pill.
-   */
-  hero: {
-    colorScheme: "dark",
-    color: ink.strong,
-    position: "relative",
-    display: "flex",
-    flexDirection: "column",
+  openApp: {
+    display: "inline-flex",
     alignItems: "center",
-    gap: space.s6,
-    justifyContent: "center",
-    minHeight: "clamp(560px, 86svh, 900px)",
-    paddingInline: space.s5,
-    paddingBlock: space.s12,
-    boxSizing: "border-box",
-    textAlign: "center",
-    overflow: "hidden",
+    height: 44,
+    paddingInline: space.s4,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: accent.a600,
+    borderRadius: 12,
+    fontSize: text.base,
+    fontWeight: weight.semibold,
+    color: accent.a700,
+    textDecorationLine: "none",
+    backgroundColor: { default: "transparent", [env.hoverable]: { default: "transparent", ":hover": accent.a100 } },
   },
-  heroImage: {
-    position: "absolute",
-    inset: 0,
-    zIndex: 0,
-    width: "100%",
-    height: "100%",
-    objectFit: "cover",
-    objectPosition: "50% 50%",
+
+  hero: {
+    display: "grid",
+    gridTemplateColumns: { default: "minmax(0, 1fr)", [bp.lg]: "minmax(0, 1fr) minmax(0, 1.2fr)" },
+    alignItems: "center",
+    columnGap: space.s16,
+    rowGap: space.s8,
+    paddingTop: { default: space.s6, [bp.lg]: space.s10 },
+    paddingBottom: { default: space.s12, [bp.lg]: space.s20 },
   },
-  heroWords: { position: "relative", zIndex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: space.s6 },
-  // Balanced, so a wrap on a phone splits the line evenly instead of leaving one word under it.
-  kicker: { ...CAPS, margin: 0, fontSize: "0.8125rem", fontWeight: weight.semibold, color: ink.strong, textWrap: "balance" },
+  heroWords: { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: space.s5 },
   headline: {
     margin: 0,
-    maxWidth: "15ch",
     fontFamily: fonts.heading,
-    fontWeight: 750,
-    fontSize: "clamp(2.75rem, 5.5vw + 0.5rem, 5.75rem)",
-    lineHeight: 0.98,
+    fontWeight: weight.bold,
+    fontSize: "clamp(2.625rem, 4.6vw + 0.5rem, 4.125rem)",
+    lineHeight: 1.06,
     letterSpacing: "-0.035em",
+    textWrap: "balance",
   },
-  actions: { display: "flex", flexDirection: "column", alignItems: "center", gap: space.s5, paddingTop: space.s3 },
+  lede: { margin: 0, maxWidth: "28em", fontSize: "1.3125rem", lineHeight: 1.42, color: ink.body, textWrap: "pretty" },
   start: {
-    ...CAPS,
-    letterSpacing: "0.14em",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
     gap: space.s2,
-    height: 52,
-    paddingInline: space.s9,
+    height: 58,
+    paddingInline: space.s8,
     borderWidth: 0,
-    borderRadius: 999,
+    borderRadius: 14,
     cursor: "pointer",
-    fontSize: "0.8125rem",
-    fontWeight: weight.bold,
-    color: surface.raised,
+    fontSize: "1.125rem",
+    fontWeight: weight.semibold,
+    color: ink.onAccent,
     textDecorationLine: "none",
-    backgroundColor: { default: ink.strong, [env.hoverable]: { default: ink.strong, ":hover:not(:disabled)": neutral.n800 } },
+    backgroundColor: { default: accent.a600, [env.hoverable]: { default: accent.a600, ":hover:not(:disabled)": accent.a700 } },
     opacity: { default: 1, ":disabled": 0.7 },
   },
   holding: { cursor: "progress", opacity: 0.6 },
-  join: { display: "flex", alignItems: "center", gap: space.s2, margin: 0 },
-  // Full strength: it sits on the water, where muted ink would sink.
-  joinLabel: { ...CAPS, fontSize: "0.75rem", fontWeight: weight.semibold, color: ink.strong },
-  // An underline to write on, not a box.
+  join: { display: "flex", alignItems: "center", gap: space.s2, margin: 0, color: ink.body, fontSize: text.base },
   joinInput: {
     width: "8.5rem",
-    height: 36,
-    paddingInline: 0,
+    height: 44,
+    padding: 0,
     borderWidth: 0,
-    borderBottomWidth: 1.5,
+    borderBottomWidth: 1,
     borderStyle: "solid",
-    borderColor: { default: ink.body, ":focus": ink.strong },
+    borderColor: { default: neutral.n400, ":focus": accent.a600 },
     borderRadius: 0,
     outlineStyle: "none",
-    fontFamily: fonts.mono,
+    fontFamily: "inherit",
     fontSize: text.base,
-    textAlign: "center",
     color: ink.strong,
     backgroundColor: "transparent",
-    "::placeholder": { color: ink.body },
+    "::placeholder": { color: neutral.n500 },
   },
   joinButton: {
-    ...CAPS,
-    height: 36,
+    height: 44,
     paddingInline: space.s2,
     borderWidth: 0,
     cursor: "pointer",
-    fontSize: "0.75rem",
-    fontWeight: weight.bold,
-    color: { default: ink.strong, [env.hoverable]: { default: ink.strong, ":hover": accent.a700 } },
+    fontFamily: "inherit",
+    fontSize: text.base,
+    fontWeight: weight.semibold,
+    color: accent.a700,
     backgroundColor: "transparent",
-    borderRadius: 4,
+    borderRadius: 6,
   },
   error: { margin: 0, fontSize: text.sm, color: danger.d600 },
-  aside: { margin: 0, fontSize: text.sm, color: ink.body },
   rejoin: {
-    fontSize: text.sm,
+    fontSize: text.base,
     fontWeight: weight.medium,
     color: { default: accent.a700, [env.hoverable]: { default: accent.a700, ":hover": accent.a800 } },
     textDecorationLine: "none",
-    borderRadius: 4,
+    borderRadius: 6,
   },
+  photo: { display: "block", width: "100%", height: "auto", aspectRatio: "3 / 2", objectFit: "cover", borderRadius: 24 },
 
-  kept: {
+  orbSection: { display: "flex", flexDirection: "column", gap: space.s8, paddingBottom: { default: space.s12, [bp.lg]: space.s16 } },
+  orbHead: { display: "flex", flexDirection: "column", gap: space.s2, textAlign: "center" },
+  orbTitle: {
+    margin: 0,
+    fontFamily: fonts.heading,
+    fontWeight: weight.bold,
+    fontSize: "clamp(2.125rem, 2.6vw + 0.75rem, 2.875rem)",
+    lineHeight: 1.1,
+    letterSpacing: "-0.03em",
+  },
+  orbLede: { margin: 0, fontSize: "1.1875rem", color: ink.body },
+  examples: {
     margin: 0,
     padding: 0,
     listStyle: "none",
     display: "grid",
     gridTemplateColumns: { default: "minmax(0, 1fr)", [bp.md]: "repeat(3, minmax(0, 1fr))" },
-    columnGap: space.s7,
-    rowGap: space.s12,
-    paddingBlock: { default: space.s12, [bp.md]: space.s20 },
-    textAlign: "center",
+    gap: space.s5,
   },
-  keptItem: { display: "flex", flexDirection: "column", alignItems: "center", gap: space.s3 },
-  keptImage: { display: "block", width: "100%", height: "auto", aspectRatio: "3 / 2", objectFit: "cover", marginBottom: space.s4 },
-  keptTitle: { ...CAPS, margin: 0, fontSize: "0.8125rem", fontWeight: weight.bold },
-  keptBody: { margin: 0, maxWidth: "30ch", fontSize: text.base, lineHeight: 1.6, color: ink.muted },
-
-  /* ── Footer: the name, large, on black ── */
-  footer: {
-    colorScheme: "dark",
-    marginTop: "auto",
-    backgroundColor: surface.canvas,
-    color: ink.strong,
-    paddingBlock: { default: space.s12, [bp.md]: space.s16 },
+  example: { display: "flex", flexDirection: "column", gap: space.s5, padding: space.s6, borderRadius: 22, backgroundColor: surface.raised },
+  exchange: { display: "flex", flexDirection: "column", justifyContent: "center", gap: space.s3, minHeight: 200, fontSize: text.sm, lineHeight: 1.4 },
+  ask: {
+    alignSelf: "flex-end",
+    maxWidth: "88%",
+    paddingInline: space.s3,
+    paddingBlock: space.s2,
+    borderRadius: 16,
+    borderEndEndRadius: 5,
+    color: ink.onAccent,
+    backgroundColor: accent.a600,
+    animationName: { default: revealAsk, [env.reducedMotion]: "none" },
+    animationDuration: "12s",
+    animationTimingFunction: "ease",
+    animationIterationCount: "infinite",
   },
-  footerGrid: {
+  askPrivate: { backgroundColor: neutral.n800 },
+  orbToken: { fontWeight: weight.semibold, color: violet.v100 },
+  answer: {
     display: "grid",
-    gridTemplateColumns: { default: "minmax(0, 1fr)", [bp.md]: "1.3fr 1fr 1fr" },
-    gap: { default: space.s9, [bp.md]: space.s10 },
+    gridTemplateColumns: "24px minmax(0, 1fr)",
+    columnGap: space.s2_5,
+    animationName: { default: revealAnswer, [env.reducedMotion]: "none" },
+    animationDuration: "12s",
+    animationTimingFunction: "ease",
+    animationIterationCount: "infinite",
   },
-  footerName: {
-    ...CAPS,
-    letterSpacing: "0.06em",
-    margin: 0,
-    fontFamily: fonts.heading,
-    fontWeight: 750,
-    fontSize: "1.875rem",
-    lineHeight: 1.1,
+  answerBody: { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: space.s1_5 },
+  orbName: { fontSize: "0.8125rem", fontWeight: weight.semibold, color: violet.v700 },
+  orbNote: { fontWeight: weight.normal, color: ink.muted },
+  reply: {
+    paddingInline: space.s3,
+    paddingBlock: space.s2,
+    borderRadius: 14,
+    borderStartStartRadius: 5,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: violet.v100,
+    backgroundColor: accent.a50,
   },
-  // Under a finger each link is its own 44px row, which is spacing enough.
-  footerColumn: { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: { default: space.s2, [env.touch]: 0 } },
-  footerHead: { ...CAPS, margin: 0, marginBottom: space.s2, fontSize: "0.75rem", fontWeight: weight.bold },
-  footerText: { margin: 0, fontSize: text.sm, lineHeight: 1.6, color: ink.muted },
+  undo: {
+    display: "inline-flex",
+    alignItems: "center",
+    height: 28,
+    paddingInline: space.s2_5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: neutral.n150,
+    fontSize: "0.8125rem",
+    fontWeight: weight.semibold,
+  },
+  exampleTitle: { margin: 0, marginBottom: space.s1, fontSize: "1.4375rem", lineHeight: 1.2, fontWeight: weight.semibold, letterSpacing: "-0.015em" },
+  exampleBody: { margin: 0, fontSize: text.base, lineHeight: 1.5, color: ink.body },
+
+  footer: { marginTop: "auto", borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: border.subtle },
+  footerRow: { display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: space.s5, paddingBlock: space.s2, fontSize: "0.9375rem", color: ink.muted },
+  footerLinks: { display: "flex", flexWrap: "wrap", columnGap: space.s4, marginInlineStart: "auto" },
   footerLink: {
-    fontSize: text.sm,
     color: { default: ink.muted, [env.hoverable]: { default: ink.muted, ":hover": ink.strong } },
     textDecorationLine: "none",
     borderRadius: 4,
   },
-  install: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: space.s1_5,
-    padding: 0,
-    borderWidth: 0,
-    cursor: "pointer",
-    fontFamily: fonts.mono,
-    fontSize: "0.8125rem",
-    textAlign: "start",
-    color: { default: ink.strong, [env.hoverable]: { default: ink.strong, ":hover": accent.a400 } },
-    backgroundColor: "transparent",
-    borderRadius: 4,
-  },
-  copied: { color: accent.a400 },
 });
 
 // ─── Pieces ──────────────────────────────────────────────────────────────────
-
-/** The CLI's install command; a click puts it on the clipboard. */
-function InstallCommand() {
-  const { copied, copy } = useCopyToClipboard();
-  return (
-    <button
-      type="button"
-      onClick={() => void copy(INSTALL_COMMAND)}
-      // Naming the command is the point: an `aria-label` overrides the
-      // contents, so it says what lands on the clipboard.
-      aria-label={`Copy install command: ${INSTALL_COMMAND}`}
-      {...stylex.props(touch.target, pressable.base, focus.ring, motion.tint, styles.install, copied && styles.copied)}
-    >
-      {copied ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
-      {copied ? "Copied" : INSTALL_COMMAND}
-    </button>
-  );
-}
 
 /**
  * Many visitors arrive holding an invitation. A code or a pasted link takes
@@ -340,7 +341,7 @@ function JoinWithCode({ onIntent }: { onIntent: () => void }) {
         }}
         {...stylex.props(styles.join)}
       >
-        <label htmlFor="landing-code" {...stylex.props(styles.joinLabel)}>or join</label>
+        <label htmlFor="landing-code">Have a code?</label>
         <input
           id="landing-code"
           value={code}
@@ -349,7 +350,7 @@ function JoinWithCode({ onIntent }: { onIntent: () => void }) {
             setCode(readCodeInput(event.target.value));
           }}
           onFocus={onIntent}
-          placeholder={EXAMPLE_MEETING_CODE}
+          placeholder="Enter it here"
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
@@ -359,7 +360,7 @@ function JoinWithCode({ onIntent }: { onIntent: () => void }) {
           {...stylex.props(styles.joinInput)}
         />
         <button type="submit" {...stylex.props(styles.joinButton, motion.tint, focus.ring)}>
-          Join →
+          Join
         </button>
       </form>
       {error ? (
@@ -371,34 +372,41 @@ function JoinWithCode({ onIntent }: { onIntent: () => void }) {
   );
 }
 
-/** Where the footer points: the same five pages every public page ends with. */
-const FOOTER_LINKS = [
-  { to: "/pricing", label: "Pricing" },
-  { to: "/status", label: "Status" },
-  { to: "/terms", label: "Terms" },
-  { to: "/privacy", label: "Privacy" },
-  { to: "/refund", label: "Refunds" },
-] as const;
+function OrbExample({ example }: { example: (typeof ORB_EXAMPLES)[number] }) {
+  return (
+    <li {...stylex.props(styles.example)}>
+      <div aria-hidden="true" {...stylex.props(styles.exchange)}>
+        <div {...stylex.props(styles.ask, example.isPrivate && styles.askPrivate)}>
+          <span {...stylex.props(styles.orbToken)}>@Orb</span> {example.ask}
+        </div>
+        <div {...stylex.props(styles.answer)}>
+          <BrandMark size={22} />
+          <div {...stylex.props(styles.answerBody)}>
+            <span {...stylex.props(styles.orbName)}>
+              Orb{example.note ? <span {...stylex.props(styles.orbNote)}> · {example.note}</span> : null}
+            </span>
+            <span {...stylex.props(styles.reply)}>{example.answer}</span>
+            {example.undo ? <span {...stylex.props(styles.undo)}>Undo</span> : null}
+          </div>
+        </div>
+      </div>
+      <div>
+        <h3 {...stylex.props(styles.exampleTitle)}>{example.title}</h3>
+        <p {...stylex.props(styles.exampleBody)}>{example.body}</p>
+      </div>
+    </li>
+  );
+}
 
 function LandingFooter() {
   return (
     <footer {...stylex.props(styles.footer)}>
-      <div {...stylex.props(styles.wrap, styles.footerGrid)}>
-        <p {...stylex.props(styles.footerName)}>
-          Orb
-          <br />
-          Meet
-        </p>
-        <div {...stylex.props(styles.footerColumn)}>
-          <h2 {...stylex.props(styles.footerHead)}>Open source</h2>
-          <p {...stylex.props(styles.footerText)}>MIT licensed. Run it yourself, or script it:</p>
-          <InstallCommand />
+      <div {...stylex.props(styles.wrap, styles.footerRow)}>
+        <span>Open source, MIT licensed.</span>
+        <nav aria-label="Site" {...stylex.props(styles.footerLinks)}>
           <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" {...stylex.props(touch.target, styles.footerLink, focus.ring, motion.tint)}>
             GitHub
           </a>
-        </div>
-        <nav aria-label="Site" {...stylex.props(styles.footerColumn)}>
-          <h2 {...stylex.props(styles.footerHead)}>Orb Meet</h2>
           {FOOTER_LINKS.map(({ to, label }) => (
             <Link key={to} to={to} {...stylex.props(touch.target, styles.footerLink, focus.ring, motion.tint)}>
               {label}
@@ -498,52 +506,37 @@ export function LandingPage() {
 
       <div {...stylex.props(styles.wrap)}>
         <header {...stylex.props(styles.header)}>
-          <Link to="/" {...stylex.props(touch.target, styles.wordmark, focus.ring)}>Orb Meet</Link>
+          <Link to="/" {...stylex.props(touch.target, styles.brand, focus.ring)}>
+            <BrandMark size={26} />
+            Orb Meet
+          </Link>
           <Link to="/pricing" {...stylex.props(touch.target, styles.headerLink, focus.ring, motion.tint)}>Pricing</Link>
-          <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" {...stylex.props(touch.target, styles.headerLink, styles.wide, focus.ring, motion.tint)}>
-            GitHub
-          </a>
           {sessionLoading ? null : session?.user ? (
-            <Link to="/home" {...stylex.props(touch.target, styles.headerLink, styles.headerLinkStrong, focus.ring, motion.tint)}>
-              Open app
-            </Link>
+            <Link to="/home" {...stylex.props(styles.openApp, focus.ring, motion.tint)}>Open app</Link>
           ) : (
-            <Link to="/auth" search={{ mode: "login" }} {...stylex.props(touch.target, styles.headerLink, styles.headerLinkStrong, focus.ring, motion.tint)}>
-              Sign in
-            </Link>
+            <Link to="/auth" search={{ mode: "login" }} {...stylex.props(styles.openApp, focus.ring, motion.tint)}>Sign in</Link>
           )}
         </header>
-
       </div>
 
-      <main id={MAIN_CONTENT_ID}>
+      <main id={MAIN_CONTENT_ID} {...stylex.props(styles.wrap)}>
         <section aria-labelledby="hero-title" {...stylex.props(styles.hero)}>
-          <img
-            src={`${IMAGE_ROOT}/hero-1600.webp`}
-            srcSet={srcSet("hero", [1000, 1600, 2400])}
-            sizes="100vw"
-            alt=""
-            fetchPriority="high"
-            {...stylex.props(styles.heroImage)}
-          />
           <div {...stylex.props(styles.heroWords)}>
-            <p {...stylex.props(styles.kicker, enter.fadeUp)}>Video · one board · notes that write themselves</p>
-            <h1 id="hero-title" {...stylex.props(styles.headline, enter.fadeUp, stagger.by(80))}>
-              Meetings that keep what you worked out.
-            </h1>
-            <div {...stylex.props(styles.actions, enter.fadeUp, stagger.by(160))}>
-              {startMeeting()}
-              <JoinWithCode onIntent={handleMeetingIntent} />
-            </div>
+            <h1 id="hero-title" {...stylex.props(styles.headline)}>Video calls that stay useful after you hang up.</h1>
+            <p {...stylex.props(styles.lede)}>
+              Talk, sketch your ideas together, and let Orb lend a hand. Free for small teams, right in your browser.
+            </p>
+            {startMeeting()}
             {createErrorMessage ? (
               <p role="alert" {...stylex.props(styles.error)}>{createErrorMessage}</p>
             ) : null}
+            <JoinWithCode onIntent={handleMeetingIntent} />
             {lastReusable ? (
               <a href={`/${lastReusable.code}`} {...stylex.props(touch.target, styles.rejoin, focus.ring, motion.tint)}>
                 {`Rejoin ${
                   lastReusable.spaceKind === "shared"
                     ? (lastReusable.spaceName ?? lastReusable.linkTitle ?? "your space")
-                    : (lastReusable.linkTitle ?? "your room")
+                    : (lastReusable.linkTitle ?? "your meeting")
                 }`}
                 {lastReusable.hasOpenMeeting && lastReusable.liveParticipantCount > 0
                   ? ` · ${lastReusable.liveParticipantCount} in it now`
@@ -551,30 +544,28 @@ export function LandingPage() {
                 →
               </a>
             ) : null}
-            <p {...stylex.props(styles.aside)}>Free for small teams. Runs in your browser.</p>
           </div>
+          <img
+            src={HERO_PHOTO}
+            alt="A woman in glasses smiling at her laptop in a bright studio"
+            width={960}
+            height={640}
+            fetchPriority="high"
+            {...stylex.props(styles.photo)}
+          />
         </section>
 
-        <div {...stylex.props(styles.wrap)}>
-          <ul aria-label="What a meeting leaves you" {...stylex.props(styles.kept)}>
-            {KEPT.map(({ image, alt, title, body }) => (
-              <li key={title} {...stylex.props(styles.keptItem)}>
-                <img
-                  src={`${IMAGE_ROOT}/${image}-900.webp`}
-                  srcSet={srcSet(image, [900, 1500])}
-                  sizes="(min-width: 64rem) 30vw, 100vw"
-                  alt={alt}
-                  loading="lazy"
-                  width={1500}
-                  height={1000}
-                  {...stylex.props(styles.keptImage)}
-                />
-                <h2 {...stylex.props(styles.keptTitle)}>{title}</h2>
-                <p {...stylex.props(styles.keptBody)}>{body}</p>
-              </li>
+        <section aria-labelledby="orb-title" {...stylex.props(styles.orbSection)}>
+          <div {...stylex.props(styles.orbHead)}>
+            <h2 id="orb-title" {...stylex.props(styles.orbTitle)}>Orb is your helper on every call.</h2>
+            <p {...stylex.props(styles.orbLede)}>Just type @Orb in the chat.</p>
+          </div>
+          <ul {...stylex.props(styles.examples)}>
+            {ORB_EXAMPLES.map((example) => (
+              <OrbExample key={example.title} example={example} />
             ))}
           </ul>
-        </div>
+        </section>
       </main>
 
       <LandingFooter />

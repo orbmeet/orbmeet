@@ -27,13 +27,11 @@ import { formatActivityDay } from "@/modules/whiteboards/client/whiteboard-activ
 import {
   formatMeetingDate,
   formatMeetingDuration,
-  formatMeetingLength,
   formatMeetingTime,
-  formatTimeRange,
-  meetingDisplayTitle,
   peopleInMeeting,
 } from "@/modules/meetings/client/components/meeting-format";
 import { MeetingStatePill, MeetingStateText } from "@/modules/meetings/client/components/meeting-state";
+import { MeetingRow as PastMeetingRow } from "@/modules/meetings/client/components/meeting-row";
 import { MeetingOutputBadges } from "@/modules/meetings/client/components/meeting-output-badges";
 import { UpcomingMeetings } from "@/modules/scheduling/client/upcoming-meetings";
 import { ScheduleMeetingDialog } from "@/modules/scheduling/client/schedule-meeting-dialog";
@@ -53,17 +51,14 @@ import {
   ChevronDown,
   Copy,
   Pencil,
-  Presentation,
   RotateCcw,
   Users,
-  Video,
 } from "lucide-react";
-import { MeetingBoardPreview } from "@/modules/meetings/client/components/meeting-board-preview";
 import { List, ListRow, WideOnly } from "@/app/shell/list";
 import { Section } from "@/app/shell/section";
 import { focus, layout, motion, stack, status, touch } from "@orbmeet/ui/styles/atoms";
-import { accent, ink, neutral, success, surface } from "@orbmeet/ui/tokens/colors.stylex";
-import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
+import { accent, ink, neutral, success } from "@orbmeet/ui/tokens/colors.stylex";
+import { bp } from "@orbmeet/ui/tokens/media.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { fonts, leading, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
@@ -76,87 +71,7 @@ const styles = stylex.create({
   aside: { display: "flex", flexDirection: "column", gap: space.s4, flexGrow: 1, flexShrink: 1, flexBasis: 300, minWidth: 0 },
   quiet: { margin: 0, fontSize: text.sm, lineHeight: leading.relaxed, color: ink.muted },
 
-  timeline: { margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column" },
-  entry: { display: "flex", gap: space.s4 },
-  /** The rail down the left of the timeline: a dot per meeting, joined by a line. */
-  rail: {
-    display: "flex",
-    justifyContent: "center",
-    width: 14,
-    flexShrink: 0,
-    paddingTop: 5,
-    backgroundImage: `linear-gradient(${neutral.n150}, ${neutral.n150})`,
-    backgroundSize: "2px 100%",
-    backgroundRepeat: "no-repeat",
-    backgroundPosition: "center 18px",
-  },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: "50%",
-    backgroundColor: accent.a600,
-    boxShadow: `0 0 0 4px ${accent.a100}`,
-    flexShrink: 0,
-  },
-  entryBody: { display: "flex", flexDirection: "column", gap: space.s2_5, flexGrow: 1, minWidth: 0, paddingBottom: space.s7 },
-  when: { display: "flex", flexWrap: "wrap", gap: space.s2, alignItems: "baseline", fontSize: "0.8125rem", color: ink.muted },
-  whenDay: { fontWeight: weight.semibold, color: ink.strong },
-  whenTime: { fontFamily: fonts.mono },
-  card: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: { default: space.s3, [bp.sm]: space.s5 },
-    padding: space.s4,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: { default: neutral.n150, [env.hoverable]: { default: neutral.n150, ":hover": neutral.n300 } },
-    borderRadius: 18,
-    color: ink.strong,
-    textDecorationLine: "none",
-  },
-  // A tile beside the text on a phone: full size there, holding only an icon,
-  // it filled the card above the meeting it stood for.
-  thumb: {
-    display: "grid",
-    placeItems: "center",
-    flexGrow: 0,
-    flexShrink: 0,
-    flexBasis: { default: 48, [bp.sm]: 200 },
-    height: { default: 48, [bp.sm]: 126 },
-    borderRadius: { default: 10, [bp.sm]: 12 },
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: neutral.n150,
-    backgroundColor: surface.sunken,
-    color: neutral.n400,
-    overflow: "hidden",
-  },
-  cardBody: { display: "flex", flexDirection: "column", gap: space.s2, flexGrow: 1, flexShrink: 1, flexBasis: { default: 0, [bp.sm]: 260 }, minWidth: 0 },
-  cardTitle: { fontSize: "1.0625rem", fontWeight: weight.semibold, lineHeight: 1.3 },
-  cardMeta: { fontSize: "0.84375rem", color: ink.muted },
-  excerpt: {
-    display: "-webkit-box",
-    WebkitLineClamp: 3,
-    WebkitBoxOrient: "vertical",
-    overflow: "hidden",
-    marginTop: space.s0_5,
-    fontSize: "0.90625rem",
-    lineHeight: 1.55,
-    color: ink.body,
-  },
-  chips: { display: "flex", flexWrap: "wrap", gap: space.s2, marginTop: space.s1 },
-  chip: {
-    display: "inline-flex",
-    alignItems: "center",
-    height: 26,
-    paddingInline: space.s2_5,
-    borderRadius: 7,
-    fontSize: "0.78125rem",
-    fontWeight: weight.medium,
-    color: ink.body,
-    backgroundColor: neutral.n100,
-  },
-  chipSummary: { color: accent.a700, backgroundColor: accent.a100 },
+  pastList: { display: "flex", flexDirection: "column", gap: space.s0_5 },
 
   asideCard: {
     display: "flex",
@@ -272,6 +187,7 @@ export function MeetingsPanel({
   const open = meetings.filter((meeting) => meeting.status === "open");
   const past = meetings.filter((meeting) => meeting.status !== "open");
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const { data: session } = useQuery(sessionQueryOptions());
 
   return (
     <div {...stylex.props(styles.layout)}>
@@ -295,14 +211,19 @@ export function MeetingsPanel({
 
         {past.length === 0 ? (
           <p {...stylex.props(styles.quiet)}>
-            Nothing here yet. When a meeting in this space ends, it lands here with its board, recording and recap.
+            Nothing here yet. When a meeting in this space ends, it lands here.
           </p>
         ) : (
-          <ol aria-label="Past meetings" {...stylex.props(styles.timeline)}>
+          <section aria-label="Past meetings" {...stylex.props(styles.pastList)}>
             {past.map((meeting) => (
-              <TimelineCard key={meeting.id} meeting={meeting} spaceSlug={spaceSlug} />
+              <PastMeetingRow
+                key={meeting.id}
+                meeting={{ ...meeting, meetingId: meeting.id, spaceName, hasWhiteboard: meeting.hasWhiteboardState || meeting.hasWhiteboardPdf }}
+                viewerName={session?.user.name ?? undefined}
+                fromSpace={spaceSlug}
+              />
             ))}
-          </ol>
+          </section>
         )}
         {meetingsQuery.hasNextPage ? (
           <div {...stylex.props(panelStyles.pagerFoot)}>
@@ -329,63 +250,6 @@ export function MeetingsPanel({
         initialSpace={{ id: spaceId, name: spaceName, timeZone }}
       />
     </div>
-  );
-}
-
-/** One past meeting on the Space's timeline: what it was, who was there, and what came of it. */
-function TimelineCard({ meeting, spaceSlug }: { meeting: SpaceMeeting; spaceSlug: string }) {
-  const { data: session } = useQuery(sessionQueryOptions());
-  const hasBoard = meeting.hasWhiteboardState || meeting.hasWhiteboardPdf;
-  const outputs = [
-    meeting.hasSummary && "Summary",
-    hasBoard && "Board",
-    meeting.hasRecording && "Recording",
-  ].filter((output): output is string => Boolean(output));
-  const people = meeting.participantNames.slice(0, 4).join(", ");
-  return (
-    <li {...stylex.props(styles.entry)}>
-      <span aria-hidden="true" {...stylex.props(styles.rail)}>
-        <span {...stylex.props(styles.dot)} />
-      </span>
-      <div {...stylex.props(styles.entryBody)}>
-        <span {...stylex.props(styles.when)}>
-          <span {...stylex.props(styles.whenDay)}>{formatMeetingDate(meeting.startedAt)}</span>
-          {meeting.startedAt ? (
-            <span {...stylex.props(styles.whenTime)}>{formatTimeRange(meeting.startedAt, meeting.endedAt)}</span>
-          ) : null}
-        </span>
-        <Link
-          to="/meetings/$meetingId"
-          params={{ meetingId: meeting.id }}
-          search={{ fromSpace: spaceSlug }}
-          {...stylex.props(styles.card, motion.tint, focus.ring)}
-        >
-          <span aria-hidden="true" {...stylex.props(styles.thumb)}>
-            {hasBoard ? (
-              <MeetingBoardPreview meetingId={meeting.id} fallback={<Presentation size={26} strokeWidth={1.4} />} />
-            ) : (
-              <Video size={26} strokeWidth={1.4} />
-            )}
-          </span>
-          <span {...stylex.props(styles.cardBody)}>
-            <span {...stylex.props(styles.cardTitle)}>{meetingDisplayTitle(meeting.title, meeting.participantNames, session?.user.name ?? undefined)}</span>
-            <span {...stylex.props(styles.cardMeta)}>
-              {[formatMeetingLength(meeting.startedAt, meeting.endedAt), people].filter(Boolean).join(" · ")}
-            </span>
-            {meeting.summaryExcerpt ? <span {...stylex.props(styles.excerpt)}>{meeting.summaryExcerpt}</span> : null}
-            {outputs.length > 0 ? (
-              <span {...stylex.props(styles.chips)}>
-                {outputs.map((output) => (
-                  <span key={output} {...stylex.props(styles.chip, output === "Summary" && styles.chipSummary)}>
-                    {output}
-                  </span>
-                ))}
-              </span>
-            ) : null}
-          </span>
-        </Link>
-      </div>
-    </li>
   );
 }
 
@@ -461,16 +325,16 @@ function DefaultMeetingLinkCard({
 
   return (
     // The same quiet box as the Boards beside it, rather than a lifted card.
-    <section aria-label="Room link" {...stylex.props(styles.asideCard)}>
+    <section aria-label="Meeting link" {...stylex.props(styles.asideCard)}>
       <div {...stylex.props(styles.linkLayout)}>
         <div {...stylex.props(layout.minZero)}>
           <p {...stylex.props(styles.linkTitle)}>
-            Room link
+            Meeting link
             {code ? <code {...stylex.props(styles.linkCode)}>{code}</code> : null}
           </p>
           <p {...stylex.props(styles.linkMeta)}>
             {code
-              ? "The space’s own room, for members only. It stays the same until an admin replaces it."
+              ? "The space’s own link, for members only. It stays the same until an admin replaces it."
               : "The permanent meeting link is unavailable."}
           </p>
         </div>

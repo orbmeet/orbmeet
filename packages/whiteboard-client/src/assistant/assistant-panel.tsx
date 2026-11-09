@@ -274,7 +274,7 @@ export function AssistantPanel({
       <div {...stylex.props(styles.log)} aria-live="polite">
         {entries.length === 0 && (
           <p {...stylex.props(styles.empty)}>
-            Ask about this page, or ask me to draw on it. Everyone in the room sees the conversation.
+            Ask about this page, or ask me to draw on it. Everyone in the meeting sees the conversation.
           </p>
         )}
         {entries.map((entry) => (

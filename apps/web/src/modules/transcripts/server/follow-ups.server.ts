@@ -1,5 +1,5 @@
 /**
- * Server implementations behind `follow-ups.functions.ts`, split so the
+ * Server implementations behind the follow-up endpoints, split so the
  * declaration file carries no DB imports into client route graphs.
  */
 import type { Database } from "@orbmeet/db";
@@ -8,7 +8,6 @@ import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { Errors } from "@/lib/app-errors";
 import { canAccessMeetingHistory, meetingHistoryAccessPredicate, myMeetingUniverse } from "@/modules/meetings/server/access/resource-access";
 import type { AuthFnContext } from "@/app/bootstrap/middleware";
-import type { ListMyOpenFollowUpsInput, SetFollowUpDoneInput } from "./follow-ups.functions";
 
 /** How far back Home looks for follow-ups still open: older work has been settled or forgotten. */
 const OPEN_FOLLOW_UP_WINDOW_DAYS = 30;
@@ -33,7 +32,7 @@ export async function setFollowUpDoneImpl({
   data,
   context: { user, db },
 }: {
-  data: SetFollowUpDoneInput;
+  data: { followUpId: string; done: boolean };
   context: AuthFnContext;
 }) {
   const followUp = await db.query.meetingFollowUps.findFirst({
@@ -95,14 +94,4 @@ export async function selectMyOpenFollowUps(
     .orderBy(desc(meetings.startedAt), asc(meetingFollowUps.position))
     .limit(limit);
   return rows.map((row) => ({ ...row, done: false, meetingStartedAt: row.meetingStartedAt.toISOString() }));
-}
-
-export async function listMyOpenFollowUpsImpl({
-  data,
-  context: { user, db },
-}: {
-  data: ListMyOpenFollowUpsInput;
-  context: AuthFnContext;
-}) {
-  return { followUps: await selectMyOpenFollowUps(db, user, data.limit) };
 }

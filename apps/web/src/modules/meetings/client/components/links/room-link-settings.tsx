@@ -109,9 +109,9 @@ export function RoomLinkSettings({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent size="sm">
           <DialogHeader>
-            <DialogTitle>Your room</DialogTitle>
+            <DialogTitle>Your meeting link</DialogTitle>
             <DialogDescription>
-              Each new meeting in your room starts with these. A meeting already open keeps what it started with.
+              Each new meeting on your link starts with these. A meeting already open keeps what it started with.
             </DialogDescription>
           </DialogHeader>
           <DialogBody sx={styles.settingsBody}>
@@ -130,7 +130,7 @@ export function RoomLinkSettings({
             />
             {updateMutation.error ? (
               <p role="alert" {...stylex.props(styles.error)}>
-                {getErrorMessage(updateMutation.error, "Couldn’t save your room’s settings.")}
+                {getErrorMessage(updateMutation.error, "Couldn’t save your link’s settings.")}
               </p>
             ) : null}
             <div {...stylex.props(styles.dangerZone)}>
@@ -142,7 +142,7 @@ export function RoomLinkSettings({
                 }}
                 {...stylex.props(pressable.base, motion.tint, focus.ring, styles.remove)}
               >
-                <Trash2 size={13} aria-hidden="true" /> Remove room link
+                <Trash2 size={13} aria-hidden="true" /> Remove meeting link
               </button>
             </div>
           </DialogBody>
@@ -158,18 +158,18 @@ export function RoomLinkSettings({
       <Dialog open={removeOpen} onOpenChange={setRemoveOpen}>
         <DialogContent size="sm">
           <DialogHeader>
-            <DialogTitle>Remove your room link?</DialogTitle>
+            <DialogTitle>Remove your meeting link?</DialogTitle>
             <DialogDescription>
               The address stops working. Past meetings and what came out of them stay in your Library.
             </DialogDescription>
           </DialogHeader>
           <DialogBody sx={styles.removeBody}>
             {activeMeeting ? (
-              <p {...stylex.props(styles.removeWarning)}>End the meeting open in your room before removing its link.</p>
+              <p {...stylex.props(styles.removeWarning)}>End the meeting open on your link before removing its link.</p>
             ) : null}
             {removeMutation.error ? (
               <p role="alert" {...stylex.props(styles.error)}>
-                {getErrorMessage(removeMutation.error, "Couldn’t remove the room link.")}
+                {getErrorMessage(removeMutation.error, "Couldn’t remove the meeting link.")}
               </p>
             ) : null}
           </DialogBody>

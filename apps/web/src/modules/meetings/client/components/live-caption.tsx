@@ -151,7 +151,7 @@ export function ConversationPeek({
       </span>
       <span aria-hidden="true" {...stylex.props(styles.words, styles.wordsOneLine, layout.minZero, !line && styles.quiet)}>
         {speaker && line && <span {...stylex.props(styles.peekSpeaker)}>{firstName(speaker)} </span>}
-        {line ?? "Write to the room, or read what is said"}
+        {line ?? "Write to everyone, or read what is said"}
       </span>
     </button>
   );

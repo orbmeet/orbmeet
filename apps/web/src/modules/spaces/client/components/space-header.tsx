@@ -150,7 +150,7 @@ export function SpaceHeader({
           {roleLabel ? <span>{roleLabel}</span> : null}
           {room.code ? (
             <span>
-              Room <span {...stylex.props(styles.code)}>{room.code}</span>
+              Link <span {...stylex.props(styles.code)}>{room.code}</span>
             </span>
           ) : null}
           {billingLabel ? <span>{billingLabel}</span> : null}
@@ -179,7 +179,7 @@ export function SpaceHeader({
             {room.code ? (
               <MenuItem onClick={() => void copy(`${window.location.origin}/${room.code}`)}>
                 <Copy size={15} aria-hidden="true" />
-                {copied ? "Copied" : "Copy room link"}
+                {copied ? "Copied" : "Copy meeting link"}
               </MenuItem>
             ) : null}
             {canLeaveSpace ? (

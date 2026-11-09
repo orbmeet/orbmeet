@@ -1,23 +1,16 @@
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { JustEnded, StillToDo, StillToDoLink, Today } from "./home-highlights";
+import { JustEnded, Upcoming } from "./home-highlights";
 
-const feeds = vi.hoisted(() => ({ upcoming: vi.fn(), followUps: vi.fn(), meetings: vi.fn() }));
+const feeds = vi.hoisted(() => ({ upcoming: vi.fn(), meetings: vi.fn() }));
 vi.mock("@tanstack/react-query", () => ({
   useSuspenseInfiniteQuery: feeds.upcoming,
-  useQuery: feeds.followUps,
   useInfiniteQuery: feeds.meetings,
 }));
 vi.mock("@/app/query-client/queries/meetings", () => ({
   myMeetingsQueryOptions: () => ({}),
   myUpcomingMeetingSchedulesQueryOptions: () => ({}),
-  myOpenFollowUpsQueryOptions: () => ({}),
-}));
-vi.mock("@/modules/transcripts/client/follow-up-list", () => ({
-  FollowUpList: ({ items }: { items: Array<{ id: string; text: string; detail?: ReactNode }> }) => (
-    <ul>{items.map((item) => <li key={item.id}>{item.text} — {item.detail}</li>)}</ul>
-  ),
 }));
 vi.mock("@/modules/scheduling/client/schedule-meeting-dialog", () => ({ ScheduleMeetingDialog: () => null }));
 vi.mock("@tanstack/react-router", () => ({
@@ -31,7 +24,6 @@ const schedule = {
 
 beforeEach(() => {
   feeds.upcoming.mockReturnValue({ data: { pages: [{ schedules: [] }] } });
-  feeds.followUps.mockReturnValue({ data: undefined });
 });
 
 /** Ninety minutes before the schedule above, on the same day. */
@@ -42,38 +34,35 @@ const liveThread = {
   openMeeting: { meetingId: "m-live", code: "liv-ecod-eee", title: "Design crit", startedAt: new Date(NOW - 4 * 60_000).toISOString(), participantCount: 3 },
 } as const;
 
-describe("Today", () => {
+describe("Upcoming", () => {
   it("puts what is happening now first, with a way in", () => {
-    const html = renderToStaticMarkup(<Today threads={[liveThread]} now={NOW} />);
+    const html = renderToStaticMarkup(<Upcoming threads={[liveThread]} now={NOW} />);
     expect(html).toContain("Design crit");
     expect(html).toContain("Happening now");
-    expect(html).toContain("3 in the room");
-    expect(html).toContain("started 4 min ago");
+    expect(html).toContain("3 in the meeting");
     expect(html).toContain('href="/liv-ecod-eee"');
   });
 
-  it("lists the rest of today at its time, skipping terminal schedules", () => {
+  it("lists scheduled meetings with a way in, skipping terminal schedules", () => {
     feeds.upcoming.mockReturnValue({ data: { pages: [{ schedules: [{ ...schedule, state: "canceled", title: "Canceled call" }, schedule] }] } });
-    const html = renderToStaticMarkup(<Today threads={[]} now={NOW} />);
+    const html = renderToStaticMarkup(<Upcoming threads={[]} now={NOW} />);
     expect(html).toContain("Product catch-up");
-    expect(html).toContain("in 1 h 30 min");
-    expect(html).toContain("5 invited");
+    expect(html).toContain("Today,");
     expect(html).toContain('href="/abc-defg-hij"');
     expect(html).not.toContain("Canceled call");
   });
 
   it("keeps late-start meetings reachable and labels their state", () => {
     feeds.upcoming.mockReturnValue({ data: { pages: [{ schedules: [] }, { schedules: [{ ...schedule, state: "late_start", title: null }] }] } });
-    const html = renderToStaticMarkup(<Today threads={[]} now={NOW} />);
+    const html = renderToStaticMarkup(<Upcoming threads={[]} now={NOW} />);
     expect(html).toContain("Not started yet");
     expect(html).toContain("Scheduled meeting");
     expect(html).toContain('href="/abc-defg-hij"');
   });
 
-  it("says when the day is clear and offers scheduling", () => {
-    const html = renderToStaticMarkup(<Today threads={[]} now={NOW} />);
-    expect(html).toContain("Nothing else today");
-    expect(html).toContain("Your calendar is clear.");
+  it("always offers scheduling, and says when nothing is planned", () => {
+    const html = renderToStaticMarkup(<Upcoming threads={[]} now={NOW} />);
+    expect(html).toContain("Nothing scheduled.");
     expect(html).toContain("Schedule a meeting");
   });
 });
@@ -81,46 +70,15 @@ describe("Today", () => {
 describe("Just ended", () => {
   const ended = { meetingId: "m1", title: "Design sync", participantNames: ["Maya", "Sam"], hasSummary: true };
 
-  it("leads to the recap of the meeting you left, once it is over", () => {
+  it("leads to the meeting you left, once it is over", () => {
     feeds.meetings.mockReturnValue({ data: { pages: [{ meetings: [ended] }] } });
     const html = renderToStaticMarkup(<JustEnded meetingId="m1" viewerName="Maya" onDismiss={() => {}} />);
     expect(html).toContain("Design sync just ended");
-    expect(html).toContain("Orb’s summary is ready.");
-    expect(html).toContain("Open recap");
+    expect(html).toContain("Open meeting");
   });
 
   it("shows nothing while the meeting is still going", () => {
     feeds.meetings.mockReturnValue({ data: { pages: [{ meetings: [{ ...ended, meetingId: "other" }] }] } });
     expect(renderToStaticMarkup(<JustEnded meetingId="m1" viewerName="Maya" onDismiss={() => {}} />)).toBe("");
-  });
-});
-
-describe("Still to do", () => {
-  it("links down to the list only when something is open", () => {
-    expect(renderToStaticMarkup(<StillToDoLink />)).toBe("");
-    feeds.followUps.mockReturnValue({ data: { followUps: [{ id: "f1", done: false }] } });
-    expect(renderToStaticMarkup(<StillToDoLink />)).toContain("1 open");
-  });
-
-  it("is not on Home until there is something still to do", () => {
-    expect(renderToStaticMarkup(<StillToDo />)).toBe("");
-    feeds.followUps.mockReturnValue({ data: { followUps: [] } });
-    expect(renderToStaticMarkup(<StillToDo />)).toBe("");
-  });
-
-  it("says whose each one is and which meeting it came from", () => {
-    feeds.followUps.mockReturnValue({
-      data: {
-        followUps: [
-          { id: "f1", text: "Send the practice set", ownerName: "Atiq", done: false, meetingId: "m1", meetingTitle: "Fractions practice", meetingStartedAt: "2026-03-05T10:00:00.000Z" },
-          { id: "f2", text: "Book the next session", ownerName: null, done: false, meetingId: "m2", meetingTitle: null, meetingStartedAt: "2026-03-04T10:00:00.000Z" },
-        ],
-      },
-    });
-    const html = renderToStaticMarkup(<StillToDo />);
-    expect(html).toContain("Still to do");
-    expect(html).toContain("2 open");
-    expect(html).toMatch(/Send the practice set — Atiq · <a [^>]*>Fractions practice, /);
-    expect(html).toMatch(/Book the next session — <a [^>]*>A call, /);
   });
 });

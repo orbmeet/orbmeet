@@ -1,56 +1,34 @@
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { sessionQueryOptions } from "@/app/query-client/queries/session";
-import { meetingDisplayTitle } from "@/modules/meetings/client/components/meeting-format";
 import { meetingAttendanceQueryOptions } from "@/app/query-client/queries/meetings";
-import { formatMeetingLength, formatTimeRange } from "@/modules/meetings/client/components/meeting-format";
-import { FollowUpList, type FollowUpItem } from "@/modules/transcripts/client/follow-up-list";
-import { recordingSecondsAt } from "@/modules/meetings/contract/recording-file";
-import type { MeetingFollowUp } from "@/modules/transcripts/server/follow-ups.server";
+import { formatMeetingLength, formatTimeRange, meetingDisplayTitle } from "@/modules/meetings/client/components/meeting-format";
 import * as stylex from "@stylexjs/stylex";
 import { meetingTranscriptsInfiniteQueryOptions } from "@/app/query-client/queries/meeting-summary";
 import { groupTranscriptTurns } from "./transcript-turns";
 import { MeetingWhiteboardPanel } from "@/pages/meeting-summary/components/whiteboard-dashboard";
-import {
-  useEndedMeeting,
-  type MeetingSummary,
-  type EndedMeeting,
-  type SummaryState,
-} from "@/pages/meeting-summary/lib/use-ended-meeting";
+import { useEndedMeeting, type EndedMeeting } from "@/pages/meeting-summary/lib/use-ended-meeting";
 import { queryKeys } from "@/app/query-client/query-keys";
-import { formatDuration, formatTimeAgo } from "@/pages/meeting-summary/lib/format";
-import { useNow } from "@/lib/hooks/use-now";
-import { Avatar, BrandMark, Button, Card, DotList, EmptyState, Spinner } from "@orbmeet/ui/react";
+import { Avatar, Button, Card, DotList, EmptyState, Spinner } from "@orbmeet/ui/react";
 import { QueryErrorNotice } from "@/app/query-client/query-error-notice";
-import {
-  RecordingDownloadButton,
-  RecordingPlayer,
-  type RecordingSeek,
-} from "@/modules/meetings/client/components/recording-player";
+import { RecordingDownloadButton, RecordingPlayer } from "@/modules/meetings/client/components/recording-player";
 import { BackLink } from "@/app/shell/back-link";
-import { Facts, type Fact } from "@/app/shell/detail-layout";
 import { List, ListGlyph, ListRow } from "@/app/shell/list";
 import { Page } from "@/app/shell/page";
 import { PageHeader } from "@/app/shell/page-header";
 import { Section } from "@/app/shell/section";
 import { focus, motion } from "@orbmeet/ui/styles/atoms";
-import { accent, ink, neutral, surface, violet, warning } from "@orbmeet/ui/tokens/colors.stylex";
+import { accent, ink, neutral, surface, warning } from "@orbmeet/ui/tokens/colors.stylex";
 import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { fonts, leading, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
-import {
-  AlertTriangle,
-  ChevronDown,
-  ChevronUp,
-  Clock,
-  MicOff,
-  PenTool,
-  RefreshCw,
-  Sparkles,
-  type LucideIcon,
-} from "lucide-react";
+import { AlertTriangle, Clock, Download, MicOff, PenTool, RefreshCw } from "lucide-react";
+
+export type MeetingView = "pdf" | "recording" | "transcript";
+
+const VIEW_LABELS: Record<MeetingView, string> = { pdf: "PDF", recording: "Recording", transcript: "Transcript" };
 
 const styles = stylex.create({
   page: {
@@ -58,7 +36,7 @@ const styles = stylex.create({
     marginInline: "auto",
     display: "flex",
     flexDirection: "column",
-    gap: space.s8,
+    gap: space.s6,
     paddingTop: { default: space.s4, [bp.lg]: space.s7 },
   },
   header: { display: "flex", flexDirection: "column", gap: space.s3 },
@@ -79,46 +57,12 @@ const styles = stylex.create({
   faces: { display: "flex", paddingInlineStart: 3 },
   // A light overlap: at -6 the next face's ring hid the end of two-letter initials ("AR" read "AF").
   face: { marginInlineStart: -3, fontWeight: weight.semibold, boxShadow: `0 0 0 2px ${surface.raised}` },
-  columns: { display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: space.s8 },
-  main: { display: "flex", flexDirection: "column", gap: space.s8, flexGrow: 999, flexShrink: 1, flexBasis: 520, minWidth: 0 },
-  aside: { display: "flex", flexDirection: "column", gap: space.s5, flexGrow: 1, flexShrink: 1, flexBasis: 320, minWidth: 0 },
-  block: { display: "flex", flexDirection: "column", gap: space.s3 },
-  ruled: { borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: neutral.n150, paddingTop: space.s6 },
-  blockHead: { display: "flex", alignItems: "center", gap: space.s2_5 },
-  blockTitle: { margin: 0, fontSize: "1.0625rem", fontWeight: weight.semibold, color: ink.strong },
-  byline: { fontSize: "0.8125rem", color: ink.muted },
-  moments: { margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: space.s0_5 },
-  moment: {
-    display: "flex",
-    alignItems: "baseline",
-    gap: space.s4,
-    width: "100%",
-    paddingInline: space.s3,
-    paddingBlock: space.s2_5,
-    marginInline: `calc(-1 * ${space.s3})`,
-    borderRadius: 12,
-    textAlign: "start",
-  },
-  momentButton: {
-    borderWidth: 0,
-    cursor: "pointer",
-    backgroundColor: { default: "transparent", [env.hoverable]: { default: "transparent", ":hover": neutral.n50 } },
-  },
-  momentAt: { flexShrink: 0, width: 52, fontFamily: fonts.mono, fontSize: "0.8125rem", color: ink.muted },
-  // The link colour only where pressing it plays something.
-  momentAtPlayable: { color: accent.a700 },
-  transcriptOpen: { display: "flex", flexDirection: "column", gap: space.s3 },
-  transcriptHide: { alignSelf: "flex-start" },
-  momentText: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 },
-  momentTitle: { fontSize: text.base, fontWeight: weight.medium, color: ink.strong },
-  momentDetail: { fontSize: text.sm, lineHeight: 1.45, color: ink.muted },
   spaceLink: {
     color: { default: accent.a700, [env.hoverable]: { default: accent.a700, ":hover": accent.a800 } },
     textDecorationLine: "none",
   },
   /** A record that will be deleted says so above everything else. */
   retentionLimited: {
-    marginBottom: space.s8,
     display: "flex",
     alignItems: "flex-start",
     gap: space.s2,
@@ -134,56 +78,28 @@ const styles = stylex.create({
     color: warning.w800,
   },
   retentionGlyph: { marginTop: space.s0_5, flexShrink: 0 },
-  /** One with no expiry is fine print under the facts. */
-  fine: { margin: 0, fontSize: text.xs, lineHeight: leading.relaxed, color: ink.muted },
 
-  /**
-   * A short state in place of content — no speech, still writing, failed.
-   * Quiet and compact: the page should not spend its first screen on
-   * something that is not there.
-   */
-  note: {
-    display: "flex",
-    alignItems: "flex-start",
-    gap: space.s3,
-    borderRadius: radii.card,
-    backgroundColor: surface.sunken,
+  tabBar: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: space.s2 },
+  tabs: { display: "flex", gap: space.s1 },
+  tab: {
+    height: 40,
     paddingInline: space.s4,
-    paddingBlock: space.s3_5,
-  },
-  noteGlyph: { marginTop: space.s0_5, flexShrink: 0, color: neutral.n500 },
-  noteGlyphAccent: { color: violet.v600 },
-  noteBody: { minWidth: 0, flexGrow: 1 },
-  noteTitle: { margin: 0, fontSize: text.sm, lineHeight: leading.sm, fontWeight: weight.medium, color: ink.strong },
-  noteText: { marginTop: space.s0_5, marginBottom: 0, fontSize: text.sm, lineHeight: leading.sm, color: ink.muted },
-  noteAction: { flexShrink: 0 },
-
-  summaryCard: { padding: { default: space.s5, [bp.sm]: space.s6 } },
-  summaryBody: {
-    margin: 0,
-    fontSize: text.base,
-    lineHeight: leading.relaxed,
+    borderWidth: 0,
+    borderRadius: 10,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    fontSize: text.sm,
+    fontWeight: weight.semibold,
     color: ink.body,
-    whiteSpace: "pre-line",
+    backgroundColor: { default: "transparent", [env.hoverable]: { default: "transparent", ":hover": neutral.n100 } },
   },
-  summaryMeta: {
-    marginTop: space.s3,
-    display: "flex",
-    flexWrap: "wrap",
-    gap: space.s3,
-    fontSize: text.xs,
-    color: ink.muted,
-  },
-
-  boardStatus: { color: ink.muted },
+  tabOn: { color: accent.a700, backgroundColor: accent.a100 },
+  tabAction: { marginInlineStart: "auto" },
+  panel: { display: "flex", flexDirection: "column", gap: space.s4, minWidth: 0 },
+  panelHidden: { display: "none" },
 
   transcriptCard: { display: "flex", flexDirection: "column", gap: space.s4 },
-  transcriptLoading: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingBlock: space.s8,
-  },
+  transcriptLoading: { display: "flex", alignItems: "center", justifyContent: "center", paddingBlock: space.s8 },
   transcriptLine: {
     // The last line keeps no border: the card's own edge is the divider there.
     borderBottomWidth: { default: 1, ":last-child": 0 },
@@ -191,56 +107,39 @@ const styles = stylex.create({
     borderBottomColor: neutral.n100,
     paddingBottom: { default: space.s4, ":last-child": 0 },
   },
-  transcriptMeta: {
-    marginBottom: space.s1,
-    display: "flex",
-    alignItems: "center",
-    gap: space.s2,
-    fontSize: text.xs,
-    color: ink.muted,
-  },
+  transcriptMeta: { marginBottom: space.s1, display: "flex", alignItems: "center", gap: space.s2, fontSize: text.xs, color: ink.muted },
   transcriptSpeaker: { fontWeight: weight.semibold, color: ink.strong },
   transcriptText: { margin: 0, fontSize: text.sm, lineHeight: leading.relaxed, color: ink.body },
-  transcriptMore: { paddingTop: space.s2 },
+  boardStatus: { color: ink.muted },
 });
-
 
 type BackDestination = "/home" | "/library";
 
 /**
- * The detail page for a single ended meeting. It composes four independent
- * sections — recording, whiteboard PDF, AI summary, transcript — none of which
- * gates another: the PDF is available whenever a whiteboard exists, and the
- * summary manages its own lifecycle without blocking the rest of the page.
+ * A single ended meeting: the title, then what it left behind — the PDF, the
+ * recording if one was made, and the transcript — one at a time. A tab only
+ * exists when there is something behind it.
  */
 export function EndedMeetingPage({
   meetingId,
   backTo = "/library",
   backLabel = "Library",
   backSpaceSlug,
+  view,
 }: {
   meetingId: string;
   backTo?: BackDestination;
   backLabel?: string;
   backSpaceSlug?: string;
+  view?: MeetingView;
 }) {
   const queryClient = useQueryClient();
   const viewerName = useQuery(sessionQueryOptions()).data?.user.name ?? undefined;
-  const [seek, setSeek] = useState<RecordingSeek | null>(null);
-  const {
-    meeting,
-    meetingError,
-    existingSummary,
-    existingFollowUps,
-    hasTranscript,
-    summaryState,
-    isRetryingSummary,
-    retrySummary,
-    retryMeetingLoad,
-  } = useEndedMeeting({ meetingId });
+  const { meeting, meetingError, hasTranscript, retryMeetingLoad } = useEndedMeeting({ meetingId });
+  const [picked, setPicked] = useState<MeetingView | undefined>(view);
 
   // A newly generated PDF must invalidate the archive lists so their
-  // "Generate PDF" cells flip to "Download PDF".
+  // PDF buttons download straight away.
   const refreshMeetingLists = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.meetings.lists() });
   }, [queryClient]);
@@ -289,19 +188,13 @@ export function EndedMeetingPage({
   const startedAt = meeting.startedAt ? new Date(meeting.startedAt) : null;
   const endedAt = meeting.endedAt ? new Date(meeting.endedAt) : null;
   const title = meetingDisplayTitle(meeting.title, meeting.participantNames, viewerName);
-  // Each moment, with where it falls in the recording: a recording starts
-  // when someone presses it, so its clock is not the meeting's.
-  const moments = (existingSummary?.moments ?? []).map((moment) => ({
-    ...moment,
-    recordingSeconds: recording ? recordingSecondsAt(moment.atSeconds, startedAt?.toISOString() ?? null, recording.filename) : null,
-  }));
-  const anyPlayable = moments.some((moment) => moment.recordingSeconds !== null);
-  const followUps = followUpsFor(meeting, existingFollowUps);
-
-  // A session, read in the order people come back for it: what happened, then
-  // what was shown, then every word. "Whiteboards used" earns its place only
-  // when there was more than one board — with one, it is the same board as the
-  // capture above it.
+  const hasPdf = meeting.whiteboardCaptureState !== "none";
+  const views = [hasPdf && "pdf", recording && "recording", hasTranscript && "transcript"].filter(
+    (item): item is MeetingView => Boolean(item),
+  );
+  const active = picked && views.includes(picked) ? picked : views[0];
+  // "Boards used" earns its place only when there was more than one board, or
+  // when the one board has no saved copy to show above it.
   const showBoardsList =
     meeting.whiteboardsShown.length > 1 ||
     (meeting.whiteboardsShown.length === 1 && meeting.whiteboardCaptureState === "none");
@@ -334,138 +227,69 @@ export function EndedMeetingPage({
           ) : null}
         </nav>
         <h1 {...stylex.props(styles.title)}>{title}</h1>
-        <RecapFacts meetingId={meetingId} startedAt={startedAt?.toISOString() ?? null} endedAt={endedAt?.toISOString() ?? null} />
+        <MeetingFacts meetingId={meetingId} startedAt={startedAt?.toISOString() ?? null} endedAt={endedAt?.toISOString() ?? null} />
       </header>
 
       {meeting.retainUntil ? <RetentionNotice retainUntil={meeting.retainUntil} /> : null}
 
-      <div {...stylex.props(styles.columns)}>
-        <article {...stylex.props(styles.main)}>
-          <section aria-labelledby="recap-summary" {...stylex.props(styles.block)}>
-            <div {...stylex.props(styles.blockHead)}>
-              {/* Orb's mark turns while the summary is being written, and is still once it is. */}
-              <BrandMark size={20} state={!existingSummary && summaryState?.status === "pending" ? "thinking" : "rest"} />
-              <h2 id="recap-summary" {...stylex.props(styles.blockTitle)}>Summary</h2>
-              <span {...stylex.props(styles.byline)}>by Orb</span>
+      {views.length === 0 ? (
+        <EmptyState icon={MicOff} title="Nothing was saved from this meeting" description="There’s no board, recording or transcript to show." />
+      ) : (
+        <>
+          <div {...stylex.props(styles.tabBar)}>
+            <div role="tablist" aria-label="What this meeting left" {...stylex.props(styles.tabs)}>
+              {views.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  role="tab"
+                  id={`meeting-tab-${item}`}
+                  aria-selected={item === active}
+                  aria-controls={`meeting-panel-${item}`}
+                  onClick={() => setPicked(item)}
+                  {...stylex.props(styles.tab, motion.tint, focus.ring, item === active && styles.tabOn)}
+                >
+                  {VIEW_LABELS[item]}
+                </button>
+              ))}
             </div>
-            <SummarySection
-              hasTranscript={hasTranscript}
-              summary={existingSummary}
-              state={summaryState}
-              isRetrying={isRetryingSummary}
-              onRetry={retrySummary}
-            />
-          </section>
+            {active === "recording" && recording ? (
+              <span {...stylex.props(styles.tabAction)}>
+                <RecordingDownloadButton artifactId={recording.id} filename={recording.filename} />
+              </span>
+            ) : null}
+          </div>
 
-          {moments.length > 0 ? (
-            <section aria-labelledby="recap-moments" {...stylex.props(styles.block)}>
-              <h2 id="recap-moments" {...stylex.props(styles.blockTitle)}>Key moments</h2>
-              <ol {...stylex.props(styles.moments)}>
-                {moments.map((moment) => {
-                  const body = (
-                    <>
-                      <span {...stylex.props(styles.momentAt, moment.recordingSeconds !== null && styles.momentAtPlayable)}>{formatOffset(moment.atSeconds)}</span>
-                      <span {...stylex.props(styles.momentText)}>
-                        <span {...stylex.props(styles.momentTitle)}>{moment.title}</span>
-                        {moment.detail ? <span {...stylex.props(styles.momentDetail)}>{moment.detail}</span> : null}
-                      </span>
-                    </>
-                  );
-                  const recordingSeconds = moment.recordingSeconds;
-                  return (
-                    <li key={`${moment.atSeconds}-${moment.title}`}>
-                      {recordingSeconds !== null ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSeek({ seconds: recordingSeconds, key: Date.now() });
-                            document.getElementById("recording")?.scrollIntoView({ behavior: "smooth", block: "center" });
-                          }}
-                          {...stylex.props(styles.moment, styles.momentButton, motion.tint, focus.ring)}
-                        >
-                          {body}
-                        </button>
-                      ) : (
-                        <div {...stylex.props(styles.moment)}>{body}</div>
-                      )}
-                    </li>
-                  );
-                })}
-              </ol>
-            </section>
-          ) : null}
-
-          {followUps.length > 0 ? (
-            <section aria-labelledby="recap-follow-ups" {...stylex.props(styles.block, styles.ruled)}>
-              <h2 id="recap-follow-ups" {...stylex.props(styles.blockTitle)}>Follow-ups</h2>
-              <FollowUpList meetingId={meetingId} items={followUps} />
-            </section>
-          ) : null}
-
-          {meeting.whiteboardCaptureState !== "none" ? (
-            <Section id="whiteboard" title="Board">
+          {/* The board stays mounted: leaving the tab must not throw away a PDF being made. */}
+          {hasPdf ? (
+            <div role="tabpanel" id="meeting-panel-pdf" aria-labelledby="meeting-tab-pdf" hidden={active !== "pdf"} {...stylex.props(styles.panel, active !== "pdf" && styles.panelHidden)}>
               <MeetingWhiteboardPanel meeting={meeting} onGenerated={refreshMeetingLists} />
-            </Section>
+            </div>
           ) : null}
+          {active === "recording" && recording ? (
+            <div role="tabpanel" id="meeting-panel-recording" aria-labelledby="meeting-tab-recording" {...stylex.props(styles.panel)}>
+              <RecordingPlayer artifactId={recording.id} filename={recording.filename} seek={null} />
+            </div>
+          ) : null}
+          {active === "transcript" ? (
+            <div role="tabpanel" id="meeting-panel-transcript" aria-labelledby="meeting-tab-transcript" {...stylex.props(styles.panel)}>
+              <TranscriptList meetingId={meetingId} filename={title} />
+            </div>
+          ) : null}
+        </>
+      )}
 
-          {showBoardsList ? (
-            <Section id="whiteboards-shown" title="Boards used">
-              <WhiteboardsShownList whiteboards={meeting.whiteboardsShown} />
-            </Section>
-          ) : null}
-
-          {hasTranscript ? (
-            <Section id="transcript" title="Transcript">
-              <TranscriptSection meetingId={meetingId} />
-            </Section>
-          ) : null}
-        </article>
-
-        <aside aria-label="About this meeting" {...stylex.props(styles.aside)}>
-          {recording ? (
-            <Section
-              id="recording"
-              title="Recording"
-              action={<RecordingDownloadButton artifactId={recording.id} filename={recording.filename} />}
-            >
-              <RecordingPlayer artifactId={recording.id} filename={recording.filename} seek={seek} />
-              {anyPlayable ? (
-                <p {...stylex.props(styles.fine)}>Pick a key moment to play from where it began.</p>
-              ) : null}
-            </Section>
-          ) : null}
-          <Facts items={meetingFacts(startedAt, endedAt, existingSummary)} />
-          {meeting.retainUntil ? null : (
-            <p {...stylex.props(styles.fine)}>
-              Kept without an expiry date. Editable boards and space files follow their space.
-            </p>
-          )}
-        </aside>
-      </div>
+      {showBoardsList ? (
+        <Section id="whiteboards-shown" title="Boards used">
+          <WhiteboardsShownList whiteboards={meeting.whiteboardsShown} />
+        </Section>
+      ) : null}
     </div>
   );
 }
 
-/** "22:05", or "1:04:30" past the hour: how far into the meeting. */
-function formatOffset(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
-}
-
-function followUpsFor(_meeting: EndedMeeting, followUps: readonly MeetingFollowUp[]): FollowUpItem[] {
-  return followUps.map((followUp) => ({
-    id: followUp.id,
-    text: followUp.text,
-    done: followUp.done,
-    detail: followUp.ownerName ?? undefined,
-  }));
-}
-
 /** When it ran, for how long, and who was there. */
-function RecapFacts({ meetingId, startedAt, endedAt }: { meetingId: string; startedAt: string | null; endedAt: string | null }) {
+function MeetingFacts({ meetingId, startedAt, endedAt }: { meetingId: string; startedAt: string | null; endedAt: string | null }) {
   const attendance = useInfiniteQuery(meetingAttendanceQueryOptions(meetingId));
   const names = [
     ...new Set((attendance.data?.pages[0]?.participants ?? []).map((participant) => participant.displayName)),
@@ -489,33 +313,6 @@ function RecapFacts({ meetingId, startedAt, endedAt }: { meetingId: string; star
   );
 }
 
-function meetingFacts(
-  startedAt: Date | null,
-  endedAt: Date | null,
-  summary: MeetingSummary | null,
-): Fact[] {
-  const day = startedAt ?? endedAt;
-  const time = (date: Date) => date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  const facts: Fact[] = [];
-  if (day) {
-    facts.push({
-      label: "Date",
-      value: day.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", year: "numeric" }),
-    });
-  }
-  if (startedAt && endedAt) {
-    facts.push({ label: "Time", value: `${time(startedAt)} – ${time(endedAt)}` });
-  }
-  const seconds =
-    summary?.durationSeconds ??
-    (startedAt && endedAt ? Math.round((endedAt.getTime() - startedAt.getTime()) / 1000) : null);
-  if (seconds != null && seconds > 0) facts.push({ label: "Duration", value: formatDuration(seconds) });
-  if (summary?.participantCount != null) {
-    facts.push({ label: "Participants", value: String(summary.participantCount) });
-  }
-  return facts;
-}
-
 function RetentionNotice({ retainUntil }: { retainUntil: string | Date }) {
   const date = new Date(retainUntil).toLocaleDateString([], { year: "numeric", month: "long", day: "numeric" });
   return (
@@ -530,45 +327,12 @@ function RetentionNotice({ retainUntil }: { retainUntil: string | Date }) {
   );
 }
 
-/** A compact stand-in for content that is missing, pending, or failed. */
-function Note({
-  icon: Icon,
-  accentIcon,
-  title,
-  children,
-  action,
-}: {
-  icon: LucideIcon;
-  accentIcon?: boolean;
-  title: string;
-  children?: ReactNode;
-  action?: ReactNode;
-}) {
-  return (
-    <div {...stylex.props(styles.note)}>
-      <Icon size={18} {...stylex.props(styles.noteGlyph, accentIcon && styles.noteGlyphAccent)} />
-      <div {...stylex.props(styles.noteBody)}>
-        <p {...stylex.props(styles.noteTitle)}>{title}</p>
-        {children ? <p {...stylex.props(styles.noteText)}>{children}</p> : null}
-      </div>
-      {action ? <div {...stylex.props(styles.noteAction)}>{action}</div> : null}
-    </div>
-  );
-}
-
 /**
- * "Whiteboards used" — the captured versions used in this Meeting.
- *
- * A Meeting may use several Whiteboards, and each gets its own capture
- * when the Meeting ends. The board keeps changing afterwards; this section is
- * the record of what was on it at the time, which is why the title shown is the
- * one the board carried at the end rather than whatever it is called now.
+ * The boards a meeting used. Each gets its own capture when the meeting ends,
+ * and the board keeps changing afterwards, so the title shown is the one it
+ * carried at the end rather than whatever it is called now.
  */
-function WhiteboardsShownList({
-  whiteboards,
-}: {
-  whiteboards: EndedMeeting["whiteboardsShown"];
-}) {
+function WhiteboardsShownList({ whiteboards }: { whiteboards: EndedMeeting["whiteboardsShown"] }) {
   return (
     <List label="Whiteboards used">
       {whiteboards.map((board) => (
@@ -596,129 +360,28 @@ function WhiteboardsShownList({
   );
 }
 
-function SummarySection({
-  hasTranscript,
-  summary,
-  state,
-  isRetrying,
-  onRetry,
-}: {
-  hasTranscript: boolean;
-  summary: MeetingSummary | null;
-  state: SummaryState | null;
-  isRetrying: boolean;
-  onRetry: () => void;
-}) {
-  if (summary) return <SummaryContent summary={summary} />;
+type TranscriptPage = { transcripts: Parameters<typeof groupTranscriptTurns>[0] };
 
-  if (!hasTranscript) {
-    return (
-      <Note icon={MicOff} title="No summary for this meeting">
-        Nobody spoke while captions were on, so there was nothing to summarize.
-      </Note>
-    );
-  }
-
-  switch (state?.status) {
-    case "pending":
-      return (
-        <Note icon={Sparkles} accentIcon title="Writing the summary…">
-          This usually takes a few seconds.
-        </Note>
-      );
-    case "failed":
-      return (
-        <Note
-          icon={AlertTriangle}
-          title="Could not generate summary"
-          action={
-            <Button variant="secondary" size="sm" onClick={onRetry} disabled={isRetrying}>
-              <RefreshCw size={14} />
-              Try again
-            </Button>
-          }
-        >
-          Something went wrong while reading the transcript.
-        </Note>
-      );
-    case "skipped":
-      return <SkippedSummaryNote reason={state.reason} />;
-    default:
-      return null;
-  }
+/** A meeting's words as a plain text file: "[3:04 PM] Maya: So it's a quadratic?". */
+function downloadTranscript(pages: readonly TranscriptPage[], filename: string) {
+  const text = groupTranscriptTurns(pages.flatMap((page) => page.transcripts))
+    .map((turn) => {
+      const time = turn.startedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      return `[${time}] ${turn.participantName}: ${turn.text}`;
+    })
+    .join("\n\n");
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${filename} transcript.txt`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
-function SkippedSummaryNote({ reason }: { reason: Extract<SummaryState, { status: "skipped" }>["reason"] }) {
-  switch (reason) {
-    case "ai_not_configured":
-      return (
-        <Note icon={AlertTriangle} title="AI summary unavailable">
-          AI features are not configured for this workspace. Contact your administrator.
-        </Note>
-      );
-    case "transcript_too_large":
-      return (
-        <Note icon={AlertTriangle} title="Transcript too large">
-          This transcript is too large to summarize in one pass. Read the transcript below instead.
-        </Note>
-      );
-    case "no_transcript":
-      return (
-        <Note icon={MicOff} title="No summary for this meeting">
-          Too little was said to summarize. Read the transcript below instead.
-        </Note>
-      );
-  }
-}
-
-function SummaryContent({ summary }: { summary: MeetingSummary }) {
-  const now = useNow(30_000, summary.createdAt !== null);
-  const partial =
-    summary.transcribedParticipantCount != null &&
-    summary.participantCount != null &&
-    summary.transcribedParticipantCount < summary.participantCount;
-  return (
-    <Card sx={styles.summaryCard}>
-      <p {...stylex.props(styles.summaryBody)}>{summary.summary}</p>
-      {partial || summary.createdAt ? (
-        <div {...stylex.props(styles.summaryMeta)}>
-          {partial ? (
-            <span>
-              Transcript covers {summary.transcribedParticipantCount} of {summary.participantCount} participants
-            </span>
-          ) : null}
-          {summary.createdAt ? <span>Generated {formatTimeAgo(summary.createdAt, now)}</span> : null}
-        </div>
-      ) : null}
-    </Card>
-  );
-}
-
-function TranscriptSection({ meetingId }: { meetingId: string }) {
-  const [expanded, setExpanded] = useState(false);
-
-  if (!expanded) {
-    return (
-      <Button variant="secondary" size="sm" onClick={() => setExpanded(true)} aria-expanded={false}>
-        <ChevronDown size={14} />
-        Show full transcript
-      </Button>
-    );
-  }
-  return (
-    <div {...stylex.props(styles.transcriptOpen)}>
-      <Button variant="secondary" size="sm" onClick={() => setExpanded(false)} aria-expanded sx={styles.transcriptHide}>
-        <ChevronUp size={14} />
-        Hide transcript
-      </Button>
-      <TranscriptList meetingId={meetingId} />
-    </div>
-  );
-}
-
-function TranscriptList({ meetingId }: { meetingId: string }) {
+function TranscriptList({ meetingId, filename }: { meetingId: string; filename: string }) {
   const { data, isPending, isError, refetch, hasNextPage, fetchNextPage, isFetchingNextPage } =
     useInfiniteQuery(meetingTranscriptsInfiniteQueryOptions(meetingId));
+  const [downloading, setDownloading] = useState(false);
   const transcripts = data?.pages.flatMap((page) => page.transcripts) ?? [];
 
   if (isPending) {
@@ -730,46 +393,56 @@ function TranscriptList({ meetingId }: { meetingId: string }) {
   }
 
   if (isError) {
-    return (
-      <QueryErrorNotice
-        message="Transcript could not be loaded."
-        onRetry={() => { void refetch(); }}
-      />
-    );
+    return <QueryErrorNotice message="Transcript could not be loaded." onRetry={() => { void refetch(); }} />;
   }
 
   if (transcripts.length === 0) {
-    return <Note icon={MicOff} title="Transcript unavailable" />;
+    return <EmptyState icon={MicOff} title="Transcript unavailable" />;
   }
 
+  // The whole transcript, however little of it has been scrolled to yet.
+  const download = async () => {
+    setDownloading(true);
+    try {
+      let pages = data?.pages ?? [];
+      let more = hasNextPage;
+      while (more) {
+        const result = await fetchNextPage();
+        pages = result.data?.pages ?? pages;
+        more = result.hasNextPage && !result.isError;
+      }
+      downloadTranscript(pages, filename);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
-    <Card sx={styles.transcriptCard}>
-      {groupTranscriptTurns(transcripts).map((turn) => (
-        <div key={turn.key} {...stylex.props(styles.transcriptLine)}>
-          <div {...stylex.props(styles.transcriptMeta)}>
-            <span {...stylex.props(styles.transcriptSpeaker)}>{turn.participantName}</span>
-            <span>
-              {turn.startedAt.toLocaleTimeString([], {
-                hour: "numeric",
-                minute: "2-digit",
-              })}
-            </span>
+    <>
+      <div>
+        <Button variant="secondary" size="sm" loading={downloading} onClick={() => void download()}>
+          <Download size={14} aria-hidden="true" />
+          Download transcript
+        </Button>
+      </div>
+      <Card sx={styles.transcriptCard}>
+        {groupTranscriptTurns(transcripts).map((turn) => (
+          <div key={turn.key} {...stylex.props(styles.transcriptLine)}>
+            <div {...stylex.props(styles.transcriptMeta)}>
+              <span {...stylex.props(styles.transcriptSpeaker)}>{turn.participantName}</span>
+              <span>{turn.startedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+            </div>
+            <p {...stylex.props(styles.transcriptText)}>{turn.text}</p>
           </div>
-          <p {...stylex.props(styles.transcriptText)}>{turn.text}</p>
-        </div>
-      ))}
-      {hasNextPage && (
-        <div {...stylex.props(styles.transcriptMore)}>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => void fetchNextPage()}
-            disabled={isFetchingNextPage}
-          >
-            {isFetchingNextPage ? "Loading..." : "Load more"}
-          </Button>
-        </div>
-      )}
-    </Card>
+        ))}
+        {hasNextPage ? (
+          <div>
+            <Button variant="secondary" size="sm" onClick={() => void fetchNextPage()} disabled={isFetchingNextPage}>
+              {isFetchingNextPage ? "Loading..." : "Load more"}
+            </Button>
+          </div>
+        ) : null}
+      </Card>
+    </>
   );
 }

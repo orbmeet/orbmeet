@@ -11,14 +11,6 @@ export type EndedMeeting = NonNullable<
   Awaited<ReturnType<typeof getEndedMeeting>>["meeting"]
 >;
 
-export type MeetingSummary = NonNullable<
-  Awaited<ReturnType<typeof getEndedMeeting>>["summary"]
->;
-
-export type SummaryState = NonNullable<
-  Awaited<ReturnType<typeof getEndedMeeting>>["summaryState"]
->;
-
 /** How often to look for the Summary while the meeting's summary job owes one. */
 const SUMMARY_POLL_MS = 3_000;
 

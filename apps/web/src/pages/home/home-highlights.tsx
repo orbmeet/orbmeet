@@ -1,11 +1,10 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { useInfiniteQuery, useQuery, useSuspenseInfiniteQuery } from "@tanstack/react-query";
-import { ChevronRight, X } from "lucide-react";
+import { useInfiniteQuery, useSuspenseInfiniteQuery } from "@tanstack/react-query";
+import { X } from "lucide-react";
 import * as stylex from "@stylexjs/stylex";
-import { myMeetingsQueryOptions, myOpenFollowUpsQueryOptions, myUpcomingMeetingSchedulesQueryOptions } from "@/app/query-client/queries/meetings";
-import { formatMeetingDate, meetingDisplayTitle } from "@/modules/meetings/client/components/meeting-format";
-import { FollowUpList } from "@/modules/transcripts/client/follow-up-list";
+import { myMeetingsQueryOptions, myUpcomingMeetingSchedulesQueryOptions } from "@/app/query-client/queries/meetings";
+import { meetingDisplayTitle } from "@/modules/meetings/client/components/meeting-format";
 import { beginMeetingEntryFlow } from "@/modules/meetings/client/entry-metrics";
 import { ScheduleMeetingDialog } from "@/modules/scheduling/client/schedule-meeting-dialog";
 import type { Thread } from "@/modules/meetings/contract/threads";
@@ -14,54 +13,46 @@ import { focus, layout, motion, touch } from "@orbmeet/ui/styles/atoms";
 import { accent, border, ink, live, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
 import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
-import { fonts, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
+import { text, weight } from "@orbmeet/ui/tokens/typography.stylex";
+
+/** How many scheduled meetings Home lists before the Calendar takes over. */
+const UPCOMING_LIMIT = 3;
 
 const styles = stylex.create({
   // A section of the page, not a box: the page is the frame.
   section: { display: "flex", flexDirection: "column", gap: space.s3 },
-  head: { display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: space.s3 },
+  head: { display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: space.s3 },
   heading: { margin: 0, fontSize: "0.9375rem", fontWeight: weight.semibold, color: ink.strong },
-  headLink: {
-    fontSize: "0.8125rem",
-    fontWeight: weight.medium,
-    color: accent.a700,
-    textDecorationLine: "none",
+  headActions: { display: "flex", alignItems: "center", gap: space.s4 },
+  headLink: { fontSize: "0.8125rem", fontWeight: weight.medium, color: accent.a700, textDecorationLine: "none" },
+  list: {
+    margin: 0,
     padding: 0,
-    borderWidth: 0,
-    backgroundColor: "transparent",
-    cursor: "pointer",
-  },
-  count: { fontFamily: fonts.mono, fontSize: "0.8125rem", color: ink.muted },
-  lede: { margin: 0, marginTop: `calc(-1 * ${space.s2})`, fontSize: "0.8125rem", color: ink.muted },
-
-  /** The day as a timeline: a time, then what happens at it. */
-  timeline: { margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: space.s2 },
-  // On a phone the time sits above its card; from a tablet up it is a column.
-  slot: {
-    display: "grid",
-    gridTemplateColumns: { default: "minmax(0, 1fr)", [bp.sm]: "76px minmax(0, 1fr)" },
-    gap: { default: space.s1_5, [bp.sm]: space.s4 },
-    alignItems: "start",
-  },
-  time: { fontFamily: fonts.mono, fontSize: "0.8125rem", color: ink.muted, paddingTop: { default: 0, [bp.sm]: 18 } },
-  timeLive: { color: live.l700, fontWeight: weight.medium },
-  card: {
+    listStyle: "none",
     display: "flex",
-    flexWrap: "wrap",
-    alignItems: "center",
-    gap: space.s4,
-    paddingBlock: space.s4,
-    paddingInline: space.s5,
+    flexDirection: "column",
     borderRadius: 16,
     boxShadow: `0 0 0 1px ${border.subtle}`,
     backgroundColor: surface.raised,
   },
-  cardLive: { backgroundColor: accent.a50, boxShadow: `0 0 0 1px ${accent.a200}` },
-  lines: { display: "flex", flexDirection: "column", gap: 3, flexGrow: 1, flexBasis: 200, minWidth: 0 },
-  title: { margin: 0, fontSize: text.base, fontWeight: weight.semibold, color: ink.strong },
+  row: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    columnGap: space.s4,
+    rowGap: space.s2,
+    paddingBlock: space.s3,
+    paddingInline: space.s5,
+    borderBottomWidth: { default: 1, ":last-child": 0 },
+    borderBottomStyle: "solid",
+    borderBottomColor: border.subtle,
+  },
+  when: { flexShrink: 0, width: { default: "100%", [bp.sm]: 168 }, fontSize: text.sm, fontWeight: weight.semibold, color: ink.strong },
+  whenLive: { color: live.l700 },
+  lines: { display: "flex", flexDirection: "column", gap: 2, flexGrow: 1, flexBasis: 200, minWidth: 0 },
+  title: { margin: 0, fontSize: text.base, fontWeight: weight.medium, color: ink.strong },
   meta: { margin: 0, fontSize: "0.8125rem", color: ink.muted },
-  metaLive: { color: live.l700, fontWeight: weight.medium },
-  dot: { flexShrink: 0, width: 8, height: 8, borderRadius: "50%", backgroundColor: live.l500, boxShadow: `0 0 0 4px color-mix(in oklab, ${live.l500} 22%, transparent)` },
+  quiet: { margin: 0, fontSize: text.sm, color: ink.muted },
   primary: {
     display: "inline-flex",
     alignItems: "center",
@@ -71,28 +62,36 @@ const styles = stylex.create({
     fontSize: text.sm,
     fontWeight: weight.medium,
     textDecorationLine: "none",
-    color: surface.raised,
-    backgroundColor: { default: ink.strong, [env.hoverable]: { default: ink.strong, ":hover": neutral.n800 } },
+    color: ink.onAccent,
+    backgroundColor: { default: accent.a600, [env.hoverable]: { default: accent.a600, ":hover": accent.a700 } },
   },
   secondary: {
     display: "inline-flex",
     alignItems: "center",
-    height: 36,
-    paddingInline: space.s3_5,
+    height: 40,
+    paddingInline: space.s4,
     borderRadius: 999,
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: border.base,
-    fontSize: "0.8125rem",
+    cursor: "pointer",
+    fontFamily: "inherit",
+    fontSize: text.sm,
     fontWeight: weight.medium,
     textDecorationLine: "none",
     color: ink.strong,
     backgroundColor: { default: "transparent", [env.hoverable]: { default: "transparent", ":hover": neutral.n100 } },
   },
-  quietCard: { boxShadow: "none", backgroundColor: surface.sunken },
-  primaryAccent: {
-    color: ink.onAccent,
-    backgroundColor: { default: accent.a600, [env.hoverable]: { default: accent.a600, ":hover": accent.a700 } },
+  justEnded: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: space.s4,
+    paddingBlock: space.s4,
+    paddingInline: space.s5,
+    borderRadius: 16,
+    backgroundColor: accent.a50,
+    boxShadow: `0 0 0 1px ${accent.a200}`,
   },
   dismiss: {
     display: "grid",
@@ -106,25 +105,6 @@ const styles = stylex.create({
     color: ink.muted,
     backgroundColor: { default: "transparent", [env.hoverable]: { default: "transparent", ":hover": accent.a100 } },
   },
-  /** Beside the page there is no need: the list is already in view. */
-  jump: {
-    display: { default: "flex", [bp.xl]: "none" },
-    alignItems: "center",
-    justifyContent: "space-between",
-    minHeight: 48,
-    paddingInline: space.s4,
-    borderRadius: 14,
-    fontSize: text.sm,
-    fontWeight: weight.medium,
-    color: ink.strong,
-    textDecorationLine: "none",
-    backgroundColor: surface.sunken,
-  },
-  followUpMeeting: {
-    color: "inherit",
-    textDecorationLine: { default: "none", [env.hoverable]: { default: "none", ":hover": "underline" } },
-  },
-  jumpCount: { display: "inline-flex", alignItems: "center", gap: space.s1, fontWeight: weight.normal, color: ink.muted },
 });
 
 // ─── Just ended ──────────────────────────────────────────────────────────────
@@ -135,7 +115,7 @@ const JUST_ENDED_POLL_MS = 4_000;
 
 /**
  * The meeting you just walked out of, once it is over, with the way to what it
- * left. Nothing while others are still in it: Today already offers those back.
+ * left. Nothing while others are still in it: Upcoming already offers those back.
  */
 export function JustEnded({
   meetingId,
@@ -157,21 +137,14 @@ export function JustEnded({
   if (!meeting) return null;
 
   return (
-    <section aria-label="Meeting that just ended" {...stylex.props(styles.card, styles.cardLive, enter.fadeUp)}>
+    <section aria-label="Meeting that just ended" {...stylex.props(styles.justEnded, enter.fadeUp)}>
       <div {...stylex.props(styles.lines)}>
         <h2 {...stylex.props(styles.title, layout.truncate)}>
           {meetingDisplayTitle(meeting.title, meeting.participantNames, viewerName)} just ended
         </h2>
-        <p {...stylex.props(styles.meta)}>
-          {meeting.hasSummary ? "Orb’s summary is ready." : "See what was said, drawn and decided."}
-        </p>
       </div>
-      <Link
-        to="/meetings/$meetingId"
-        params={{ meetingId }}
-        {...stylex.props(styles.primary, styles.primaryAccent, motion.tint, focus.ring)}
-      >
-        Open recap
+      <Link to="/meetings/$meetingId" params={{ meetingId }} {...stylex.props(styles.primary, motion.tint, focus.ring)}>
+        Open meeting
       </Link>
       <button type="button" aria-label="Dismiss" onClick={onDismiss} {...stylex.props(styles.dismiss, motion.tint, focus.ring)}>
         <X size={16} aria-hidden="true" />
@@ -180,187 +153,97 @@ export function JustEnded({
   );
 }
 
-// ─── Today ───────────────────────────────────────────────────────────────────
+// ─── Upcoming ────────────────────────────────────────────────────────────────
 
 function isSameLocalDay(iso: string, now: number): boolean {
   return new Date(iso).toDateString() === new Date(now).toDateString();
 }
 
-function formatClock(iso: string, timeZone?: string): string {
-  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", timeZone }).format(new Date(iso));
+function isTomorrow(iso: string, now: number): boolean {
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return new Date(iso).toDateString() === tomorrow.toDateString();
 }
 
-function formatElapsed(iso: string | null, now: number): string {
-  if (!iso) return "just started";
-  const minutes = Math.floor((now - Date.parse(iso)) / 60_000);
-  if (minutes < 1) return "just started";
-  if (minutes < 60) return `started ${minutes} min ago`;
-  return `started ${Math.floor(minutes / 60)} h ${minutes % 60} min ago`;
-}
-
-/** "in 12 min", "in 1 h 30 min": how long until a time later today. */
-function formatUntil(iso: string, now: number): string {
-  const minutes = Math.max(0, Math.round((Date.parse(iso) - now) / 60_000));
-  if (minutes < 1) return "starting now";
-  if (minutes < 60) return `in ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  return minutes % 60 ? `in ${hours} h ${minutes % 60} min` : `in ${hours} h`;
+/** "Today, 6:00 PM", "Tomorrow, 6:00 PM", "Wed, 10:00 AM". */
+function formatWhen(iso: string, now: number, timeZone?: string): string {
+  const clock = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", timeZone }).format(new Date(iso));
+  if (isSameLocalDay(iso, now)) return `Today, ${clock}`;
+  if (isTomorrow(iso, now)) return `Tomorrow, ${clock}`;
+  const day = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", timeZone }).format(new Date(iso));
+  return `${day}, ${clock}`;
 }
 
 /**
- * The day as a timeline: what is happening now, then what is still to come
- * today, each with the one thing you would do about it. Past meetings are
- * not here — they are what follows, under Earlier.
+ * What you would act on next: anything happening now, the next few scheduled
+ * meetings, and your own meeting link under them.
  */
-export function Today({ threads, now }: { threads: Thread[]; now: number }) {
+export function Upcoming({ threads, now, children }: { threads: Thread[]; now: number; children?: ReactNode }) {
   const query = useSuspenseInfiniteQuery(myUpcomingMeetingSchedulesQueryOptions());
   const [scheduling, setScheduling] = useState(false);
   const upcoming = query.data.pages
     .flatMap((page) => page.schedules)
-    .filter((item) => item.state === "upcoming" || item.state === "late_start");
-  const today = upcoming.filter((item) => isSameLocalDay(item.startsAt, now));
-  const next = upcoming.find((item) => !isSameLocalDay(item.startsAt, now));
+    .filter((item) => item.state === "upcoming" || item.state === "late_start")
+    .slice(0, UPCOMING_LIMIT);
   const liveNow = threads.flatMap((thread) =>
     thread.openMeeting && thread.openMeeting.participantCount > 0 ? [{ thread, meeting: thread.openMeeting }] : [],
   );
 
   return (
-    <section aria-labelledby="home-today" {...stylex.props(styles.section, enter.fadeUp)}>
+    <section aria-labelledby="home-upcoming" {...stylex.props(styles.section, enter.fadeUp)}>
       <div {...stylex.props(styles.head)}>
-        <h2 id="home-today" {...stylex.props(styles.heading)}>Today</h2>
-        <Link to="/calendar" {...stylex.props(touch.target, styles.headLink, focus.ring)}>Open calendar</Link>
+        <h2 id="home-upcoming" {...stylex.props(styles.heading)}>Upcoming</h2>
+        <div {...stylex.props(styles.headActions)}>
+          <Link to="/calendar" {...stylex.props(touch.target, styles.headLink, focus.ring)}>Calendar</Link>
+          <button type="button" onClick={() => setScheduling(true)} {...stylex.props(styles.secondary, motion.tint, focus.ring)}>
+            Schedule a meeting
+          </button>
+        </div>
       </div>
-      <ol {...stylex.props(styles.timeline)}>
+      <ul {...stylex.props(styles.list)}>
         {liveNow.map(({ thread, meeting }) => (
-          <li key={meeting.meetingId} {...stylex.props(styles.slot)}>
-            <span {...stylex.props(styles.time, styles.timeLive)}>Now</span>
-            <div {...stylex.props(styles.card, styles.cardLive)}>
-              <span aria-hidden="true" {...stylex.props(styles.dot)} />
-              <div {...stylex.props(styles.lines)}>
-                <h3 {...stylex.props(styles.title, layout.truncate)}>{meeting.title?.trim() || thread.title}</h3>
-                <p {...stylex.props(styles.meta)}>
-                  <span {...stylex.props(styles.metaLive)}>Happening now</span>
-                  {` · ${meeting.participantCount} in the room · ${formatElapsed(meeting.startedAt, now)}`}
-                </p>
-              </div>
-              <a
-                href={`/${meeting.code}`}
-                onClick={() => beginMeetingEntryFlow({ source: "home-join", code: meeting.code })}
-                {...stylex.props(styles.primary, motion.tint, focus.ring)}
-              >
-                Join
-              </a>
+          <li key={meeting.meetingId} {...stylex.props(styles.row)}>
+            <span {...stylex.props(styles.when, styles.whenLive)}>Happening now</span>
+            <div {...stylex.props(styles.lines)}>
+              <h3 {...stylex.props(styles.title, layout.truncate)}>{meeting.title?.trim() || thread.title}</h3>
+              <p {...stylex.props(styles.meta)}>{meeting.participantCount} in the meeting</p>
             </div>
+            <a
+              href={`/${meeting.code}`}
+              onClick={() => beginMeetingEntryFlow({ source: "home-join", code: meeting.code })}
+              {...stylex.props(styles.primary, motion.tint, focus.ring)}
+            >
+              Join
+            </a>
           </li>
         ))}
-        {today.map((meeting) => (
-          <li key={meeting.id} {...stylex.props(styles.slot)}>
-            <time dateTime={meeting.startsAt} {...stylex.props(styles.time)}>{formatClock(meeting.startsAt, meeting.timeZone)}</time>
-            <div {...stylex.props(styles.card)}>
-              <div {...stylex.props(styles.lines)}>
-                <h3 {...stylex.props(styles.title, layout.truncate)}>{meeting.title?.trim() || "Scheduled meeting"}</h3>
-                <p {...stylex.props(styles.meta)}>
-                  {meeting.state === "late_start" ? "Not started yet" : formatUntil(meeting.startsAt, now)}
-                  {" · "}
-                  {meeting.spaceName ?? `Organized by ${meeting.organizerName}`}
-                  {meeting.attendeeCount > 0 ? ` · ${meeting.attendeeCount} invited` : ""}
-                </p>
-              </div>
-              <a
-                href={`/${meeting.code}`}
-                onClick={() => beginMeetingEntryFlow({ source: "meetings-upcoming", code: meeting.code })}
-                {...stylex.props(meeting.state === "late_start" ? styles.primary : styles.secondary, motion.tint, focus.ring)}
-              >
-                Open meeting
-              </a>
+        {upcoming.map((meeting) => (
+          <li key={meeting.id} {...stylex.props(styles.row)}>
+            <time dateTime={meeting.startsAt} {...stylex.props(styles.when)}>{formatWhen(meeting.startsAt, now, meeting.timeZone)}</time>
+            <div {...stylex.props(styles.lines)}>
+              <h3 {...stylex.props(styles.title, layout.truncate)}>{meeting.title?.trim() || "Scheduled meeting"}</h3>
+              <p {...stylex.props(styles.meta)}>
+                {meeting.state === "late_start" ? "Not started yet · " : ""}
+                {meeting.spaceName ?? `Organized by ${meeting.organizerName}`}
+              </p>
             </div>
+            <a
+              href={`/${meeting.code}`}
+              onClick={() => beginMeetingEntryFlow({ source: "meetings-upcoming", code: meeting.code })}
+              {...stylex.props(meeting.state === "late_start" ? styles.primary : styles.secondary, motion.tint, focus.ring)}
+            >
+              Join
+            </a>
           </li>
         ))}
-        {liveNow.length === 0 && today.length === 0 ? (
-          // Nothing at a time, so no time column: the card takes the row.
-          <li>
-            <div {...stylex.props(styles.card, styles.quietCard)}>
-              <div {...stylex.props(styles.lines)}>
-                <h3 {...stylex.props(styles.title)}>Nothing else today</h3>
-                <p {...stylex.props(styles.meta)}>
-                  {next
-                    ? `Next: ${next.title?.trim() || "Scheduled meeting"}, ${new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "numeric", minute: "2-digit", timeZone: next.timeZone }).format(new Date(next.startsAt))}`
-                    : "Your calendar is clear."}
-                </p>
-              </div>
-              <button type="button" onClick={() => setScheduling(true)} {...stylex.props(styles.secondary, motion.tint, focus.ring)}>
-                Schedule a meeting
-              </button>
-            </div>
+        {liveNow.length === 0 && upcoming.length === 0 ? (
+          <li {...stylex.props(styles.row)}>
+            <p {...stylex.props(styles.quiet)}>Nothing scheduled.</p>
           </li>
         ) : null}
-      </ol>
+        {children}
+      </ul>
       <ScheduleMeetingDialog open={scheduling} onOpenChange={setScheduling} />
-    </section>
-  );
-}
-
-// ─── Still to do ─────────────────────────────────────────────────────────────
-
-/** In one column the list sits under your recent meetings: this reaches it. */
-export function StillToDoLink() {
-  const query = useQuery(myOpenFollowUpsQueryOptions());
-  const open = (query.data?.followUps ?? []).filter((followUp) => !followUp.done).length;
-  if (open === 0) return null;
-  return (
-    <a href="#home-todo-title" {...stylex.props(styles.jump, motion.tint, focus.ring)}>
-      Still to do
-      <span {...stylex.props(styles.jumpCount)}>
-        {open} open <ChevronRight size={16} aria-hidden="true" />
-      </span>
-    </a>
-  );
-}
-
-/** "today", "yesterday", "Thu, Oct 15": a day as it reads mid-sentence. */
-function sayWhen(day: string): string {
-  return day === "Today" || day === "Yesterday" ? day.toLowerCase() : day;
-}
-
-/**
- * What people agreed to do in recent meetings and nobody has done yet, so it
- * is seen without opening each recap. Ticking one off here ticks it off in its
- * meeting too. Not there at all until there is something to show: Home never
- * waits on it, and an empty list would only be noise.
- */
-export function StillToDo() {
-  const query = useQuery(myOpenFollowUpsQueryOptions());
-  const followUps = query.data?.followUps ?? [];
-  if (followUps.length === 0) return null;
-  const open = followUps.filter((followUp) => !followUp.done).length;
-
-  return (
-    <section aria-labelledby="home-todo-title" {...stylex.props(styles.section, enter.fadeUp)}>
-      <div {...stylex.props(styles.head)}>
-        <h2 id="home-todo-title" {...stylex.props(styles.heading)}>Still to do</h2>
-        <span {...stylex.props(styles.count)}>{open} open</span>
-      </div>
-      <p {...stylex.props(styles.lede)}>What people agreed to in meetings.</p>
-      <FollowUpList
-        undoable
-        items={followUps.map((followUp) => ({
-          id: followUp.id,
-          text: followUp.text,
-          done: followUp.done,
-          detail: (
-            <>
-              {followUp.ownerName ? `${followUp.ownerName} · ` : ""}
-              <Link
-                to="/meetings/$meetingId"
-                params={{ meetingId: followUp.meetingId }}
-                {...stylex.props(styles.followUpMeeting, focus.ring)}
-              >
-                {`${followUp.meetingTitle?.trim() || "A call"}, ${sayWhen(formatMeetingDate(followUp.meetingStartedAt))}`}
-              </Link>
-            </>
-          ),
-        }))}
-      />
     </section>
   );
 }

@@ -270,7 +270,7 @@ export function RoomFaces({
       <div {...stylex.props(styles.head)}>
         {folded && <PeopleFacepile />}
         <span {...stylex.props(styles.title, layout.truncate)}>
-          In the room<span {...stylex.props(styles.count)}>{participants.length}</span>
+          In the meeting<span {...stylex.props(styles.count)}>{participants.length}</span>
         </span>
         {hidden > 0 && !folded && !readOnly && (
           <Tooltip content={`Everyone · ${everyone}`} side="bottom">

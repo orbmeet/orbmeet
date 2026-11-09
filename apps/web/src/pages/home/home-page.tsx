@@ -1,7 +1,7 @@
 import { getRouteApi, Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { useInfiniteQuery, useSuspenseQuery } from "@tanstack/react-query";
-import { Check, Copy, Plus, Settings2, Video } from "lucide-react";
+import { Check, Copy, Plus, Presentation, Settings2, Video } from "lucide-react";
 import {
   EXAMPLE_MEETING_CODE,
   MEETING_CODE_REGEX as CODE_REGEX,
@@ -19,10 +19,13 @@ import type { Thread } from "@/modules/meetings/contract/threads";
 import { Spinner } from "@orbmeet/ui/react";
 import { CreatePersonalMeetingLinkDialog } from "@/modules/meetings/client/dashboard/create-personal-meeting-link-dialog";
 import { RoomLinkSettings } from "@/modules/meetings/client/components/links/room-link-settings";
-import { groupMeetingsByDay, MeetingRow } from "@/modules/meetings/client/components/meeting-row";
-import { JustEnded, StillToDo, StillToDoLink, Today } from "@/pages/home/home-highlights";
+import { MeetingBoardPreview } from "@/modules/meetings/client/components/meeting-board-preview";
+import { formatMeetingDate, formatMeetingLength, meetingDisplayTitle } from "@/modules/meetings/client/components/meeting-format";
+import { MeetingOutputActions } from "@/modules/meetings/client/components/meeting-output-actions";
+import { isShortCall, MeetingRow, type MeetingRowData } from "@/modules/meetings/client/components/meeting-row";
+import { JustEnded, Upcoming } from "@/pages/home/home-highlights";
 import { enter } from "@orbmeet/ui/styles/animations";
-import { focus, motion, pressable, touch } from "@orbmeet/ui/styles/atoms";
+import { focus, layout, motion, pressable, touch } from "@orbmeet/ui/styles/atoms";
 import { accent, border, danger, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
 import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
@@ -31,8 +34,10 @@ import * as stylex from "@stylexjs/stylex";
 
 const routeApi = getRouteApi("/_authed/home/");
 
-/** How many past meetings Home shows before handing over to the Library. */
-const RECENT_LIMIT = 6;
+/** How many past meetings Home reads, enough to fill it once short calls are left out. */
+const RECENT_FETCH = 12;
+/** How many it lists under the latest one before handing over to the Library. */
+const EARLIER_LIMIT = 4;
 
 const styles = stylex.create({
   page: {
@@ -40,13 +45,11 @@ const styles = stylex.create({
     marginInline: "auto",
     display: "flex",
     flexDirection: "column",
-    gap: space.s9,
+    gap: space.s8,
     paddingTop: { default: space.s4, [bp.lg]: space.s7 },
   },
   /** The greeting, and beside it the two things Home is for: start, or join. */
   top: { display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", columnGap: space.s8, rowGap: space.s5 },
-  header: { display: "flex", flexDirection: "column", gap: space.s1_5 },
-  date: { fontFamily: fonts.mono, fontSize: "0.78125rem", letterSpacing: "0.02em", color: ink.muted },
   greeting: {
     margin: 0,
     fontFamily: fonts.heading,
@@ -56,11 +59,6 @@ const styles = stylex.create({
     letterSpacing: "-0.045em",
     color: ink.strong,
   },
-
-  /**
-   * Start and join sit straight on the page, under the greeting. The page is
-   * already the frame: a box around them read as a room inside the room.
-   */
   launch: { display: "flex", flexDirection: "column", gap: space.s2, flexGrow: 1, flexBasis: 420, maxWidth: 560 },
   actions: { display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: { default: "flex-start", [bp.xl]: "flex-end" }, gap: space.s2 },
   start: {
@@ -75,7 +73,6 @@ const styles = stylex.create({
     cursor: "pointer",
     fontSize: text.sm,
     fontWeight: weight.medium,
-    // The page's one violet button: the thing Home is for.
     color: ink.onAccent,
     backgroundColor: { default: accent.a600, [env.hoverable]: { default: accent.a600, ":hover:not(:disabled)": accent.a700 } },
     opacity: { default: 1, ":disabled": 0.7 },
@@ -126,61 +123,59 @@ const styles = stylex.create({
     color: ink.strong,
     backgroundColor: { default: neutral.n100, [env.hoverable]: { default: neutral.n100, ":hover": neutral.n150 } },
   },
-  code: { fontFamily: fonts.mono, fontSize: text.base, fontWeight: weight.medium, color: ink.strong },
+  error: { margin: 0, fontSize: text.sm, color: danger.d700 },
+
+  linkRow: { display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: space.s4, rowGap: space.s2, paddingBlock: space.s3, paddingInline: space.s5 },
+  linkLabel: { flexShrink: 0, width: { default: "100%", [bp.sm]: 168 }, fontSize: text.sm, fontWeight: weight.semibold, color: ink.strong },
+  code: { flexGrow: 1, flexBasis: 200, minWidth: 0, fontFamily: fonts.mono, fontSize: text.sm, color: ink.strong },
+  linkActions: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: space.s4 },
   textButton: {
     display: "inline-flex",
     alignItems: "center",
     gap: space.s1,
-    minHeight: 32,
+    minHeight: 40,
     padding: 0,
     borderWidth: 0,
     cursor: "pointer",
+    fontFamily: "inherit",
     fontSize: text.sm,
     fontWeight: weight.medium,
     textDecorationLine: "none",
     color: { default: accent.a700, [env.hoverable]: { default: accent.a700, ":hover": accent.a800 } },
     backgroundColor: "transparent",
   },
-  error: { margin: 0, fontSize: text.sm, color: danger.d700 },
 
-  /**
-   * Today and Earlier, with the to-dos and your room beside them. In one
-   * column the meetings come first and the side follows them, with a link
-   * under Today down to the to-dos.
-   */
-  body: {
-    display: "grid",
-    gridTemplateColumns: { default: "minmax(0, 1fr)", [bp.xl]: "minmax(0, 1fr) minmax(260px, 300px)" },
-    gridTemplateRows: { default: null, [bp.xl]: "auto 1fr" },
-    gridTemplateAreas: { default: '"today" "recent" "aside"', [bp.xl]: '"today aside" "recent aside"' },
-    alignItems: "start",
-    columnGap: space.s10,
-    rowGap: space.s9,
-  },
-  // Placed by the named areas above; the start and end lines name an area's edges.
-  areaToday: { gridRowStart: "today", gridRowEnd: "today", gridColumnStart: "today", gridColumnEnd: "today", minWidth: 0, display: "flex", flexDirection: "column", gap: space.s3 },
-  areaRecent: { gridRowStart: "recent", gridRowEnd: "recent", gridColumnStart: "recent", gridColumnEnd: "recent", minWidth: 0 },
-  recent: { display: "flex", flexDirection: "column", gap: space.s2 },
-  aside: { gridRowStart: "aside", gridRowEnd: "aside", gridColumnStart: "aside", gridColumnEnd: "aside", display: "flex", flexDirection: "column", gap: space.s8, minWidth: 0 },
-  roomCard: {
+  latest: {
+    position: "relative",
     display: "flex",
-    flexDirection: "column",
-    gap: space.s2,
-    padding: space.s5,
-    borderRadius: 16,
-    backgroundColor: surface.sunken,
+    flexWrap: "wrap",
+    overflow: "hidden",
+    borderRadius: 20,
+    boxShadow: `0 0 0 1px ${border.subtle}`,
+    backgroundColor: surface.raised,
   },
-  roomLabel: { margin: 0, fontSize: "0.8125rem", fontWeight: weight.normal, color: ink.muted },
-  roomActions: { display: "flex", flexWrap: "wrap", gap: space.s4 },
+  latestOpen: { position: "absolute", inset: 0, zIndex: 0, borderRadius: 20 },
+  latestThumb: {
+    display: "grid",
+    placeItems: "center",
+    flexGrow: 1,
+    flexBasis: 280,
+    minHeight: 200,
+    backgroundColor: surface.sunken,
+    color: neutral.n400,
+    overflow: "hidden",
+  },
+  latestBody: { display: "flex", flexDirection: "column", justifyContent: "center", gap: space.s2, flexGrow: 1, flexBasis: 340, minWidth: 0, padding: space.s6 },
+  latestKicker: { margin: 0, fontSize: "0.8125rem", fontWeight: weight.semibold, color: accent.a700 },
+  latestTitle: { margin: 0, fontFamily: fonts.heading, fontSize: "1.625rem", fontWeight: weight.semibold, lineHeight: 1.15, letterSpacing: "-0.03em", color: ink.strong },
+  latestMeta: { margin: 0, fontSize: text.sm, color: ink.muted },
+  latestActions: { position: "relative", zIndex: 1, alignSelf: "flex-start", paddingTop: space.s3 },
+
+  recent: { display: "flex", flexDirection: "column", gap: space.s2 },
   sectionHead: { display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: space.s3 },
   sectionTitle: { margin: 0, fontSize: "0.9375rem", fontWeight: weight.semibold, color: ink.strong },
   sectionLink: { fontSize: "0.84375rem", fontWeight: weight.medium, color: accent.a700, textDecorationLine: "none" },
-  day: { display: "flex", flexDirection: "column", gap: space.s0_5, paddingTop: space.s3_5 },
-  dayHead: { display: "flex", alignItems: "baseline", gap: space.s2, paddingBottom: space.s1_5 },
-  dayLabel: { fontSize: "0.8125rem", fontWeight: weight.semibold, color: ink.strong },
-  dayDate: { fontFamily: fonts.mono, fontSize: text.xs, color: ink.muted },
   quiet: { margin: 0, paddingBlock: space.s4, fontSize: text.sm, color: ink.muted },
-
 });
 
 function getGreeting(hour: number): string {
@@ -188,7 +183,6 @@ function getGreeting(hour: number): string {
   if (hour < 18) return "Good afternoon";
   return "Good evening";
 }
-
 
 // ─── Start or join ───────────────────────────────────────────────────────────
 
@@ -270,113 +264,135 @@ function Launch() {
   );
 }
 
-// ─── Your room ───────────────────────────────────────────────────────────────
+// ─── Your meeting link ───────────────────────────────────────────────────────
 
-/**
- * Your permanent link, as a small card beside the to-dos: a fact about you
- * that people ask for, so copying it is one press.
- */
-function RoomCard({ threads }: { threads: Thread[] }) {
+/** Your permanent link: a fact about you that people ask for, so copying it is one press. */
+function MeetingLinkRow({ threads }: { threads: Thread[] }) {
   const router = useRouter();
   const [creatingLink, setCreatingLink] = useState(false);
-  const [roomSettingsOpen, setRoomSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const { copied, copy } = useCopyToClipboard();
-  const room = threads.find((thread) => thread.kind === "personal");
+  const link = threads.find((thread) => thread.kind === "personal");
 
   return (
-    <section aria-labelledby="home-room" {...stylex.props(styles.roomCard, enter.fadeUp)}>
-      <h2 id="home-room" {...stylex.props(styles.roomLabel)}>
-        {room ? "Your room — the same link every time" : "Want one link people can always use?"}
-      </h2>
-      {room ? (
+    <li {...stylex.props(styles.linkRow)}>
+      <span {...stylex.props(styles.linkLabel)}>Your meeting link</span>
+      {link ? (
         <>
-          <span {...stylex.props(styles.code)}>{room.code}</span>
-          <div {...stylex.props(styles.roomActions)}>
-            <a
-              href={`/${room.code}`}
-              onClick={() => beginMeetingEntryFlow({ source: "home-join", code: room.code })}
-              {...stylex.props(styles.textButton, motion.tint, focus.ring)}
-            >
-              <Video size={14} aria-hidden="true" />
-              Enter room
-            </a>
+          <span {...stylex.props(styles.code)}>{link.code}</span>
+          <div {...stylex.props(styles.linkActions)}>
             <button
               type="button"
-              onClick={() => void copy(`${window.location.origin}/${room.code}`)}
+              onClick={() => void copy(`${window.location.origin}/${link.code}`)}
               {...stylex.props(styles.textButton, motion.tint, focus.ring)}
             >
               {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
               {copied ? "Copied" : "Copy link"}
             </button>
+            <a
+              href={`/${link.code}`}
+              onClick={() => beginMeetingEntryFlow({ source: "home-join", code: link.code })}
+              {...stylex.props(styles.textButton, motion.tint, focus.ring)}
+            >
+              <Video size={14} aria-hidden="true" />
+              Start
+            </a>
             <button
               type="button"
-              onClick={() => setRoomSettingsOpen(true)}
+              onClick={() => setSettingsOpen(true)}
+              aria-label="Meeting link settings"
               {...stylex.props(styles.textButton, motion.tint, focus.ring)}
             >
               <Settings2 size={14} aria-hidden="true" />
-              Room settings
+              Settings
             </button>
           </div>
-          <RoomLinkSettings thread={room} open={roomSettingsOpen} onOpenChange={setRoomSettingsOpen} />
+          <RoomLinkSettings thread={link} open={settingsOpen} onOpenChange={setSettingsOpen} />
         </>
       ) : (
-        <div {...stylex.props(styles.roomActions)}>
-          <button
-            type="button"
-            onClick={() => {
-              preloadMeetingRoute(router).catch(() => {});
-              setCreatingLink(true);
-            }}
-            {...stylex.props(styles.textButton, motion.tint, focus.ring)}
-          >
-            Make a room link
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => {
+            preloadMeetingRoute(router).catch(() => {});
+            setCreatingLink(true);
+          }}
+          {...stylex.props(styles.textButton, motion.tint, focus.ring)}
+        >
+          Make a meeting link
+        </button>
       )}
       <CreatePersonalMeetingLinkDialog open={creatingLink} onOpenChange={setCreatingLink} />
-    </section>
+    </li>
   );
 }
 
 // ─── Recent ──────────────────────────────────────────────────────────────────
 
-function Recent({ viewerName }: { viewerName: string }) {
-  // Must never hold up starting or joining, so it does not suspend.
-  const query = useInfiniteQuery(myMeetingsQueryOptions({ status: "ended", limit: RECENT_LIMIT }));
-  const meetings = (query.data?.pages[0]?.meetings ?? []).slice(0, RECENT_LIMIT).map((meeting) => ({
-    ...meeting,
-    hasWhiteboard: meeting.hasWhiteboardState || meeting.hasWhiteboardPdf,
-  }));
-  const days = groupMeetingsByDay(meetings);
+/** The meeting you are most likely to come back for, with what it left. */
+function Latest({ meeting, viewerName }: { meeting: MeetingRowData; viewerName: string }) {
+  const title = meetingDisplayTitle(meeting.title, meeting.participantNames, viewerName);
+  const others = meeting.participantNames.filter((name) => name !== viewerName);
+  const details = [
+    formatMeetingDate(meeting.startedAt),
+    formatMeetingLength(meeting.startedAt, meeting.endedAt),
+    others.length > 0 ? `with ${others.join(", ")}` : null,
+  ].filter(Boolean);
 
   return (
-    <section aria-labelledby="home-recent" {...stylex.props(styles.recent)}>
-      <div {...stylex.props(styles.sectionHead)}>
-        <h2 id="home-recent" {...stylex.props(styles.sectionTitle)}>Earlier</h2>
-        <Link to="/library" {...stylex.props(touch.target, styles.sectionLink, focus.ring)}>Open library</Link>
+    <section aria-labelledby="home-latest" {...stylex.props(styles.latest, enter.fadeUp)}>
+      <Link
+        to="/meetings/$meetingId"
+        params={{ meetingId: meeting.meetingId }}
+        aria-label={`Open ${title}`}
+        {...stylex.props(styles.latestOpen, focus.ring)}
+      />
+      <span aria-hidden="true" {...stylex.props(styles.latestThumb)}>
+        {meeting.hasWhiteboard ? (
+          <MeetingBoardPreview meetingId={meeting.meetingId} fallback={<Presentation size={36} strokeWidth={1.4} />} />
+        ) : (
+          <Video size={36} strokeWidth={1.4} />
+        )}
+      </span>
+      <div {...stylex.props(styles.latestBody)}>
+        <p {...stylex.props(styles.latestKicker)}>Latest meeting</p>
+        <h2 id="home-latest" {...stylex.props(styles.latestTitle, layout.truncate)}>{title}</h2>
+        <p {...stylex.props(styles.latestMeta)}>{details.join(" · ")}</p>
+        <div {...stylex.props(styles.latestActions)}>
+          <MeetingOutputActions meeting={meeting} title={title} />
+        </div>
       </div>
-      {query.isPending ? (
-        <p {...stylex.props(styles.quiet)}>Loading your meetings…</p>
-      ) : query.isError ? (
-        <p {...stylex.props(styles.quiet)}>Your recent meetings couldn’t load. They’re all in the Library.</p>
-      ) : days.length === 0 ? (
-        <p {...stylex.props(styles.quiet)}>
-          Nothing yet. Meetings you have, with their boards and recaps, will show up here.
-        </p>
-      ) : (
-        days.map((day) => (
-          <div key={day.key} {...stylex.props(styles.day)}>
-            <div {...stylex.props(styles.dayHead)}>
-              <span {...stylex.props(styles.dayLabel)}>{day.label}</span>
-              <span {...stylex.props(styles.dayDate)}>{day.date}</span>
-            </div>
-            {day.meetings.map((meeting) => (
-              <MeetingRow key={meeting.meetingId} meeting={meeting} viewerName={viewerName} />
-            ))}
-          </div>
-        ))
-      )}
     </section>
+  );
+}
+
+function Recent({ viewerName }: { viewerName: string }) {
+  // Must never hold up starting or joining, so it does not suspend.
+  const query = useInfiniteQuery(myMeetingsQueryOptions({ status: "ended", limit: RECENT_FETCH }));
+  const meetings: MeetingRowData[] = (query.data?.pages[0]?.meetings ?? [])
+    .map((meeting) => ({ ...meeting, hasWhiteboard: meeting.hasWhiteboardState || meeting.hasWhiteboardPdf }))
+    .filter((meeting) => !isShortCall(meeting));
+  const [latest, ...rest] = meetings;
+  const earlier = rest.slice(0, EARLIER_LIMIT);
+
+  if (query.isPending) return <p {...stylex.props(styles.quiet)}>Loading your meetings…</p>;
+  if (query.isError) return <p {...stylex.props(styles.quiet)}>Your recent meetings couldn’t load. They’re all in the Library.</p>;
+  if (!latest) return <p {...stylex.props(styles.quiet)}>Nothing yet. Meetings you have will show up here.</p>;
+
+  return (
+    <>
+      <Latest meeting={latest} viewerName={viewerName} />
+      {earlier.length > 0 ? (
+        <section aria-labelledby="home-recent" {...stylex.props(styles.recent)}>
+          <div {...stylex.props(styles.sectionHead)}>
+            <h2 id="home-recent" {...stylex.props(styles.sectionTitle)}>Earlier</h2>
+            <Link to="/library" {...stylex.props(touch.target, styles.sectionLink, focus.ring)}>All meetings</Link>
+          </div>
+          {earlier.map((meeting) => (
+            <MeetingRow key={meeting.meetingId} meeting={meeting} viewerName={viewerName} />
+          ))}
+        </section>
+      ) : null}
+    </>
   );
 }
 
@@ -389,29 +405,18 @@ export function HomePage() {
   const navigate = routeApi.useNavigate();
   const name = session.user.name ?? "";
   const firstName = name.split(" ")[0] || "there";
-  const [{ greeting, date }] = useState(() => {
-    if (typeof window === "undefined") return { greeting: "Welcome", date: "" };
-    const now = new Date();
-    return {
-      greeting: getGreeting(now.getHours()),
-      date: now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }),
-    };
-  });
+  const [greeting] = useState(() => (typeof window === "undefined" ? "Welcome" : getGreeting(new Date().getHours())));
 
   const { data: threadsData } = useSuspenseQuery(myThreadsQueryOptions());
   const threads = threadsData.threads;
-  const hasLive = threads.some((thread) => (thread.openMeeting?.participantCount ?? 0) > 0);
-  const now = useNow(30_000, hasLive);
+  const now = useNow(30_000, true);
 
   return (
     <div {...stylex.props(styles.page)}>
       <div {...stylex.props(styles.top)}>
-        <header {...stylex.props(styles.header, enter.fadeUp)}>
-          {date ? <span {...stylex.props(styles.date)}>{date}</span> : null}
-          <h1 {...stylex.props(styles.greeting)}>
-            {greeting}, {firstName}.
-          </h1>
-        </header>
+        <h1 {...stylex.props(styles.greeting, enter.fadeUp)}>
+          {greeting}, {firstName}.
+        </h1>
         <Launch />
       </div>
       {left ? (
@@ -421,19 +426,10 @@ export function HomePage() {
           onDismiss={() => void navigate({ search: {}, replace: true })}
         />
       ) : null}
-      <div {...stylex.props(styles.body)}>
-        <div {...stylex.props(styles.areaToday)}>
-          <Today threads={threads} now={now} />
-          <StillToDoLink />
-        </div>
-        <div {...stylex.props(styles.areaRecent)}>
-          <Recent viewerName={name} />
-        </div>
-        <aside aria-label="Still to do, and your room" {...stylex.props(styles.aside)}>
-          <StillToDo />
-          <RoomCard threads={threads} />
-        </aside>
-      </div>
+      <Upcoming threads={threads} now={now}>
+        <MeetingLinkRow threads={threads} />
+      </Upcoming>
+      <Recent viewerName={name} />
     </div>
   );
 }
