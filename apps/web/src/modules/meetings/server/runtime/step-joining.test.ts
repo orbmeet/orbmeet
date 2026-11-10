@@ -22,6 +22,14 @@ describe("joining", () => {
     expect(first.role).toBe("attendee");
   });
 
+  it("continues a user's admission when the one a tab names is from an earlier meeting", () => {
+    const m = new Meeting();
+    const first = m.admitted(ada);
+    const again = m.admitted(ada, { admissionId: "admission_from_an_earlier_meeting" });
+    expect(again.admissionId).toBe(first.admissionId);
+    expect(Object.keys(m.state.admissions)).toHaveLength(1);
+  });
+
   it("gives every rejoin its own attempt and identity, and the newest joined one wins", () => {
     const m = new Meeting();
     const first = m.admitted(ada);

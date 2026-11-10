@@ -561,12 +561,13 @@ function join(
     : undefined;
   // A signed-in user is one participant however many tabs or devices they
   // join from: without a named admission they continue the one they have, so
-  // they neither take a second seat nor wait for approval again.
-  let admission = repeatedGuest ?? (input.admissionId
-    ? state.admissions[input.admissionId]
-    : subject.kind === "user"
-      ? liveAdmissionOf(state, subject.userId)
-      : undefined);
+  // they neither take a second seat nor wait for approval again. A named
+  // admission this meeting does not know (a tab's id from an earlier meeting on
+  // the same link) is no admission at all.
+  const namedAdmission: Admission | undefined = input.admissionId ? state.admissions[input.admissionId] : undefined;
+  let admission = repeatedGuest
+    ?? namedAdmission
+    ?? (subject.kind === "user" ? liveAdmissionOf(state, subject.userId) : undefined);
   let newGuestAdmission = repeatedGuest !== undefined;
   if (admission && !repeatedGuest && !ownsAdmission(subject, admission)) throw Errors.FORBIDDEN();
   // Whatever admission a join names, or none: a bar is on the person, and

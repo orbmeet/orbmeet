@@ -17,7 +17,13 @@ import { normalizeEmailAddress } from "@/platform/email/address";
 import { loadSuppressedEmails, recordEmailSuppression } from "@/platform/email/suppression.server";
 import { buildUnsubscribeHeaders } from "@/platform/email/unsubscribe-token";
 
-const DELIVERY_BATCH_SIZE = 10;
+/**
+ * Messages one pass sends. The queue is shared by every Space and a pass runs
+ * once a minute, so this is the app's whole sending rate: a Space's invitations
+ * or reminders have to clear within a few minutes, or a reminder is still
+ * queued when its meeting starts and is dropped as late.
+ */
+const DELIVERY_BATCH_SIZE = 100;
 const MAX_RETRY_DELAY_MS = 60 * 60 * 1000;
 const DELIVERY_CLAIM_LEASE_MS = 5 * 60 * 1000;
 const MAX_DELIVERY_ATTEMPTS = 8;

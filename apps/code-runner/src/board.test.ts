@@ -253,6 +253,31 @@ describe("Board", () => {
     });
   });
 
+  it("fails a run whose container was replaced while it waited to start, rather than cancelling it", async () => {
+    const { container, run, settled } = setup();
+    const exec = container.exec.bind(container);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => void (release = resolve));
+    let runs = 0;
+    container.exec = async (argv, options) => {
+      if (argv[1] !== "--probe" && ++runs === 1) await held;
+      return exec(argv, options);
+    };
+    container.onExec = (supervisor) => {
+      supervisor.report(new Uint8Array(0), "cellrun: slot could not be reset\n");
+      supervisor.exit(70);
+    };
+
+    const waiting = run("waiting");
+    await vi.waitFor(() => expect(runs).toBe(1));
+    await expect(run("failing")).rejects.toBeInstanceOf(RunnerUnavailableError);
+    await settled();
+
+    container.running = true;
+    release();
+    await expect(waiting).rejects.toBeInstanceOf(RunnerUnavailableError);
+  });
+
   describe("stopping", () => {
     it("stops the supervisor and ends the run as cancelled", async () => {
       const { container, board, run } = setup();

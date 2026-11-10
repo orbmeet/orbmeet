@@ -1,5 +1,43 @@
+import { createServer, type AddressInfo, type Socket } from "node:net";
 import { describe, expect, it } from "vitest";
-import { extractMetaTags, extractTitle, isUnfurlableMediaType, resolveUnfurlRedirect } from "./unfurl.ts";
+import {
+  extractMetaTags,
+  extractTitle,
+  isUnfurlableMediaType,
+  requestPinnedUnfurlUrl,
+  resolveUnfurlRedirect,
+} from "./unfurl.ts";
+
+describe("requestPinnedUnfurlUrl", () => {
+  async function fetchFrom(respond: (socket: Socket) => void) {
+    const server = createServer((socket) => socket.once("data", () => respond(socket)));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      return await requestPinnedUnfurlUrl(
+        new URL(`http://unfurl.test:${port}/`),
+        "127.0.0.1",
+        new AbortController().signal,
+      );
+    } finally {
+      server.close();
+    }
+  }
+
+  it("returns a complete response", async () => {
+    const response = await fetchFrom((socket) => {
+      socket.end("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
+    });
+    expect(response).toMatchObject({ status: 200, ok: true });
+    expect(new TextDecoder().decode(response.body)).toBe("ok");
+  });
+
+  it("rejects when the peer closes partway through the body", async () => {
+    await expect(fetchFrom((socket) => {
+      socket.end("HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n<html>");
+    })).rejects.toThrow(/before it was complete/);
+  });
+});
 
 describe("resolveUnfurlRedirect", () => {
   it("allows same-security redirects and HTTP upgrades", () => {

@@ -84,12 +84,16 @@ export function createWebSocketGateway({ roomManager, isShuttingDown, admit }: W
     const { tldrawSessionId, whiteboardRoomId } = session;
     const socket: TldrawSocket = {
       send(data) {
-        if (ws.bufferedAmount > MAX_BUFFERED_BYTES || backlog.shouldShed(ws.bufferedAmount)) {
+        if (ws.bufferedAmount > MAX_BUFFERED_BYTES) {
           logWarn(`[ws] dropping ${tldrawSessionId}: ${ws.bufferedAmount} bytes queued`);
-          backlog.release(ws.bufferedAmount);
           ws.terminate();
           return;
         }
+        for (const behind of backlog.socketsToShed()) {
+          logWarn(`[ws] node over its send budget; dropping a socket with ${behind.bufferedAmount} bytes queued`);
+          behind.terminate();
+        }
+        if (ws.readyState !== ws.OPEN) return;
         ws.send(data);
       },
       close: (code, reason) => ws.close(code, reason),

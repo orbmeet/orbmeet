@@ -13,7 +13,7 @@ import { SCHEDULED_MEETING_LATE_JOIN_MS } from "@/modules/meetings/contract/cons
 
 import { selectMeetingLookupByCode } from "@/modules/meetings/server/history/meeting-lookup.server";
 
-import { createMeetingScheduleRecord } from "./commands";
+import { cancelMeetingScheduleRecord, createMeetingScheduleRecord } from "./commands";
 import { createMeetingScheduleForUser } from "./creation";
 import {
   listMeetingSchedulesPageForUser,
@@ -24,6 +24,7 @@ import { type TestDb } from "@/test/db";
 
 import {
   createFixture,
+  insertSpaceScheduleFixture,
   listSchedules,
   now,
   organizer,
@@ -105,6 +106,40 @@ describe("Scheduled meeting commands: resolving and listing", () => {
         ],
       },
     });
+  });
+
+  it("prefers the live schedule over a canceled one with the same title", async () => {
+    const link = await insertSpaceScheduleFixture(db);
+    const standup = {
+      spaceId: "spc_no_overlap",
+      title: "Standup",
+      attendees: [],
+      startsAt: new Date(now.getTime() + 86_400_000).toISOString(),
+      durationMinutes: 30,
+      timeZone: "UTC",
+      joinPolicy: "open" as const,
+    };
+    const find = () =>
+      resolveManageableMeetingScheduleForUser(
+        db,
+        organizer,
+        { title: "Standup", timeZone: "UTC" },
+        now,
+        { includeCanceled: true },
+      );
+
+    const first = await createMeetingScheduleRecord(db, organizer, standup, { now, spaceMeetingLink: link });
+    await cancelMeetingScheduleRecord(
+      db,
+      organizer.id,
+      { scheduleId: first.id, expectedRevision: first.revision },
+      now,
+    );
+    // Nothing live matches, so a repeated cancel still finds the canceled one.
+    await expect(find()).resolves.toMatchObject({ id: first.id, state: "canceled" });
+
+    const second = await createMeetingScheduleRecord(db, organizer, standup, { now, spaceMeetingLink: link });
+    await expect(find()).resolves.toMatchObject({ id: second.id, state: "upcoming" });
   });
 
   it("applies human selectors before the bounded result window", async () => {

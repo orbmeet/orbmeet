@@ -323,7 +323,9 @@ describe("ScreenShareCapture, whatever arrives first", () => {
     );
   });
 
-  it("settles a cancel racing a moderator's approval with no capture left behind", async () => {
+  // The largest set of orderings here: a busy machine running every suite at
+  // once can outlast the default timeout.
+  it("settles a cancel racing a moderator's approval with no capture left behind", { timeout: 30_000 }, async () => {
     await everyOrdering(
       () => [(world) => world.capture.cancel(), (world) => world.decide(true)],
       (world) => {

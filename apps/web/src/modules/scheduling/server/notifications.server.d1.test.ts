@@ -108,6 +108,22 @@ function reminderRow(scheduleId: string) {
 }
 
 describe("scheduled meeting reminders", () => {
+  it("clears a large queue in one pass", async () => {
+    const createdAt = new Date("2026-07-14T09:00:00.000Z");
+    for (const schedule of [0, 1, 2]) {
+      await createMeetingScheduleRecord(db, organizer, {
+        title: `Lesson ${schedule}`,
+        startsAt: `2026-07-14T1${schedule}:00:00.000Z`,
+        durationMinutes: 45,
+        timeZone: "Asia/Dhaka",
+        attendees: Array.from({ length: 10 }, (_, index) => ({ email: `s${schedule}-${index}@example.com` })),
+        joinPolicy: "open",
+      }, { now: createdAt });
+    }
+
+    await expect(runMeetingScheduleNotificationMaintenance(runtimeEnv(), createdAt)).resolves.toBe(30);
+  });
+
   it("delivers the queued reminder with the existing meeting link", async () => {
     const created = await queueReminder();
 

@@ -13,7 +13,7 @@ import {
   CONTACT_DISPLAY_NAME_MAX_LENGTH,
   clampToColumnLength,
 } from "@/platform/database/db-limits";
-import { generateId } from "@/lib/ids";
+import { ID_PREFIX, generateId } from "@/lib/ids";
 import type { JobStep } from "@/platform/jobs/jobs";
 import { normalizeEmail } from "@/modules/identity/contract/auth/email-normalization";
 
@@ -150,6 +150,10 @@ export async function rememberInvitedContacts(
   await db.batch([firstWrite, ...remainingWrites]);
 }
 
+// One row per co-attendee, so this id is generated in SQL, with the prefix the
+// TypeScript writer uses.
+const contactIdSql = sql.raw(`'${ID_PREFIX.USER_CONTACT}' || lower(hex(randomblob(16)))`);
+
 /** Co-attendees indexed per job step. */
 const CONTACT_INDEX_PAGE_SIZE = 100;
 
@@ -217,7 +221,7 @@ async function indexContactPage(
           last_meeting_id, created_at, updated_at
         )
         select
-          'uct_' || lower(hex(randomblob(16))),
+          ${contactIdSql},
           ${ownerUserId},
           contact_user.id,
           null,

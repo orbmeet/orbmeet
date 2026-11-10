@@ -132,6 +132,11 @@ export class Board {
         EXEC_DEADLINE_MS,
         "cellrun did not start",
       );
+      // Another run's failure can replace the container during that wait. The
+      // table has then forgotten this run, which is not the same as a cancel.
+      if (generation !== this.#table.generation) {
+        throw new RunnerUnavailableError("The container was replaced before the run began");
+      }
       // Drained from the start, so cellrun never blocks on a full pipe. It
       // closes only when cellrun exits, after the slot's cleanup.
       const diagnostics = readAll(process.stderr, 8 * 1024).catch(() => new Uint8Array(0));

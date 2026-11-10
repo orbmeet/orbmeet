@@ -438,9 +438,12 @@ export async function resolveManageableMeetingScheduleForUser(
   const schedules = rows.map((row) =>
     serializeSchedule(row, user.id, attendees.get(row.id) ?? [], now),
   );
-  const candidates = schedules.filter(
-    (schedule) => schedule.canManage || (options.includeCanceled && schedule.state === "canceled"),
-  );
+  // A canceled schedule answers a repeated cancel, so it only stands in when
+  // nothing live matches: one canceled and then created again is not ambiguous.
+  const live = schedules.filter((schedule) => schedule.canManage);
+  const candidates = live.length > 0 || !options.includeCanceled
+    ? live
+    : schedules.filter((schedule) => schedule.state === "canceled");
 
   if (candidates.length === 0 && !selectorWindowSaturated) {
     throw new AppError(

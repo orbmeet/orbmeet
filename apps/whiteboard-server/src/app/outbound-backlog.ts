@@ -10,18 +10,17 @@ const MAX_NODE_BUFFERED_BYTES = 1024 * 1024 * 1024;
 /** A socket with less than this queued is keeping up, and costs little to keep. */
 export const SHED_MIN_BUFFERED_BYTES = 1024 * 1024;
 
-/** Sends are frequent and summing every socket is not, so the total is reused this long. */
+/** Sends are frequent and summing every socket is not, so a check runs this often at most. */
 const SAMPLE_INTERVAL_MS = 200;
 
-export class OutboundBacklog {
-  private total = 0;
+export class OutboundBacklog<Socket extends { bufferedAmount: number }> {
   private sampledAt = Number.NEGATIVE_INFINITY;
-  private readonly sockets: () => Iterable<{ bufferedAmount: number }>;
+  private readonly sockets: () => Iterable<Socket>;
   private readonly maxBytes: number;
   private readonly now: () => number;
 
   constructor(
-    sockets: () => Iterable<{ bufferedAmount: number }>,
+    sockets: () => Iterable<Socket>,
     maxBytes = MAX_NODE_BUFFERED_BYTES,
     now: () => number = Date.now,
   ) {
@@ -30,20 +29,25 @@ export class OutboundBacklog {
     this.now = now;
   }
 
-  /** Whether a socket with `bufferedBytes` queued should go to protect the node. */
-  shouldShed(bufferedBytes: number): boolean {
-    if (bufferedBytes < SHED_MIN_BUFFERED_BYTES) return false;
+  /**
+   * The sockets to drop to bring the node back within budget, furthest behind
+   * first; empty while it is within budget or a check ran moments ago.
+   */
+  socketsToShed(): Socket[] {
     const now = this.now();
-    if (now - this.sampledAt >= SAMPLE_INTERVAL_MS) {
-      this.sampledAt = now;
-      this.total = 0;
-      for (const socket of this.sockets()) this.total += socket.bufferedAmount;
-    }
-    return this.total > this.maxBytes;
-  }
+    if (now - this.sampledAt < SAMPLE_INTERVAL_MS) return [];
+    this.sampledAt = now;
 
-  /** A dropped socket's bytes are gone, so the next one is not shed on a stale total. */
-  release(bufferedBytes: number): void {
-    this.total = Math.max(0, this.total - bufferedBytes);
+    const queued = Array.from(this.sockets(), (socket) => ({ socket, bytes: socket.bufferedAmount }));
+    let excess = queued.reduce((total, { bytes }) => total + bytes, -this.maxBytes);
+    if (excess <= 0) return [];
+
+    const shed: Socket[] = [];
+    for (const { socket, bytes } of queued.sort((a, b) => b.bytes - a.bytes)) {
+      if (excess <= 0 || bytes < SHED_MIN_BUFFERED_BYTES) break;
+      shed.push(socket);
+      excess -= bytes;
+    }
+    return shed;
   }
 }

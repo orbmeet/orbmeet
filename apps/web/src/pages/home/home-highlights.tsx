@@ -165,12 +165,12 @@ function isTomorrow(iso: string, now: number): boolean {
   return new Date(iso).toDateString() === tomorrow.toDateString();
 }
 
-/** "Today, 6:00 PM", "Tomorrow, 6:00 PM", "Wed, 10:00 AM". */
-function formatWhen(iso: string, now: number, timeZone?: string): string {
-  const clock = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", timeZone }).format(new Date(iso));
+/** "Today, 6:00 PM", "Tomorrow, 6:00 PM", "Wed, 10:00 AM", in the viewer's own time. */
+function formatWhen(iso: string, now: number): string {
+  const clock = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(iso));
   if (isSameLocalDay(iso, now)) return `Today, ${clock}`;
   if (isTomorrow(iso, now)) return `Tomorrow, ${clock}`;
-  const day = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", timeZone }).format(new Date(iso));
+  const day = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" }).format(new Date(iso));
   return `${day}, ${clock}`;
 }
 
@@ -219,7 +219,7 @@ export function Upcoming({ threads, now, children }: { threads: Thread[]; now: n
         ))}
         {upcoming.map((meeting) => (
           <li key={meeting.id} {...stylex.props(styles.row)}>
-            <time dateTime={meeting.startsAt} {...stylex.props(styles.when)}>{formatWhen(meeting.startsAt, now, meeting.timeZone)}</time>
+            <time dateTime={meeting.startsAt} {...stylex.props(styles.when)}>{formatWhen(meeting.startsAt, now)}</time>
             <div {...stylex.props(styles.lines)}>
               <h3 {...stylex.props(styles.title, layout.truncate)}>{meeting.title?.trim() || "Scheduled meeting"}</h3>
               <p {...stylex.props(styles.meta)}>

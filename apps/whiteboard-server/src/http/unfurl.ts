@@ -77,7 +77,7 @@ function hostHeaderForUrl(url: URL): string {
   return url.port ? `${url.hostname}:${url.port}` : url.hostname;
 }
 
-function requestPinnedUnfurlUrl(
+export function requestPinnedUnfurlUrl(
   url: URL,
   resolvedAddress: string,
   signal: AbortSignal,
@@ -147,6 +147,9 @@ function requestPinnedUnfurlUrl(
         response.on("end", finish);
         response.on("close", () => {
           if (truncated) finish();
+          // A peer that closes mid-body ends neither the response nor the
+          // request, and the request's deadline has already been let go.
+          else if (!response.complete) reject(new Error("Response ended before it was complete"));
         });
       },
     );
