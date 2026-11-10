@@ -18,7 +18,7 @@ import * as stylex from "@stylexjs/stylex";
 const MAX_ROWS = 4;
 
 const styles = stylex.create({
-  section: { width: "100%", maxWidth: "40rem", marginTop: space.s14 },
+  section: { width: "100%" },
   label: { margin: 0, marginBottom: space.s2, marginInlineStart: space.s1, fontSize: text.control, fontWeight: weight.medium, color: ink.muted },
   list: {
     margin: 0,

@@ -22,6 +22,7 @@ import { fonts, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
 import type { ReactNode } from "react";
 import { JumpBackIn } from "./jump-back-in";
+import { LatestMeeting } from "./latest-meeting";
 import { LandingRoomShot, LandingTour } from "./landing-tour";
 
 const CREATE_ERROR_FALLBACK = "Failed to create meeting. Please try again.";
@@ -76,7 +77,7 @@ const styles = stylex.create({
     paddingInline: space.s6,
     boxSizing: "border-box",
   },
-  header: { display: "flex", alignItems: "center", gap: space.s2, minHeight: 72 },
+  header: { display: "flex", alignItems: "center", gap: space.s2, minHeight: 64 },
   brand: {
     display: "inline-flex",
     alignItems: "center",
@@ -120,29 +121,31 @@ const styles = stylex.create({
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    paddingTop: { default: space.s14, [bp.lg]: space.s20 },
+    // Short laptop windows still need to see the sample call under the fold
+    // line, so the top space shrinks with the viewport's height.
+    paddingTop: "clamp(2rem, 7svh, 5rem)",
     textAlign: "center",
   },
-  signedInHero: { paddingBottom: space.s24 },
   headline: {
     margin: 0,
-    maxWidth: "52rem",
+    maxWidth: "56rem",
     fontFamily: fonts.heading,
     fontWeight: weight.semibold,
-    fontSize: "clamp(2.625rem, 6vw, 4.75rem)",
+    fontSize: "clamp(2.5rem, 4.4vw + 0.25rem, 4rem)",
     lineHeight: 1.04,
     letterSpacing: "-0.045em",
     textWrap: "balance",
   },
-  lede: { margin: 0, marginTop: space.s6, maxWidth: "35rem", fontSize: "1.1875rem", lineHeight: 1.55, color: ink.body, textWrap: "pretty" },
+  lede: { margin: 0, marginTop: space.s5, maxWidth: "40rem", fontSize: "1.1875rem", lineHeight: 1.55, color: ink.body, textWrap: "pretty" },
   actions: {
     display: "flex",
     flexWrap: "wrap",
     justifyContent: "center",
     alignItems: "center",
     gap: space.s3,
-    marginTop: space.s10,
+    marginTop: space.s8,
   },
+  actionsStart: { justifyContent: "flex-start" },
   start: {
     display: "inline-flex",
     alignItems: "center",
@@ -200,7 +203,29 @@ const styles = stylex.create({
     backgroundColor: { default: "transparent", [env.hoverable]: { default: "transparent", ":hover": accent.a50 } },
   },
   error: { margin: 0, marginTop: space.s3, fontSize: text.sm, color: danger.d600 },
-  fine: { margin: 0, marginTop: space.s4, fontSize: text.sm, color: ink.muted },
+  fine: { margin: 0, marginTop: space.s3, fontSize: text.sm, color: ink.muted },
+
+  // Signed in: who you are and where you were, beside the last board you used.
+  home: {
+    display: "grid",
+    gridTemplateColumns: { default: "minmax(0, 1fr)", [bp.lg]: "minmax(0, 5fr) minmax(0, 6fr)" },
+    alignItems: "start",
+    gap: { default: space.s12, [bp.lg]: space.s16 },
+    paddingTop: "clamp(2rem, 8svh, 5rem)",
+    paddingBottom: space.s24,
+  },
+  homeWords: { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: space.s10 },
+  greeting: {
+    margin: 0,
+    fontFamily: fonts.heading,
+    fontWeight: weight.semibold,
+    fontSize: "clamp(2.25rem, 3vw + 0.75rem, 3.25rem)",
+    lineHeight: 1.05,
+    letterSpacing: "-0.04em",
+    textWrap: "balance",
+  },
+  greetingLede: { margin: 0, marginTop: space.s3, fontSize: text.lg, lineHeight: 1.5, color: ink.body },
+  homeActions: { marginTop: space.s6 },
 
   closing: {
     display: "flex",
@@ -313,6 +338,7 @@ function LandingFooter() {
 export function LandingPage() {
   const { data: session, isLoading: sessionLoading } = useQuery(sessionQueryOptions());
   const signedIn = Boolean(session?.user);
+  const firstName = session?.user?.name?.trim().split(/\s+/)[0] || "there";
   const queryClient = useQueryClient();
   const [createErrorMessage, setCreateErrorMessage] = useState("");
   const router = useRouter();
@@ -406,26 +432,38 @@ export function LandingPage() {
       </div>
 
       <main id={MAIN_CONTENT_ID}>
-        <section aria-labelledby="hero-title" {...stylex.props(styles.wrap, styles.hero, signedIn && styles.signedInHero)}>
-          <h1 id="hero-title" {...stylex.props(styles.headline)}>Video calls with a whiteboard everyone can use.</h1>
-          {signedIn ? null : (
-            <p {...stylex.props(styles.lede)}>
-              Send a link, open the board, work it out together. When you hang up, everyone leaves with the board.
-            </p>
-          )}
-          <div {...stylex.props(styles.actions)}>
-            {startMeeting()}
-            <JoinWithCode onIntent={handleMeetingIntent} />
-          </div>
-          {createErrorMessage ? (
-            <p role="alert" {...stylex.props(styles.error)}>{createErrorMessage}</p>
-          ) : null}
-          {signedIn ? (
-            <JumpBackIn />
-          ) : (
+        {signedIn ? (
+          <section aria-labelledby="hero-title" {...stylex.props(styles.wrap, styles.home)}>
+            <div {...stylex.props(styles.homeWords)}>
+              <div>
+                <h1 id="hero-title" {...stylex.props(styles.greeting)}>Welcome back, {firstName}.</h1>
+                <p {...stylex.props(styles.greetingLede)}>Start a call, or pick up where you left off.</p>
+                <div {...stylex.props(styles.actions, styles.actionsStart, styles.homeActions)}>
+                  {startMeeting()}
+                  <JoinWithCode onIntent={handleMeetingIntent} />
+                </div>
+                {createErrorMessage ? (
+                  <p role="alert" {...stylex.props(styles.error)}>{createErrorMessage}</p>
+                ) : null}
+              </div>
+              <JumpBackIn />
+            </div>
+            <LatestMeeting viewerName={session?.user?.name ?? ""} />
+          </section>
+        ) : (
+          <section aria-labelledby="hero-title" {...stylex.props(styles.wrap, styles.hero)}>
+            <h1 id="hero-title" {...stylex.props(styles.headline)}>Video calls with a whiteboard everyone can use.</h1>
+            <p {...stylex.props(styles.lede)}>Send a link, open the board, and work it out together.</p>
+            <div {...stylex.props(styles.actions)}>
+              {startMeeting()}
+              <JoinWithCode onIntent={handleMeetingIntent} />
+            </div>
+            {createErrorMessage ? (
+              <p role="alert" {...stylex.props(styles.error)}>{createErrorMessage}</p>
+            ) : null}
             <p {...stylex.props(styles.fine)}>Free for small groups · Nothing to install · Guests don’t need an account</p>
-          )}
-        </section>
+          </section>
+        )}
 
         {/*
           The tour is the prerendered page, so it stays up while the session

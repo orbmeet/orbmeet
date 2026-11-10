@@ -160,7 +160,7 @@ const styles = stylex.create({
   wideWrap: { maxWidth: "74rem" },
 
   // The room
-  shot: { paddingTop: space.s14 },
+  shot: { paddingTop: { default: space.s10, [bp.lg]: space.s8 } },
   frame: {
     padding: space.s2_5,
     borderRadius: 18,
@@ -523,7 +523,7 @@ function Feature({ id, title, children, picture }: { id: string; title: string; 
 }
 
 /** A call in progress: three friends planning a weekend on the board. */
-function SampleRoom() {
+export function SampleRoom() {
   return (
     <div aria-hidden="true" {...stylex.props(styles.frame)}>
       <div {...stylex.props(styles.bar)}>
