@@ -102,7 +102,7 @@ database, domain and public values, set the Worker's secrets (listed in
 `apps/web/worker-secrets.example`), then:
 
 ```sh
-pnpm --filter @orbmeet/web deploy    # checks, applies migrations, deploys
+pnpm --filter @orbmeet/web run deploy    # checks, applies migrations, deploys
 ```
 
 **The nodes.** Describe your servers in `infra/ops/inventory.json`, kept out of
