@@ -236,6 +236,21 @@ describe("applyOwnershipTransfer", () => {
     ).resolves.toMatchObject({ ownerUserId: "target" });
   });
 
+  it("re-reads the recipient's plan in the batch, whatever caps the handler read", async () => {
+    await seed();
+    // A free recipient who already owns a Space: the free plan allows one.
+    await insertSpace("spc_other", "target");
+    await insertMember("mbr_other_owner", "spc_other", "target", "owner");
+
+    // No literal caps, as if the handler had read an unlimited plan.
+    await expect(transfer({ spaceId: "spc_1", fromUserId: "owner", toUserId: "target", now: new Date() }))
+      .resolves.toBe(false);
+
+    await db.update(users).set({ plan: "pro" }).where(eq(users.id, "target"));
+    await expect(transfer({ spaceId: "spc_1", fromUserId: "owner", toUserId: "target", now: new Date() }))
+      .resolves.toBe(true);
+  });
+
   it("does not charge the recipient's archived Spaces against their active quota", async () => {
     await seed();
     await insertSpace("spc_archived", "target");

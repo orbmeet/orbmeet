@@ -38,6 +38,8 @@ import { recordSpaceAuditEvent } from "@/modules/spaces/server/audit.server";
 import type * as v from "valibot";
 import type { AuthFnContext } from "@/app/bootstrap/middleware";
 import { SPACE_MEMBERSHIP_ROLES } from "@/modules/spaces/contract/types";
+import { PLAN_LIMITS, type PlanLimits } from "@/modules/billing/contract/plan-limits";
+import type { SubscriptionTier } from "@/modules/billing/contract/types";
 import { evictUserFromSpaceMeetings } from "./evict-space-meetings.server";
 import { refreshSpaceAuthorityInOpenMeetings } from "@/modules/meetings/server/runtime/revoke.server";
 
@@ -451,29 +453,24 @@ export async function applyOwnershipTransfer(
   const recipientGates: SQL[] = [];
   // Re-read the recipient's plan inside the transaction. Literal caps below
   // retain clear handler errors and protect count races; this gate additionally
-  // closes a billing downgrade between that read and the ownership batch.
+  // closes a billing downgrade between that read and the ownership batch. Its
+  // caps come from PLAN_LIMITS, so a plan change cannot leave it behind.
+  const memberCount = sql`(select count(*) from ${spaceMembers} where ${spaceMembers.spaceId} = ${spaceId})`;
+  const tiers = Object.entries(PLAN_LIMITS) as Array<[SubscriptionTier, PlanLimits]>;
+  const recipientPlanFits = sql.join(
+    tiers.map(([tier, limits]) => {
+      const fits: SQL[] = [sql`${users.plan} = ${tier}`];
+      if (limits.maxSpaces !== null) fits.push(sql`${activeOwnedSharedSpaceCountSql(toUserId)} < ${limits.maxSpaces}`);
+      if (limits.maxMembersPerSpace !== null) fits.push(sql`${memberCount} <= ${limits.maxMembersPerSpace}`);
+      return sql`(${sql.join(fits, sql` and `)})`;
+    }),
+    sql` or `,
+  );
   recipientGates.push(sql`exists (
     select 1 from ${users}
     where ${users.id} = ${toUserId}
       and ${users.deletionStartedAt} is null
-      and (
-        ${users.plan} = 'organization'
-        or (
-          ${users.plan} = 'pro'
-          and (
-            select count(*) from ${spaceMembers}
-            where ${spaceMembers.spaceId} = ${spaceId}
-          ) <= 200
-        )
-        or (
-          ${users.plan} = 'free'
-          and ${activeOwnedSharedSpaceCountSql(toUserId)} < 1
-          and (
-            select count(*) from ${spaceMembers}
-            where ${spaceMembers.spaceId} = ${spaceId}
-          ) <= 25
-        )
-      )
+      and (${recipientPlanFits})
   )`);
   if (recipientMaxSpaces !== null) {
     // The same owned-space predicate createSpace gates on: the personal space
@@ -539,16 +536,14 @@ export async function transferOwnershipImpl({
   const targetMembership = await findSpaceMembership(db, data.spaceId, data.userId);
   if (!targetMembership) throw Errors.NOT_FOUND("Member");
 
-  // The recipient becomes the owner, so the space has to fit their plan. For an org
-  // space the caps come from the org plan (and it doesn't count toward a personal
-  // owned-space quota); for a personal space, from the recipient's own plan. Pre-check
-  // for clear error messages; applyOwnershipTransfer re-checks atomically to close
-  // the race against a concurrent space-create / member-join by the recipient.
-  let recipientMaxSpaces: number | null;
-  let recipientMaxMembers: number | null;
+  // The recipient becomes the owner, so the space has to fit their own plan
+  // (Organization Spaces have no owner and are never transferred: see
+  // `canTransferOwnership`). Pre-check for clear error messages;
+  // applyOwnershipTransfer re-checks atomically to close the race against a
+  // concurrent space-create / member-join by the recipient.
   const recipientLimits = await resolveUserPlanLimits(db, data.userId);
-  recipientMaxSpaces = recipientLimits.maxSpaces;
-  recipientMaxMembers = recipientLimits.maxMembersPerSpace;
+  const recipientMaxSpaces = recipientLimits.maxSpaces;
+  const recipientMaxMembers = recipientLimits.maxMembersPerSpace;
 
   if (recipientMaxSpaces !== null) {
     const owned = await db.get<{ count: number }>(

@@ -492,7 +492,9 @@ export async function generateMeetingSummaryForMeeting(
   const durationLabel = durationSeconds
     ? durationSeconds >= 3600
       ? `${Math.floor(durationSeconds / 3600)}h ${Math.floor((durationSeconds % 3600) / 60)}m`
-      : `${Math.floor(durationSeconds / 60)}m`
+      : durationSeconds >= 60
+        ? `${Math.floor(durationSeconds / 60)}m`
+        : `${durationSeconds}s`
     : null;
   const participantList = transcript.participantNames.join(", ");
   const boardOutline = await boardOutlineForMeeting(db, env, meetingId);

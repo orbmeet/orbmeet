@@ -22,21 +22,10 @@ import type { CreatePersonalAccessTokenRequestInput } from "./personal-access-to
 const MAX_ACTIVE_TOKENS = 10;
 
 /**
- * Minting an API key is a durable-credential mutation, so it carries the same
- * email step-up as adding a passkey, revoking sessions, or linking Google —
- * `authMiddleware` alone let a captured session cookie mint a bearer credential
- * that then outlived every remediation the victim could perform.
- */
-
-/**
- * Revoke every live API key for one user, and report how many were live.
- *
- * "Sign out everywhere" is the account's compromise-recovery control, and an
- * API key is the durable credential it must not miss: unlike a session it
- * does not rotate, unlike a remembered device it has no cookie, and it keeps
- * working across an email change and a full session-chain reset. Revoking
- * rather than deleting keeps the row auditable — bearer lookup already filters
- * on `revoked_at`.
+ * Insert an API key only while the user holds fewer than `MAX_ACTIVE_TOKENS`
+ * live (unrevoked, unexpired) keys. The count and the insert are one
+ * statement, so concurrent creates cannot both pass the cap. Returns false,
+ * inserting nothing, when the cap is reached.
  */
 export async function insertPersonalAccessTokenWithinCap(
   db: Database,
@@ -110,6 +99,12 @@ export async function listPersonalAccessTokensImpl({
   return { tokens: tokens.map(serializeToken) };
 }
 
+/**
+ * Minting an API key is a durable-credential mutation, so it carries the same
+ * email step-up as adding a passkey, revoking sessions, or linking Google —
+ * `authMiddleware` alone let a captured session cookie mint a bearer credential
+ * that then outlived every remediation the victim could perform.
+ */
 export async function createPersonalAccessTokenImpl({
   data,
   context: { user, authSessionId, env, db },

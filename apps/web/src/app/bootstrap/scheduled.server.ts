@@ -48,7 +48,10 @@ function tasksFor(cron: string, env: Env, now: Date): Task[] {
         { label: "cleanup", run: () => runCleanup(env, now) },
         {
           label: "meeting schedule notifications",
-          run: () => runMeetingScheduleNotificationMaintenance(env, now),
+          // Its own start time, not the trigger's: the tasks before it can
+          // take long enough that a lease stamped from `now` would already be
+          // lapsed when the pass claims its first message.
+          run: () => runMeetingScheduleNotificationMaintenance(env),
         },
       ];
     case DAILY_CRON:

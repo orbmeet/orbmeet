@@ -172,9 +172,6 @@ export async function handleRunCode(request: Request, env: Env): Promise<Respons
   const auth = await verifyActiveWhiteboardBearer(request, env, db);
   if (auth instanceof Response) return auth;
 
-  const limited = await enforceCodeRunRateLimit(env, whiteboardMeteringPrincipal(auth.access));
-  if (limited) return limited;
-
   // Running code writes its output to a synced shape, so it is an edit. The
   // access above is resolved from D1 with grants applied rather than read off
   // the token, so a revoked or handed-back grant takes effect immediately —
@@ -221,6 +218,11 @@ export async function handleRunCode(request: Request, env: Env): Promise<Respons
     logWarn("[run-code] runner binding unavailable");
     return jsonResponse({ error: "Code execution is not available in this environment" }, 503);
   }
+
+  // Charged only for a run that will actually start: a refused, malformed or
+  // undeliverable request costs no container time, so it costs no quota.
+  const limited = await enforceCodeRunRateLimit(env, whiteboardMeteringPrincipal(auth.access));
+  if (limited) return limited;
 
   // The sandbox id is derived here, from the verified token's room — never
   // accepted from the browser. Taking it from the request would let any

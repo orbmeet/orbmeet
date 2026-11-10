@@ -187,6 +187,8 @@ describe("handleRunCode", () => {
 
     expect(response.status).toBe(403);
     expect(env.CODE_RUNNER.fetch).not.toHaveBeenCalled();
+    // A refused run starts nothing, so it costs the participant no quota.
+    expect(env.CODE_RUN_RATE_LIMITER.limit).not.toHaveBeenCalled();
   });
 
   it("rate limits per participant rather than per address", async () => {
@@ -239,9 +241,11 @@ describe("handleRunCode", () => {
     expect(response.status).toBe(413);
   });
 
-  it("rejects malformed JSON", async () => {
-    const response = await handleRunCode(request("{not json"), testEnv());
+  it("rejects malformed JSON without spending a run", async () => {
+    const env = testEnv();
+    const response = await handleRunCode(request("{not json"), env);
     expect(response.status).toBe(400);
+    expect(env.CODE_RUN_RATE_LIMITER.limit).not.toHaveBeenCalled();
   });
 
   it("requires a JSON content type", async () => {

@@ -273,6 +273,71 @@ describe("scheduled meeting reminders", () => {
     });
   });
 
+  it("leases each claim from when it is made, not from when a slow pass began", async () => {
+    const createdAt = new Date("2026-07-14T09:00:00.000Z");
+    const created = await createMeetingScheduleRecord(db, organizer, {
+      title: "Algebra lesson",
+      startsAt: "2026-07-14T12:00:00.000Z",
+      durationMinutes: 45,
+      timeZone: "Asia/Dhaka",
+      attendees: [{ email: "first@example.com" }, { email: "second@example.com" }],
+      joinPolicy: "open",
+      reminderMinutesBefore: 60,
+    }, { now: createdAt });
+    await db.update(meetingScheduleNotifications).set({ status: "sent", sentAt: createdAt }).where(and(
+      eq(meetingScheduleNotifications.scheduleId, created.id),
+      eq(meetingScheduleNotifications.kind, "invitation"),
+    ));
+
+    // The first send takes ten minutes — two leases' worth — and the second is
+    // held in flight so its claim can be inspected.
+    const realNow = Date.now.bind(Date);
+    let elapsedMs = 0;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => realNow() + elapsedMs);
+    const accepted = { accepted: true, retryable: false, failure: null, suppression: null, code: null, error: null };
+    let settleSecond!: (value: typeof accepted) => void;
+    email.deliverEmail
+      .mockImplementationOnce(async () => {
+        elapsedMs += 10 * 60_000;
+        return accepted;
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        settleSecond = resolve;
+      }));
+
+    try {
+      const pass = runMeetingScheduleNotificationMaintenance(runtimeEnv(), new Date("2026-07-14T11:00:00.000Z"));
+      for (let tries = 0; email.deliverEmail.mock.calls.length < 2 && tries < 50; tries += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      expect(email.deliverEmail).toHaveBeenCalledTimes(2);
+
+      const inFlight = await db.query.meetingScheduleNotifications.findFirst({
+        where: {
+          RAW: (row) => and(
+            eq(row.scheduleId, created.id),
+            eq(row.kind, "reminder"),
+            eq(row.status, "pending"),
+          )!,
+        },
+      });
+      expect(inFlight?.nextAttemptAt.getTime()).toBeGreaterThanOrEqual(Date.parse("2026-07-14T11:15:00.000Z"));
+      expect(inFlight?.nextAttemptAt.getTime()).toBeLessThan(Date.parse("2026-07-14T11:16:00.000Z"));
+
+      // An overlapping pass a minute later must leave the message in flight alone.
+      await runMeetingScheduleNotificationMaintenance(runtimeEnv(), new Date("2026-07-14T11:11:00.000Z"));
+
+      settleSecond(accepted);
+      await expect(pass).resolves.toBe(2);
+    } finally {
+      clock.mockRestore();
+    }
+    const reminders = await db.query.meetingScheduleNotifications.findMany({
+      where: { RAW: (row) => and(eq(row.scheduleId, created.id), eq(row.kind, "reminder"))! },
+    });
+    expect(reminders.map((row) => row.status)).toEqual(["sent", "sent"]);
+  });
+
   it("counts the attempt when the row is claimed, before provider delivery settles", async () => {
     const created = await queueReminder();
     let settleDelivery!: (value: {

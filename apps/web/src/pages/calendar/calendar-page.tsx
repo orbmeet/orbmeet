@@ -18,7 +18,7 @@ import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { fonts, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
-import { addDays, fromDateParam, sameDay, startOfWeek, toDateParam } from "./calendar-week";
+import { addDays, fromDateParam, occursOnDay, sameDay, startOfWeek, toDateParam } from "./calendar-week";
 
 const routeApi = getRouteApi("/_authed/calendar/");
 
@@ -306,7 +306,7 @@ export function CalendarPage() {
   const anchor = fromDateParam(search.date, new Date(today.getFullYear(), today.getMonth(), today.getDate()));
   const days = Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(anchor), i));
   const events = useEvents(days, session.user.name ?? "", now);
-  const onDay = (day: Date) => events.filter((event) => sameDay(event.start, day));
+  const onDay = (day: Date) => events.filter((event) => occursOnDay(event.start, event.end, day));
   const shown = onDay(anchor);
 
   const [scheduling, setScheduling] = useState<{ schedule?: UpcomingMeetingSchedule } | null>(null);

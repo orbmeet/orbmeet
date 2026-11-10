@@ -128,12 +128,21 @@ export function kickNotificationDelivery(env: Env, ctx: ExecutionContext | undef
  * settling (the worker died, or its settlement write failed), and a provider
  * failure with no answer, leave the outcome unknown: settled as failed, not
  * sent again.
+ *
+ * `now` is when the pass starts. A pass sends up to a full batch one message
+ * at a time, so every claim and settlement reads `clock()` — `now` advanced by
+ * the real time since — rather than `now` itself. A lease stamped from the
+ * pass's start would already be lapsed by wall clock once the pass ran longer
+ * than one lease, and an overlapping pass would then settle a message being
+ * sent as unknown.
  */
 export async function runMeetingScheduleNotificationMaintenance(
   env: Env,
   now = new Date(),
 ): Promise<number> {
   if (!isEmailConfigured(env.EMAIL)) return 0;
+  const passStartedAtMs = Date.now();
+  const clock = () => new Date(now.getTime() + (Date.now() - passStartedAtMs));
   const db = createDb(env.DB);
   await db
     .update(meetingScheduleNotifications)
@@ -202,7 +211,8 @@ export async function runMeetingScheduleNotificationMaintenance(
     // delivery can outlive the lease, and once it expires another worker
     // legitimately claims the row — an unfenced "sent"/"failed"/retry write
     // from the older worker would then settle the *newer* worker's attempt.
-    const leaseExpiresAt = new Date(now.getTime() + DELIVERY_CLAIM_LEASE_MS);
+    const claimedAt = clock();
+    const leaseExpiresAt = new Date(claimedAt.getTime() + DELIVERY_CLAIM_LEASE_MS);
     const [claimed] = await db
       .update(meetingScheduleNotifications)
       // Claiming is an attempt. Counting it atomically means a Worker crash
@@ -212,7 +222,7 @@ export async function runMeetingScheduleNotificationMaintenance(
       // price of never sending one twice.
       .set({
         nextAttemptAt: leaseExpiresAt,
-        deliveryStartedAt: now,
+        deliveryStartedAt: claimedAt,
         attempts: sql`${meetingScheduleNotifications.attempts} + 1`,
       })
       .where(
@@ -220,7 +230,7 @@ export async function runMeetingScheduleNotificationMaintenance(
           eq(meetingScheduleNotifications.id, item.notification.id),
           eq(meetingScheduleNotifications.status, "pending"),
           isNull(meetingScheduleNotifications.deliveryStartedAt),
-          lte(meetingScheduleNotifications.nextAttemptAt, now),
+          lte(meetingScheduleNotifications.nextAttemptAt, claimedAt),
         ),
       )
       .returning({ attempts: meetingScheduleNotifications.attempts });
@@ -247,7 +257,7 @@ export async function runMeetingScheduleNotificationMaintenance(
     const reminderIsLate = Boolean(
       item.notification.kind === "reminder" &&
       currentSchedule &&
-      (currentSchedule.meetingId !== null || now >= currentSchedule.startsAt),
+      (currentSchedule.meetingId !== null || claimedAt >= currentSchedule.startsAt),
     );
     const invalidNonCancellation =
       item.notification.kind !== "canceled" &&
@@ -323,7 +333,7 @@ export async function runMeetingScheduleNotificationMaintenance(
     if (delivery.accepted) {
       await db
         .update(meetingScheduleNotifications)
-        .set({ status: "sent", sentAt: now, lastError: null })
+        .set({ status: "sent", sentAt: clock(), lastError: null })
         .where(ownsClaim);
       sent += 1;
       continue;
@@ -338,7 +348,7 @@ export async function runMeetingScheduleNotificationMaintenance(
         email: item.attendeeEmail,
         reason: delivery.suppression,
         providerCode: delivery.code,
-        now,
+        now: clock(),
       });
     }
 
@@ -364,7 +374,7 @@ export async function runMeetingScheduleNotificationMaintenance(
         attempts,
         status: terminal ? "failed" : "pending",
         deliveryStartedAt: null,
-        nextAttemptAt: new Date(now.getTime() + delayMs),
+        nextAttemptAt: new Date(clock().getTime() + delayMs),
         lastError: delivery.error ?? "Email provider did not accept the message",
       })
       .where(ownsClaim);
