@@ -488,6 +488,27 @@ describe("recovery after losing an established connection", () => {
     expect(h.requests[0].request.unreachableMediaUrl).toBe("wss://node-a.test");
   });
 
+  it("rejoins when LiveKit disconnected a frozen page itself, without blaming the node", async () => {
+    const h = createHarness();
+    const link = await joinAndConnect(h);
+    // LiveKit's own `freeze`/`pagehide` handler: the app asked for nothing.
+    h.session.linkDisconnected(link.id, DisconnectReason.CLIENT_INITIATED);
+    expect(h.snapshot()).toMatchObject({ phase: "recovering", link: null });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.requests).toHaveLength(1);
+    expect(h.requests[0].request.unreachableMediaUrl).toBeUndefined();
+  });
+
+  it("does not rejoin a meeting the participant is leaving", async () => {
+    const h = createHarness();
+    const link = await joinAndConnect(h);
+    h.session.beginLeave();
+    h.session.linkDisconnected(link.id, DisconnectReason.CLIENT_INITIATED);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(h.requests).toHaveLength(0);
+    expect(h.snapshot().phase).toBe("leaving");
+  });
+
   it("carries on recovering once the page is shown again, still naming the node it lost", async () => {
     const h = createHarness();
     const link = await joinAndConnect(h);

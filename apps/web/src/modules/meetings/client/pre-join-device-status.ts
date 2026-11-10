@@ -25,6 +25,7 @@ export type MediaKind = "camera" | "microphone";
  * user to completely different places (browser settings vs. a cable).
  */
 export type DeviceUnavailableReason =
+  | "system-denied"
   | "permission-denied"
   | "not-found"
   | "in-use"
@@ -83,6 +84,8 @@ export function classifyDeviceFailure({
   if (timedOut) return "timeout";
 
   switch (classifyMediaCaptureFailure(error)) {
+    case "system-denied":
+      return "system-denied";
     case "permission-denied":
       return "permission-denied";
     case "device-in-use":
@@ -114,6 +117,7 @@ export function getDevicePickerPlaceholder(
 
   const noun = KIND_NOUN_CAPITALIZED[kind];
   switch (status.reason) {
+    case "system-denied":
     case "permission-denied":
       return `${noun} blocked`;
     case "not-found":
@@ -149,6 +153,8 @@ export function getToggleBlockedReason(
 
   const noun = KIND_NOUN[kind];
   switch (status.reason) {
+    case "system-denied":
+      return `Your computer is blocking this browser from the ${noun}. Allow it in your privacy settings (System Settings on a Mac, Settings on Windows), then retry.`;
     case "permission-denied":
       return `${KIND_NOUN_CAPITALIZED[kind]} access is blocked in your browser. Allow it in the address bar, then retry.`;
     case "not-found":
@@ -237,6 +243,8 @@ export function getDeviceNotice(statuses: PreJoinDeviceStatuses): DeviceNotice |
 
 function describeBothUnavailable(reason: DeviceUnavailableReason): string {
   switch (reason) {
+    case "system-denied":
+      return "Your computer is blocking this browser from the camera and microphone. Allow it in your privacy settings (System Settings on a Mac, Settings on Windows), then retry.";
     case "permission-denied":
       return "Camera and microphone access is blocked in your browser. Allow it in the address bar, then retry.";
     case "not-found":
@@ -291,7 +299,9 @@ export function willJoinSilent(statuses: PreJoinDeviceStatuses): boolean {
  * `not-found` only where nothing better is already known. Verdicts about the
  * page's environment rather than its hardware (`permission-denied`,
  * `insecure-context`, `unsupported`) already explain the absence and stand
- * until something actually reprobes.
+ * until something actually reprobes. So does `system-denied`, even when a
+ * device appears: the browser's own grant is what exposes its id, and the
+ * operating system's refusal is untouched by it.
  */
 export function applyDeviceChangeToStatus(
   current: MediaKindStatus,
@@ -309,6 +319,7 @@ export function applyDeviceChangeToStatus(
   if (
     current.state === "unavailable" &&
     (current.reason === "permission-denied" ||
+      current.reason === "system-denied" ||
       current.reason === "insecure-context" ||
       current.reason === "unsupported")
   ) {

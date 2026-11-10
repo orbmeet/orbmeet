@@ -1,12 +1,17 @@
+import { supportsAudioOutputSelection } from "livekit-client";
+
 type WebkitAudioWindow = typeof window & {
   webkitAudioContext?: typeof AudioContext;
 };
 
+/**
+ * Whether the meeting can play through a chosen speaker. That is LiveKit's
+ * call, not the browser's: it plays every remote voice and declines to route
+ * output in Safari even where Safari has `setSinkId`. Offering a choice the
+ * meeting would then ignore is worse than offering none.
+ */
 export function canSelectAudioOutput(): boolean {
-  return (
-    typeof HTMLMediaElement !== "undefined" &&
-    "setSinkId" in HTMLMediaElement.prototype
-  );
+  return supportsAudioOutputSelection();
 }
 
 /** Longer than the tone; how long a stalled audio clock can hold the test. */

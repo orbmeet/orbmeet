@@ -453,7 +453,7 @@ export class MeetingEntrySession {
       case "rejoin":
         this.link = null;
         this.phase = "recovering";
-        this.startEpisode("recover");
+        this.startEpisode("recover", 0, undefined, disposition.nodeLost);
         this.changed();
         return;
     }
@@ -461,7 +461,7 @@ export class MeetingEntrySession {
 
   // ── Episodes ──────────────────────────────────────────────────────────────
 
-  private startEpisode(kind: Episode["kind"], carryStep = 0, replacesConnectionId?: string): void {
+  private startEpisode(kind: Episode["kind"], carryStep = 0, replacesConnectionId?: string, nodeLost = true): void {
     this.endEpisode();
     const episode: Episode = {
       id: ++this.episodeSeq,
@@ -472,10 +472,10 @@ export class MeetingEntrySession {
       nextStepAt: null,
       won: false,
       lobbyDelayMs: LOBBY_POLL.baseMs,
-      // Every rejoin names the node it lost, so the Worker can move the
-      // meeting off a node that is down for everyone.
+      // A rejoin after the link failed names the node it lost, so the Worker
+      // can move the meeting off a node that is down for everyone.
       unreachableMediaUrl:
-        kind === "recover" ? (this.lastServerUrl ?? undefined) : undefined,
+        kind === "recover" && nodeLost ? (this.lastServerUrl ?? undefined) : undefined,
       replacesConnectionId,
     };
     this.episode = episode;

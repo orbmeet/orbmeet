@@ -145,6 +145,34 @@ describe("ScreenShareCapture", () => {
     expect(port.request).not.toHaveBeenCalled();
   });
 
+  it("stays quiet when the picker is closed", async () => {
+    const { capture, port, state } = started({
+      capture: vi.fn(async () => {
+        throw new DOMException("Permission denied by user", "NotAllowedError");
+      }),
+    });
+    await capture.toggle();
+    expect(port.notify).not.toHaveBeenCalled();
+    expect(state()).toBe("idle");
+    capture.deactivate();
+  });
+
+  it("says so when the operating system refuses screen recording", async () => {
+    const { capture, port, state } = started({
+      capture: vi.fn(async () => {
+        throw new DOMException("Permission denied by system", "NotAllowedError");
+      }),
+    });
+    await capture.toggle();
+    expect(port.notify).toHaveBeenCalledWith("system-denied");
+    expect(port.logError).not.toHaveBeenCalled();
+    expect(state()).toBe("idle");
+    capture.setCanModerate(true);
+    await capture.toggle();
+    expect(port.notify).toHaveBeenLastCalledWith("system-denied");
+    capture.deactivate();
+  });
+
   it("cancels the request when the browser ends the capture", async () => {
     const { capture, port, track, state } = started();
     await capture.toggle();

@@ -139,13 +139,14 @@ describe("the escape page", () => {
     return { link, fetch };
   }
 
-  it("hands the page to Chrome on Android", () => {
+  it("hands the page to the default browser on Android, whichever it is", () => {
     const { link, fetch } = open(UA.facebookAndroid, encodeURIComponent("/abc-defg-hij?x=1"));
     expect(link.hidden).toBe(false);
-    expect(link.textContent).toBe("Open in Chrome");
+    expect(link.textContent).toBe("Open in browser");
     expect(link.getAttribute("href")).toBe(
-      `intent://${location.host}/abc-defg-hij?x=1#Intent;scheme=https;package=com.android.chrome;end`,
+      `intent://${location.host}/abc-defg-hij?x=1#Intent;scheme=https;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end`,
     );
+    expect(link.getAttribute("href")).not.toContain("package=");
     const [, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(JSON.parse(init.body as string)).toMatchObject({ event: "in_app_browser_blocked", escape: "android" });
     expect(init.body).not.toContain("abc-defg-hij");

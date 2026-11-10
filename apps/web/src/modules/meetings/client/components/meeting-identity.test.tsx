@@ -16,10 +16,10 @@ describe("MeetingIdentity", () => {
     expect(markup).not.toMatch(/\bpeople\b|\bperson\b/);
     expect(markup).not.toContain("<button");
 
-    const withCopy = renderToStaticMarkup(<MeetingIdentity {...baseProps} onCopyLink={() => {}} />);
+    const withCopy = renderToStaticMarkup(<MeetingIdentity {...baseProps} onCopyLink={async () => true} />);
     expect(withCopy).toContain('aria-label="Copy meeting link"');
     // A recorder's render shows the room; it has nothing to press.
-    const recorder = renderToStaticMarkup(<MeetingIdentity {...baseProps} onCopyLink={() => {}} readOnly />);
+    const recorder = renderToStaticMarkup(<MeetingIdentity {...baseProps} onCopyLink={async () => true} readOnly />);
     expect(recorder).not.toContain("<button");
   });
 

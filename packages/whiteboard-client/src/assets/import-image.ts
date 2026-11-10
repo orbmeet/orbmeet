@@ -7,9 +7,9 @@ import {
   isSupportedWhiteboardImageFileName,
   isSupportedWhiteboardImageMimeType,
   looksLikeWhiteboardImageUrl,
+  type WhiteboardSupportedImageMimeType,
 } from "./whiteboard-image";
 import { readImageDimensionsFromFile } from "./read-image-dimensions";
-import { anySignal } from "../editor/abort-signals";
 import { isPageFrameShape } from "@orbmeet/whiteboard-core/page-frame-model";
 import { commitUploadBeforePublish } from "./managed-upload";
 import { placeImageOnPage } from "./image-placement";
@@ -70,6 +70,13 @@ function shouldOptimizeImageForWhiteboard(
   );
 }
 
+const IMAGE_EXTENSION: Record<WhiteboardSupportedImageMimeType, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
+
 function replaceFileExtension(filename: string, nextExtension: string): string {
   const trimmed = filename.trim();
   if (!trimmed) return `whiteboard-image.${nextExtension}`;
@@ -96,7 +103,7 @@ async function canvasToBlob(
   });
 }
 
-async function maybeOptimizeImageForWhiteboard(
+export async function maybeOptimizeImageForWhiteboard(
   file: File,
   width: number,
   height: number,
@@ -140,6 +147,10 @@ async function maybeOptimizeImageForWhiteboard(
 
     ctx.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
 
+    // WebP is asked for, not promised: an engine that cannot encode it
+    // returns PNG instead (Safari, whose image encoders are the system's).
+    // The file is described by what came back, so the upload's declared type
+    // always matches its bytes.
     const optimizedBlob = await canvasToBlob(
       canvas,
       "image/webp",
@@ -149,7 +160,8 @@ async function maybeOptimizeImageForWhiteboard(
     if (
       !optimizedBlob ||
       optimizedBlob.size === 0 ||
-      optimizedBlob.size > WHITEBOARD_MAX_IMAGE_BYTES
+      optimizedBlob.size > WHITEBOARD_MAX_IMAGE_BYTES ||
+      !isSupportedWhiteboardImageMimeType(optimizedBlob.type)
     ) {
       return { file, width, height };
     }
@@ -163,8 +175,8 @@ async function maybeOptimizeImageForWhiteboard(
 
     const optimizedFile = new File(
       [optimizedBlob],
-      replaceFileExtension(file.name, "webp"),
-      { type: "image/webp" },
+      replaceFileExtension(file.name, IMAGE_EXTENSION[optimizedBlob.type]),
+      { type: optimizedBlob.type },
     );
 
     return {
@@ -251,7 +263,7 @@ export async function fetchExternalImage(
   try {
     const timeoutSignal = AbortSignal.timeout(15_000);
     const response = await fetch(url, {
-      signal: signal ? anySignal([signal, timeoutSignal]) : timeoutSignal,
+      signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
     });
     if (!response.ok) {
       throw new Error(`Failed to fetch image: ${response.statusText}`);

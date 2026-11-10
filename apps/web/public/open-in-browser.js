@@ -18,11 +18,13 @@
   // A touch "Macintosh" is an iPad (see src/lib/browser-capabilities.ts).
   var ios = !android && (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && nav.maxTouchPoints > 1));
 
-  // Chrome's intent URL hands the page to Chrome itself (developer.chrome.com,
-  // "Android Intents with Chrome"). `x-safari-` is the prefix iOS 17 and later
-  // open in Safari; where it is not honoured, the hint and the link remain.
+  // An intent URL with no package names no app: Android opens the page in
+  // the person's default browser, which need not be Chrome, and which every
+  // phone has (developer.chrome.com, "Android Intents with Chrome").
+  // `x-safari-` is the prefix iOS 17 and later open in Safari. Where the app
+  // around this page does not honour either, the hint and the link remain.
   var open = android
-    ? "intent://" + location.host + target + "#Intent;scheme=https;package=com.android.chrome;end"
+    ? "intent://" + location.host + target + "#Intent;scheme=https;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end"
     : ios
       ? "x-safari-" + href
       : null;
@@ -33,7 +35,7 @@
 
   if (open) {
     openLink.href = open;
-    openLink.textContent = android ? "Open in Chrome" : "Open in Safari";
+    openLink.textContent = android ? "Open in browser" : "Open in Safari";
     openLink.hidden = false;
     hint.textContent = android
       ? "Or open this app’s menu (⋮) and choose “Open in browser”."
@@ -71,7 +73,7 @@
     }).catch(function () {});
   } catch {}
 
-  // Chrome opens without a tap where the app allows it; the button stays for
-  // where it does not.
-  if (android) location.href = open;
+  // Nothing opens without a tap. A webview that does not handle intent URLs
+  // replaces the page with an error for one, which would take the link and
+  // the copy button with it.
 })();

@@ -31,8 +31,13 @@ type AddToast = ReturnType<typeof useToast>["add"];
 const NOTICES: Record<ScreenShareNotice, Parameters<AddToast>[0]> = {
   unsupported: {
     title: "Screen sharing not available on this device",
-    description: "iPhone and iPad only support sharing the current browser tab, which isn't useful in a meeting. Use a desktop browser to share your screen.",
+    description: "Phones and tablets can't share their screen from a browser. Use a computer to share your screen.",
     data: { variant: "info" },
+  },
+  "system-denied": {
+    title: "Screen recording is blocked",
+    description: "Your computer isn't letting this browser record the screen. Allow it in your privacy settings (on a Mac: System Settings, Privacy & Security, Screen & System Audio Recording), then restart the browser and try again.",
+    data: { variant: "error" },
   },
   "start-failed": {
     title: "Screen share failed",

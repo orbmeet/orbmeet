@@ -239,9 +239,18 @@ export function useMeetingCamera({
         onChoiceRef.current?.({ videoDeviceId: deviceId });
       } catch (err) {
         logError("[Meeting] Failed to switch camera:", err);
+        // LiveKit stops the working camera before opening the new one, so a
+        // switch that fails (the camera is held by another app, which Windows
+        // enforces, or was unplugged) leaves the track ended and still aimed
+        // at the failed device. Point it back; if that fails too, the camera
+        // is gone, and is shown off rather than as a frozen picture.
+        const restored = await switchCamera(roomInstance, currentVideoDeviceIdRef.current).catch(() => false);
+        if (!restored) await roomInstance.localParticipant.setCameraEnabled(false).catch(() => undefined);
         addToast({
           title: "Camera switch failed",
-          description: "Could not switch to the selected camera. Please try again.",
+          description: restored
+            ? "Could not switch to the selected camera, so you're still on the previous one."
+            : "Could not switch to the selected camera, and the previous one stopped. Turn your camera on to try again.",
           data: { variant: "error" },
         });
       }

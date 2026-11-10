@@ -80,8 +80,9 @@ function checkClientBundle() {
   } else {
     const href = `href="/assets/${stylexAssets[0]}"`;
     // Hand-written pages in public/ that carry their own styles: the offline
-    // fallback, and where another app's built-in browser is sent.
-    const standalonePages = new Set(["offline.html", "open-in-browser.html"]);
+    // fallback, where another app's built-in browser is sent, and where a
+    // browser too old for the app is sent.
+    const standalonePages = new Set(["offline.html", "open-in-browser.html", "update-browser.html"]);
     for (const htmlPath of listFiles(clientDir, (name) => name.endsWith(".html") && !standalonePages.has(name))) {
       if (!readFileSync(htmlPath, "utf8").includes(href)) {
         failures.push(`${rel(htmlPath)} does not link the StyleX stylesheet ${href}`);

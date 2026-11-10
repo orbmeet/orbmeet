@@ -1,3 +1,4 @@
+import { isKey } from "@orbmeet/ui/keyboard";
 import { boardZIndex } from "@orbmeet/ui/tokens/layers.stylex";
 import { ink, surface } from "@orbmeet/ui/tokens/colors.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";
@@ -99,7 +100,7 @@ export function WhiteboardModal({
     focusFirstControl();
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (isKey(event, "Escape")) {
         event.preventDefault();
         event.stopPropagation();
         dismissFromEffect();

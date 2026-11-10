@@ -1,3 +1,4 @@
+import { isKey } from "@orbmeet/ui/keyboard";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Box, useValue, type Editor } from "tldraw";
 import { ArrowUp, Lock, Sparkles, X } from "lucide-react";
@@ -273,7 +274,7 @@ export function SelectionAsk({
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Escape") setOpen(false);
+                if (isKey(event.nativeEvent, "Escape")) setOpen(false);
                 event.stopPropagation();
               }}
               aria-label="Question for Orb"

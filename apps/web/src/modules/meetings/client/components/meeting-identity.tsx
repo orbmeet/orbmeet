@@ -105,8 +105,8 @@ interface MeetingIdentityProps {
   surfaceLabel?: string;
   /** Egress/recorder renders: state only, nothing to click. */
   readOnly?: boolean;
-  /** Copies the meeting link; the button sits beside the heading. */
-  onCopyLink?: () => void;
+  /** Copies the meeting link, resolving whether it did; the button sits beside the heading. */
+  onCopyLink?: () => Promise<boolean>;
   /** How many are here, the recorder aside. */
   peopleCount?: number;
 }
@@ -114,7 +114,11 @@ interface MeetingIdentityProps {
 /** How long the button shows its tick after a copy. */
 const COPIED_MS = 1600;
 
-export function CopyLinkButton({ onCopy }: { onCopy: () => void }) {
+/**
+ * Copies the meeting link. The tick means the link is on the clipboard: a
+ * refused write (no focus, no permission, no Clipboard API off HTTPS) shows none.
+ */
+export function CopyLinkButton({ onCopy }: { onCopy: () => Promise<boolean> }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -122,8 +126,7 @@ export function CopyLinkButton({ onCopy }: { onCopy: () => void }) {
     return () => clearTimeout(timer);
   }, [copied]);
   const handleClick = useCallback(() => {
-    onCopy();
-    setCopied(true);
+    void onCopy().then(setCopied);
   }, [onCopy]);
   return (
     <button

@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { BUILD_TARGET } from "../../src/app/shell/browser-support.ts";
 import { createBuildEnvironments } from "./environments.ts";
 
 describe("Vite build environments", () => {
-  it("leaves both environments on Vite's default build target", () => {
+  it("builds the client for the supported browsers and leaves the Worker on Vite's default", () => {
     const environments = createBuildEnvironments(false);
 
     expect(environments.ssr.build).toEqual({ minify: "oxc", sourcemap: true });
-    expect(environments.client.build).not.toHaveProperty("target");
+    expect(environments.client.build.target).toBe(BUILD_TARGET);
     expect(environments.ssr.build).not.toHaveProperty("target");
   });
 

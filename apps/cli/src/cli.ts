@@ -25,7 +25,7 @@ import {
   requiredOption,
   type ParsedArgs,
 } from "./args.ts";
-import { CLOUD_API_URL, CONFIG_PATH, readConfig, saveToken } from "./config.ts";
+import { CLOUD_API_URL, CONFIG_PATH, decodeTokenText, readConfig, saveToken } from "./config.ts";
 import { CliError, errorCode, errorMessage } from "./errors.ts";
 import { commandHelp, globalHelp } from "./help.ts";
 import { publicRetrievedMeeting, publicSchedule, publicSearchResults } from "./output.ts";
@@ -262,16 +262,24 @@ async function version(): Promise<void> {
   emit({ name: "orbmeet", version: (await readManifest()).version });
 }
 
+/**
+ * The token to store: from `--token-file`, else ORBMEET_TOKEN, else stdin.
+ *
+ * The environment comes before stdin because stdin cannot always say whether
+ * anything is coming. Git Bash's terminal on Windows (mintty) hands programs a
+ * pipe, not a TTY, so reading it waits for an end that never comes, and a
+ * token already in the environment would never be reached.
+ */
 async function readConfigureToken(args: ParsedArgs): Promise<string> {
   const tokenFile = option(args, "token-file");
-  if (tokenFile) return readFile(tokenFile, "utf8");
+  if (tokenFile) return decodeTokenText(await readFile(tokenFile));
+  if (process.env.ORBMEET_TOKEN) return process.env.ORBMEET_TOKEN;
   if (!process.stdin.isTTY) {
     const chunks: Buffer[] = [];
     for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
-    const piped = Buffer.concat(chunks).toString("utf8");
+    const piped = decodeTokenText(Buffer.concat(chunks));
     if (piped.trim()) return piped;
   }
-  if (process.env.ORBMEET_TOKEN) return process.env.ORBMEET_TOKEN;
   throw new Error(
     "Provide the token on stdin, through ORBMEET_TOKEN, or with --token-file. Tokens are not accepted on the command line.",
   );

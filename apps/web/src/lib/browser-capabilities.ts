@@ -32,6 +32,8 @@ export interface PlatformEnvironment {
   /** `navigator.userAgentData.platform` — Chromium-only, and trustworthy where present. */
   uaDataPlatform?: string;
   maxTouchPoints?: number;
+  /** Whether `navigator.mediaDevices.getDisplayMedia` exists. Neither Chrome nor Firefox on Android has it. */
+  displayMedia?: boolean;
 }
 
 /** Snapshot the live browser. Returns an empty environment off the main thread or on the server. */
@@ -42,6 +44,7 @@ export function getPlatformEnvironment(): PlatformEnvironment {
     userAgent: navigator.userAgent,
     uaDataPlatform: nav.userAgentData?.platform,
     maxTouchPoints: navigator.maxTouchPoints,
+    displayMedia: typeof navigator.mediaDevices?.getDisplayMedia === "function",
   };
 }
 
@@ -103,6 +106,15 @@ export function isAppleTouchDevice(env: PlatformEnvironment): boolean {
 }
 
 /**
+ * A Mac, iPhone or iPad: where ⌘ is the shortcut key and Ctrl belongs to the
+ * text system (Ctrl+K deletes to the end of the line in any text field).
+ */
+export function isApplePlatform(env: PlatformEnvironment): boolean {
+  const os = detectOS(env);
+  return os === "macos" || os === "ios" || os === "ipados";
+}
+
+/**
  * A phone-class device that should not be asked to run several encoders at
  * desktop resolutions. Deliberately excludes iPad, which has the headroom.
  */
@@ -116,13 +128,14 @@ export function isHandset(env: PlatformEnvironment): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * Whether `getDisplayMedia` can capture anything worth publishing. iOS and
- * iPadOS offer no useful full-screen path: the request is auto-rejected or the
- * user dismisses the picker, both surfacing as an indistinguishable
- * `NotAllowedError`, so callers must check this up front to say anything useful.
+ * Whether `getDisplayMedia` can capture anything worth publishing. Android has
+ * no `getDisplayMedia` at all. iOS and iPadOS offer no useful full-screen
+ * path: the request is auto-rejected or the user dismisses the picker, both
+ * surfacing as an indistinguishable `NotAllowedError`. Callers check this up
+ * front so they can say why, rather than fail.
  */
 export function canCaptureDisplay(env: PlatformEnvironment): boolean {
-  return !isAppleTouchDevice(env);
+  return env.displayMedia === true && !isAppleTouchDevice(env);
 }
 
 /**

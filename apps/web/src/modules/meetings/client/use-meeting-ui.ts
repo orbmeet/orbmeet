@@ -1,7 +1,9 @@
 import * as React from "react";
+import { isKey, isLetter } from "@orbmeet/ui/keyboard";
 
-// Chat notification sound configuration
-const CHAT_NOTIFICATION_VOLUME = 0.18;
+// Chat notification sound. Its quietness is in the file itself: iOS ignores
+// `HTMLMediaElement.volume`, so a level set here would play at full volume
+// there.
 const CHAT_NOTIFICATION_MIN_INTERVAL_MS = 300;
 const CHAT_NOTIFICATION_SOUND_SRC = "/sounds/chat-notification.m4a";
 
@@ -93,7 +95,6 @@ export function useMeetingUI(opts: MeetingUIOptions): MeetingUIState {
     if (!chatNotificationAudioRef.current) {
       const audio = new Audio(CHAT_NOTIFICATION_SOUND_SRC);
       audio.preload = "auto";
-      audio.volume = CHAT_NOTIFICATION_VOLUME;
       chatNotificationAudioRef.current = audio;
     }
     const audio = chatNotificationAudioRef.current;
@@ -168,16 +169,15 @@ export function useMeetingUI(opts: MeetingUIOptions): MeetingUIState {
       if (target?.closest(".tl-container")) return;
       if (event.ctrlKey || event.metaKey || event.altKey) return;
 
-      const key = event.key.toLowerCase();
-      if (key === "escape") {
+      if (isKey(event, "Escape")) {
         if (panel !== null) setPanel(null);
         return;
       }
-      if (key === "c") {
+      if (isLetter(event, "c")) {
         event.preventDefault();
         togglePanel("timeline");
       }
-      if (key === "h") {
+      if (isLetter(event, "h")) {
         event.preventDefault();
         handleHandRaiseAction();
       }

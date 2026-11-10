@@ -46,7 +46,7 @@ import {
   dockStyles,
 } from "./dock-primitives";
 import { SelfControls, type SelfControlsProps } from "./self-controls";
-import { commandPaletteShortcutLabel } from "@/modules/meetings/client/meeting-command-shortcut";
+import { commandKLabel } from "@/lib/command-k";
 import {
   canPresentScreen,
   canShareScreenSound,
@@ -810,7 +810,7 @@ function MoreMenu({
                 <DockMenuRow
                   icon={MenuKeyboardGlyph}
                   label="Every control from the keyboard"
-                  hint={`${commandPaletteShortcutLabel()} runs any control, or asks Orb`}
+                  hint={`${commandKLabel()} runs any control, or asks Orb`}
                   onClick={() => {
                     setOpen(false);
                     onOpenCommands();

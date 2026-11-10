@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { deviceTimeZone } from "@/lib/time-zone";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { createSpace } from "@/modules/spaces/server/crud.functions";
@@ -86,7 +87,7 @@ export function CreateSpaceDialog({ open, onOpenChange }: CreateSpaceDialogProps
       name: name.trim(),
       description: description.trim() || undefined,
       organizationId: organizationId === "personal" ? undefined : organizationId,
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      timeZone: deviceTimeZone(),
     });
   }
 

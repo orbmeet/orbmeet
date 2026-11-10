@@ -1,4 +1,5 @@
 import { BrandMark } from "@orbmeet/ui/react";
+import { commandKLabel } from "@/lib/command-k";
 import { focus, layout, motion } from "@orbmeet/ui/styles/atoms";
 import { border, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
 import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
@@ -188,10 +189,7 @@ function RailItem({ active, children, sx }: { active: boolean; children: ReactNo
  */
 function useSearchShortcutLabel(): string {
   const [label, setLabel] = useState("⌘K");
-  useEffect(() => {
-    const platform = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ?? navigator.platform;
-    if (!/mac|iphone|ipad/i.test(platform)) setLabel("Ctrl K");
-  }, []);
+  useEffect(() => setLabel(commandKLabel()), []);
   return label;
 }
 

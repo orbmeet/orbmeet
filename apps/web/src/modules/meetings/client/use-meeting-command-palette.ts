@@ -1,5 +1,5 @@
 import * as React from "react";
-import { isCommandPaletteShortcut } from "./meeting-command-shortcut";
+import { isCommandK } from "@/lib/command-k";
 
 export interface MeetingCommandPalette {
   /** Whether the palette is open. */
@@ -24,7 +24,7 @@ export function useMeetingCommandPalette(enabled: boolean): MeetingCommandPalett
   React.useEffect(() => {
     if (!enabled) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (!isCommandPaletteShortcut(event)) return;
+      if (!isCommandK(event)) return;
       // Capture phase, and stopped here: the board binds ⌘K too (a link on a
       // selected shape), and inside a meeting the palette is the one that has
       // to win — it is how the board's own commands are reached.

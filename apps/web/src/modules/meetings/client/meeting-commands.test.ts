@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { isCommandPaletteShortcut } from "./meeting-command-shortcut";
 import {
   buildMeetingCommands,
   matchMeetingCommands,
@@ -137,28 +136,6 @@ describe("matchMeetingCommands", () => {
 
   it("returns nothing rather than everything for a query nothing matches", () => {
     expect(matchMeetingCommands(commands, "photosynthesis")).toEqual([]);
-  });
-});
-
-describe("isCommandPaletteShortcut", () => {
-  const key = (overrides: Partial<KeyboardEvent>) => ({
-    key: "k",
-    metaKey: false,
-    ctrlKey: false,
-    altKey: false,
-    shiftKey: false,
-    ...overrides,
-  });
-
-  it("accepts Cmd+K and Ctrl+K", () => {
-    expect(isCommandPaletteShortcut(key({ metaKey: true }))).toBe(true);
-    expect(isCommandPaletteShortcut(key({ ctrlKey: true, key: "K" }))).toBe(true);
-  });
-
-  it("ignores a bare K and other chords", () => {
-    expect(isCommandPaletteShortcut(key({}))).toBe(false);
-    expect(isCommandPaletteShortcut(key({ metaKey: true, shiftKey: true }))).toBe(false);
-    expect(isCommandPaletteShortcut(key({ metaKey: true, key: "j" }))).toBe(false);
   });
 });
 

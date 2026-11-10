@@ -1,6 +1,7 @@
 import type { LocalTrack } from "livekit-client";
 import type { ScreenShareAsk } from "@/modules/meetings/contract/live-state";
 import { MediaOperationQueue } from "./media-operation-queue";
+import { isSystemPermissionDenial } from "./pre-join-media-probe";
 
 /** How long captured tracks are held while no moderator answers. */
 export const SCREEN_SHARE_DECISION_TIMEOUT_MS = 15_000;
@@ -13,6 +14,7 @@ export type ScreenShareRequestState = "idle" | "pending" | "approved" | "denied"
 
 export type ScreenShareNotice =
   | "unsupported"
+  | "system-denied"
   | "start-failed"
   | "capture-failed"
   | "publish-failed"
@@ -51,8 +53,12 @@ type Deadline = "decision" | "permission" | "denied-notice";
 
 const IDLE: Flow = { kind: "idle" };
 
+/**
+ * The person closed the picker. The operating system refusing the browser
+ * screen recording is the same `NotAllowedError`, and is not this.
+ */
 function userCancelledPicker(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "NotAllowedError";
+  return error instanceof DOMException && error.name === "NotAllowedError" && !isSystemPermissionDenial(error);
 }
 
 /**
@@ -236,6 +242,10 @@ export class ScreenShareCapture {
     } catch (error) {
       stopTracks(tracks);
       if (userCancelledPicker(error)) return;
+      if (isSystemPermissionDenial(error)) {
+        this.port.notify("system-denied");
+        return;
+      }
       this.port.logError("[Meeting] Screen share error:", error);
       this.port.notify("start-failed");
     }
@@ -258,6 +268,10 @@ export class ScreenShareCapture {
       await this.sendRequest(tracks);
     } catch (error) {
       if (userCancelledPicker(error)) return;
+      if (isSystemPermissionDenial(error)) {
+        this.port.notify("system-denied");
+        return;
+      }
       this.port.logError("[Meeting] Screen share capture error:", error);
       this.port.notify("capture-failed");
     } finally {

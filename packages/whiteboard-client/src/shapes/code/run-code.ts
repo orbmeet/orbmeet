@@ -7,7 +7,6 @@ import {
   type CodeRunResult,
 } from "@orbmeet/whiteboard-core/code-run-contract";
 import type { CodeLanguage } from "@orbmeet/whiteboard-core/code-shape-schema";
-import { anySignal } from "../../editor/abort-signals";
 
 export interface RunCodeOptions {
   runId?: string;
@@ -50,7 +49,7 @@ export async function runCode(
   }
 
   const timeout = AbortSignal.timeout(options.timeoutMs ?? CODE_RUN_REQUEST_TIMEOUT_MS);
-  const signal = options.signal ? anySignal([options.signal, timeout]) : timeout;
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
 
   let response: Response;
   try {

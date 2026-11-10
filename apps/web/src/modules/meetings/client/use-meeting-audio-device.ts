@@ -201,9 +201,20 @@ export function useMeetingAudioDevice({
         onChoiceRef.current?.({ audioDeviceId: deviceId });
       } catch (err) {
         logError("[Meeting] Failed to switch microphone:", err);
+        // LiveKit stops the working microphone before opening the new one, so
+        // a failed switch leaves the track ended and aimed at the device that
+        // failed. Point it back. Should that fail too, the microphone is on
+        // and sending nothing, which is what MicrophoneInterruption watches
+        // for and recovers from.
+        const previous = currentAudioDeviceIdRef.current;
+        const restored = await roomInstance
+          .switchActiveDevice("audioinput", previous ?? "default", Boolean(previous))
+          .then((switched) => !previous || switched, () => false);
         addToast({
           title: "Microphone switch failed",
-          description: "Could not switch to the selected microphone. Please try again.",
+          description: restored
+            ? "Could not switch to the selected microphone, so you're still on the previous one."
+            : "Could not switch to the selected microphone. Choose another one.",
           data: { variant: "error" },
         });
       }
@@ -216,11 +227,9 @@ export function useMeetingAudioDevice({
       if (!roomInstance) return;
       if (deviceId === currentAudioOutputDeviceIdRef.current) return;
       try {
-        await roomInstance.switchActiveDevice(
-          "audiooutput",
-          deviceId ?? "default",
-          Boolean(deviceId),
-        );
+        // The default speaker is the empty id everywhere; "default" is a
+        // Chromium device id, which Firefox rejects as no such device.
+        await roomInstance.switchActiveDevice("audiooutput", deviceId ?? "");
         currentAudioOutputDeviceIdRef.current = deviceId;
         setCurrentAudioOutputDeviceId(deviceId);
         onChoiceRef.current?.({ audioOutputDeviceId: deviceId });

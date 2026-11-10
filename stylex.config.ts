@@ -10,13 +10,10 @@
  */
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { LIGHTNINGCSS_TARGETS } from "./apps/web/src/app/shell/browser-support.ts";
 
 const rootDir = fileURLToPath(new URL(".", import.meta.url));
 
-/** A browser version in Lightning CSS's packed form: major, minor, patch, one byte each. */
-function version(major: number, minor = 0): number {
-  return (major << 16) | (minor << 8);
-}
 const webSrc = join(rootDir, "apps/web/src");
 
 /**
@@ -47,19 +44,10 @@ export const stylexOptions = {
   // Styles must survive into the bundle even when a module's only export looks
   // unused to the tree-shaker.
   treeshakeCompensation: true,
-  // The oldest browsers the stylesheet is written for. Left to browserslist's
-  // defaults, Lightning CSS rewrites every `light-dark()` token into a
-  // polyfill of custom properties that is resolved where the token is
-  // declared — at the root — so a subtree that pins `color-scheme: light`
-  // (the board) would still get dark colours. These are the
-  // first releases with native `light-dark()`, all from 2024.
-  lightningcssOptions: {
-    targets: {
-      chrome: version(123),
-      edge: version(123),
-      firefox: version(120),
-      safari: version(17, 5),
-      ios_saf: version(17, 5),
-    },
-  },
+  // The oldest browsers the app supports, derived from the platform features
+  // it needs (apps/web/src/app/shell/browser-support.ts). Left to
+  // browserslist's defaults, Lightning CSS would rewrite every `light-dark()`
+  // token into a polyfill that resolves at the root, so a subtree that pins
+  // `color-scheme: light` (the board) would still get dark colours.
+  lightningcssOptions: { targets: LIGHTNINGCSS_TARGETS },
 };

@@ -9,7 +9,30 @@ export function isMediaPermissionFailure(error: unknown): boolean {
   );
 }
 
+/**
+ * Chromium's messages when the operating system, not the person, refused: the
+ * browser has no camera, microphone or screen-recording access in macOS's or
+ * Windows's privacy settings. The error is the same `NotAllowedError` a
+ * refused prompt gives, and the message is the only difference
+ * (third_party/blink/renderer/modules/mediastream/user_media_processor.cc).
+ * Firefox and Safari do not tell the two apart.
+ */
+const SYSTEM_DENIAL_MESSAGES = new Set([
+  "Permission denied by system",
+  "System Permissions prevented access to audio capture device",
+]);
+
+/** The operating system refused the browser access; nothing in the page or the browser can grant it. */
+export function isSystemPermissionDenial(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.name === "NotAllowedError" &&
+    SYSTEM_DENIAL_MESSAGES.has(error.message)
+  );
+}
+
 export type MediaCaptureFailureKind =
+  | "system-denied"
   | "permission-denied"
   | "not-found"
   | "device-in-use"
@@ -18,6 +41,7 @@ export type MediaCaptureFailureKind =
 
 export function classifyMediaCaptureFailure(error: unknown): MediaCaptureFailureKind {
   const name = error instanceof Error ? error.name : "";
+  if (isSystemPermissionDenial(error)) return "system-denied";
   if (PERMISSION_FAILURE_NAMES.has(name) || name === "SecurityError") {
     return "permission-denied";
   }
@@ -31,6 +55,8 @@ export function classifyMediaCaptureFailure(error: unknown): MediaCaptureFailure
 
 export function getMicrophoneCaptureFailureMessage(error: unknown): string {
   switch (classifyMediaCaptureFailure(error)) {
+    case "system-denied":
+      return "Your computer is blocking this browser from the microphone. Allow it in your privacy settings (System Settings on a Mac, Settings on Windows), then retry.";
     case "permission-denied":
       return "Microphone permission was denied. Allow microphone access in your browser, then retry.";
     case "not-found":

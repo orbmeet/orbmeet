@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { coerceSuggestedTimeZone, formatCalendarDay } from "./time-zone";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { coerceSuggestedTimeZone, deviceTimeZone, formatCalendarDay } from "./time-zone";
 
 describe("coerceSuggestedTimeZone", () => {
   it("keeps a usable zone", () => {
@@ -47,5 +47,26 @@ describe("formatCalendarDay", () => {
     expect(formatCalendarDay(new Date("2026-01-05T12:00:00Z"), "UTC")).toBe(
       "2026-01-05",
     );
+  });
+});
+
+describe("deviceTimeZone", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function deviceReports(timeZone: string) {
+    const real = Intl.DateTimeFormat.prototype.resolvedOptions;
+    vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockImplementation(function (this: Intl.DateTimeFormat) {
+      return { ...real.call(this), timeZone };
+    });
+  }
+
+  it("is the device's zone, aliases included", () => {
+    deviceReports("Asia/Calcutta");
+    expect(deviceTimeZone()).toBe("Asia/Calcutta");
+  });
+
+  it("is UTC when Chromium cannot name the system's zone", () => {
+    deviceReports("Etc/Unknown");
+    expect(deviceTimeZone()).toBe("UTC");
   });
 });

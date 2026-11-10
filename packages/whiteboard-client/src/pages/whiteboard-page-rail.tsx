@@ -1,3 +1,4 @@
+import { isKey } from "@orbmeet/ui/keyboard";
 import { accent, danger, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
 import { boardZIndex } from "@orbmeet/ui/tokens/layers.stylex";
 import { env } from "@orbmeet/ui/tokens/media.stylex";
@@ -608,7 +609,7 @@ function PageMenu({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (isKey(event, "Escape")) onClose();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

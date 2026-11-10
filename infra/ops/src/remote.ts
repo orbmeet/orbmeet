@@ -35,7 +35,11 @@ export async function plan(shell: Shell, inv: Inventory, name: string): Promise<
 export async function sync(shell: Shell, inv: Inventory, name: string, rendered: string, options?: RunOptions): Promise<void> {
   const target = inv.nodes[name].ssh;
   await ssh(shell, inv, name, `sudo -n mkdir -p ${REMOTE_NODE_DIR}/.runtime`, options);
-  const rsync = ["rsync", "-az", "--rsync-path=sudo -n rsync", "--chown=root:root", "-e", `ssh ${SSH_OPTIONS.join(" ")}`,
+  // `-a` less owner and group (`-o -g`): the receiving rsync runs as root, so
+  // what it creates is root's, without carrying this machine's user ids over.
+  // `--chown` would say the same, but macOS's own rsync (openrsync) has no
+  // `--chown`, and a deploy from a stock Mac must work.
+  const rsync = ["rsync", "-rlptDz", "--rsync-path=sudo -n rsync", "-e", `ssh ${SSH_OPTIONS.join(" ")}`,
     "--exclude=node_modules", "--exclude=.env*", "--exclude=.dev.vars*", "--exclude=dist", "--exclude=*.test.ts",
     "--exclude=*.spec.ts", "--exclude=.DS_Store"];
   // An explicit allowlist: no docs, .git, operator code, secrets or unrelated applications.

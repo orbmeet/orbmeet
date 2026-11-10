@@ -39,7 +39,7 @@ const ENV = {
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/126.0.6478.108 Version/17.0 Safari/605.1.15",
     maxTouchPoints: 5,
   },
-  safariMac: { userAgent: IPAD_DESKTOP_UA, maxTouchPoints: 0 },
+  safariMac: { userAgent: IPAD_DESKTOP_UA, maxTouchPoints: 0, displayMedia: true },
   chromeMac: {
     userAgent:
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -126,8 +126,12 @@ describe("canCaptureDisplay", () => {
 
   it("is true on desktop", () => {
     expect(canCaptureDisplay(ENV.safariMac)).toBe(true);
-    expect(canCaptureDisplay(ENV.chromeWindows)).toBe(true);
-    expect(canCaptureDisplay(ENV.firefoxMac)).toBe(true);
+    expect(canCaptureDisplay({ ...ENV.chromeWindows, displayMedia: true })).toBe(true);
+    expect(canCaptureDisplay({ ...ENV.firefoxMac, displayMedia: true })).toBe(true);
+  });
+
+  it("is false on Android, which has no getDisplayMedia", () => {
+    expect(canCaptureDisplay({ ...ENV.chromeAndroid, displayMedia: false })).toBe(false);
   });
 });
 

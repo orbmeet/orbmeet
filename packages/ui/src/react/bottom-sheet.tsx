@@ -1,3 +1,4 @@
+import { isKey } from "../keyboard";
 import * as stylex from "@stylexjs/stylex";
 import { X } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
@@ -240,7 +241,7 @@ function useDismiss(element: HTMLElement | null, open: boolean, onClose: () => v
       event.stopPropagation();
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onCloseRef.current();
+      if (isKey(event, "Escape")) onCloseRef.current();
     };
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("click", onClick, true);

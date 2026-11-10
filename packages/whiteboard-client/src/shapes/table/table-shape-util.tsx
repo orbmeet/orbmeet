@@ -1,3 +1,4 @@
+import { isComposing } from "@orbmeet/ui/keyboard";
 import {
   BaseBoxShapeUtil,
   HTMLContainer,
@@ -376,6 +377,8 @@ function TableComponent({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent, row: number, col: number) => {
+      // Tab and the arrows move between an IME's candidates, not cells.
+      if (isComposing(e.nativeEvent)) return;
       if (e.shiftKey && e.key.startsWith("Arrow")) return;
       const isHorizontalBoundary =
         e.currentTarget instanceof HTMLInputElement &&

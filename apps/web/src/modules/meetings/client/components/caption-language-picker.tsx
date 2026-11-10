@@ -1,3 +1,4 @@
+import { isKey } from "@orbmeet/ui/keyboard";
 import { layout, motion, pressable, stack } from "@orbmeet/ui/styles/atoms";
 import { accent, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
 import { env } from "@orbmeet/ui/tokens/media.stylex";
@@ -220,7 +221,7 @@ export function CaptionLanguagePicker({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "ArrowDown" && options.length > 0) {
+            if (isKey(event.nativeEvent, "ArrowDown") && options.length > 0) {
               event.preventDefault();
               focusOption(0);
             }

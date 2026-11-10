@@ -83,3 +83,44 @@ describe("saveToken and readConfig", () => {
     expect(stored.token).toMatch(/^token_\d+$/);
   });
 });
+
+describe("token text", () => {
+  it("reads the UTF-16 file Windows PowerShell 5.1 writes for `\"…\" > token.txt`", async () => {
+    const { decodeTokenText } = await loadConfig();
+    const powershell = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("orbmeet_pat.abc123\r\n", "utf16le")]);
+    expect(decodeTokenText(powershell).trim()).toBe("orbmeet_pat.abc123");
+  });
+
+  it("reads UTF-8 with or without a byte-order mark, and big-endian UTF-16", async () => {
+    const { decodeTokenText } = await loadConfig();
+    expect(decodeTokenText(Buffer.from("orbmeet_pat.abc\n"))).toBe("orbmeet_pat.abc\n");
+    expect(decodeTokenText(Buffer.from("﻿orbmeet_pat.abc", "utf8"))).toBe("orbmeet_pat.abc");
+    const bigEndian = Buffer.from("﻿orbmeet_pat.abc", "utf16le").swap16();
+    expect(decodeTokenText(bigEndian)).toBe("orbmeet_pat.abc");
+  });
+
+  it("refuses to store what could never be sent in a header, rather than reporting success", async () => {
+    const { saveToken } = await loadConfig();
+    await expect(saveToken("��o\u0000m\u0000")).rejects.toThrow("not an Orb Meet API token");
+    await expect(saveToken("orbmeet_pat abc")).rejects.toThrow("not an Orb Meet API token");
+  });
+});
+
+describe("orbmeet configure", () => {
+  it("stores ORBMEET_TOKEN without waiting on a stdin that never ends, as in Git Bash", async () => {
+    const { spawn } = await import("node:child_process");
+    const bin = join(import.meta.dirname, "../bin/orbmeet.ts");
+    // A pipe nobody writes to or closes: what mintty gives a program.
+    const child = spawn(process.execPath, [bin, "configure"], {
+      env: { ...process.env, XDG_CONFIG_HOME: configDir, ORBMEET_TOKEN: "orbmeet_pat.fromenv" },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const exited = new Promise<number | null>((resolve) => child.once("exit", resolve));
+    const timedOut = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 10_000));
+    const outcome = await Promise.race([exited, timedOut]);
+    child.kill();
+    expect(outcome).toBe(0);
+    const stored = JSON.parse(await readFile(join(configDir, "orbmeet", "config.json"), "utf8")) as { token: string };
+    expect(stored.token).toBe("orbmeet_pat.fromenv");
+  }, 15_000);
+});

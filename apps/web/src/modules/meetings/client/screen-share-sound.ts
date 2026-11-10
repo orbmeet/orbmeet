@@ -11,8 +11,8 @@ export function canShareScreenSound(): boolean {
 }
 
 /**
- * Whether this device can present its screen at all. iPhone and iPad cannot,
- * so the stage switch leaves Screen off there rather than offering a button
+ * Whether this device can present its screen at all. Phones and tablets
+ * cannot, so the stage switch leaves Screen off there rather than offering a button
  * whose only answer, two taps later, is a toast saying no.
  */
 export function canPresentScreen(): boolean {

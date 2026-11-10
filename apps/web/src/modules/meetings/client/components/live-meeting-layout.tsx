@@ -37,7 +37,7 @@ import type {
 } from "@/modules/meetings/client/components/dock-controls";
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
 import { useMeetingCommandPalette } from "@/modules/meetings/client/use-meeting-command-palette";
-import { commandPaletteShortcutLabel } from "@/modules/meetings/client/meeting-command-shortcut";
+import { commandKLabel } from "@/lib/command-k";
 import { mediaControlsAvailability } from "@/modules/meetings/client/media-controls";
 import { useDelayedFlag } from "@/lib/hooks/use-delayed-flag";
 import type { MeetingCommandInput } from "@/modules/meetings/client/meeting-commands";
@@ -611,7 +611,7 @@ export function LiveMeetingLayout({
           ? undefined
           : {
               transcribing: meeting.transcription.on,
-              paletteShortcut: hasCommandPalette && !meeting.isTablet ? commandPaletteShortcutLabel() : undefined,
+              paletteShortcut: hasCommandPalette && !meeting.isTablet ? commandKLabel() : undefined,
             }
       }
       speech={{
@@ -660,7 +660,7 @@ export function LiveMeetingLayout({
     <LazyParticipantsPanel
       participants={meeting.participantsList}
       {...participantManagement}
-      onInvite={meeting.isEgress ? undefined : copyMeetingLink}
+      onInvite={meeting.isEgress ? undefined : () => void copyMeetingLink()}
       security={security}
       transcription={meeting.isEgress ? undefined : {
         on: meeting.transcription.on,
@@ -683,15 +683,15 @@ export function LiveMeetingLayout({
     tab === "timeline"
       ? { id: tab, label: "Chat" }
       : { id: tab, label: "People", count: meeting.connectedParticipants.length };
-  const copyMeetingLink = () => {
-    void copyToClipboard(window.location.href).then((copied) => {
+  const copyMeetingLink = () =>
+    copyToClipboard(window.location.href).then((copied) => {
       addToast(
         copied
           ? { title: "Meeting link copied", data: { variant: "success" } }
           : { title: "Couldn't copy the link", description: window.location.href, data: { variant: "error" } },
       );
+      return copied;
     });
-  };
 
   const showEveryone = () => meeting.ui.openPanel("people");
   // The faces at the top of the column beside a wide board, over the
@@ -1021,7 +1021,7 @@ export function LiveMeetingLayout({
           people: meeting.participantsList.filter((person) => person.id !== meeting.currentUserId),
           open: messagePrivately,
         },
-    copyLink: copyMeetingLink,
+    copyLink: () => void copyMeetingLink(),
     leave: leaveMeetingNow,
     endForEveryone: meeting.canManageMeeting ? endMeetingForEveryone : undefined,
   };

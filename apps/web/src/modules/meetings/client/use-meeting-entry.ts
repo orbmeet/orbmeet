@@ -44,8 +44,9 @@ const JOIN_LATENCY_WAIT_MS = 1_500;
 /**
  * Why this browser cannot join, or null when it can.
  *
- * There is no version floor here: the client bundle builds for Vite's default
- * target, and whether a browser can place a call is LiveKit's question. What
+ * A browser below the app's floor never gets this far: the head script sends
+ * it to the update page (app/shell/browser-support.ts). Above it, whether a
+ * browser can place a call is LiveKit's question. What
  * LiveKit cannot see is an in-app webview that ships `RTCPeerConnection` but
  * never grants the camera or microphone. The head script turns those away
  * before the app starts (app/shell/in-app-browser.ts); this is the fallback

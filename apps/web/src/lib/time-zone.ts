@@ -14,7 +14,11 @@ import { MAX_TIME_ZONE_LENGTH, isValidTimeZone } from "@orbmeet/public-api-contr
  */
 export function deviceTimeZone(): string {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    // A browser that cannot map the system's zone to an IANA one says so as
+    // `Etc/Unknown` (Chromium, with some Windows and Linux settings), which
+    // is not a zone anything can format with or the server will accept.
+    return zone && isValidTimeZone(zone) ? zone : "UTC";
   } catch {
     return "UTC";
   }

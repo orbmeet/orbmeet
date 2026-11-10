@@ -1,3 +1,4 @@
+import { BUILD_TARGET } from "../../src/app/shell/browser-support.ts";
 import { classifyWhiteboardChunk, isWhiteboardVendor } from "./whiteboard-chunks";
 
 /**
@@ -19,6 +20,10 @@ export function createBuildEnvironments(analyze: boolean) {
     },
     client: {
       build: {
+        // The browsers the app supports, derived from the platform features it
+        // needs. Vite's own default is older, and would promise support the
+        // code does not deliver.
+        target: BUILD_TARGET,
         // tldraw ships a ~6 MB pre-built distribution bundle.
         chunkSizeWarningLimit: 6500,
         rolldownOptions: {

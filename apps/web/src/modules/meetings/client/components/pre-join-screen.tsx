@@ -1,3 +1,4 @@
+import { isKey } from "@orbmeet/ui/keyboard";
 import { BrandMark } from "@orbmeet/ui/react";
 import * as React from "react";
 import {
@@ -23,6 +24,7 @@ import { BottomSheet } from "@orbmeet/ui/react";
 import { ADMISSION_PENDING_TTL_MS } from "@/modules/meetings/contract/constants";
 import { BackgroundEffectPicker } from "@/modules/meetings/client/components/background-effect-picker";
 import { CopyLinkButton } from "@/modules/meetings/client/components/meeting-identity";
+import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
 import { PreJoinDeviceForm, PreJoinDeviceNotice } from "@/modules/meetings/client/components/pre-join-device-form";
 import { useRotationRepaintRef } from "@/modules/meetings/client/components/meeting-video-track";
 import { videoTrack } from "@/modules/meetings/client/meeting-styles";
@@ -554,6 +556,7 @@ export function PreJoinScreen({
     }),
   );
   const [displayName, setDisplayName] = React.useState(userName ?? "");
+  const { copy: copyToClipboard } = useCopyToClipboard();
   const [nameError, setNameError] = React.useState<string | null>(null);
   const [showSettings, setShowSettings] = React.useState(false);
   const [showDevices, setShowDevices] = React.useState(false);
@@ -833,7 +836,7 @@ export function PreJoinScreen({
           <p {...stylex.props(styles.meta)}>
             {meetingCode && <span {...stylex.props(styles.code)}>{meetingCode}</span>}
             {meetingCode && (
-              <CopyLinkButton onCopy={() => void navigator.clipboard.writeText(`${window.location.origin}/${meetingCode}`)} />
+              <CopyLinkButton onCopy={() => copyToClipboard(`${window.location.origin}/${meetingCode}`)} />
             )}
             <span {...stylex.props(styles.status)}>
               <span
@@ -873,7 +876,7 @@ export function PreJoinScreen({
                   if (nameError) setNameError(null);
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
+                  if (isKey(e.nativeEvent, "Enter")) {
                     e.preventDefault();
                     handleJoin();
                   }

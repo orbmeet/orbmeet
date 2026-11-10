@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { deviceTimeZone } from "@/lib/time-zone";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarCheck, Check, Copy } from "lucide-react";
 import * as stylex from "@stylexjs/stylex";
@@ -243,10 +244,6 @@ function wallClockToIso(value: string, timeZone: string): string {
   return instant.toISOString();
 }
 
-function browserTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-}
-
 function defaultStart(timeZone: string): string {
   // Keep the default one-hour reminder in the future even after rounding the
   // meeting start down to second precision at an exact quarter hour.
@@ -319,7 +316,7 @@ function ScheduleMeetingDialogForm({
   const initialTimeZone = schedule?.timeZone
     ?? initialSpace?.timeZone
     ?? homeTimeZone
-    ?? browserTimeZone();
+    ?? deviceTimeZone();
 
   const [startsAt, setStartsAt] = useState(() =>
     schedule
@@ -540,7 +537,7 @@ function ScheduleMeetingDialogForm({
                         (space) => space.id === nextContext.slice("space:".length),
                       )
                     : null;
-                  const nextTimeZone = nextSpace?.timeZone ?? homeTimeZone ?? browserTimeZone();
+                  const nextTimeZone = nextSpace?.timeZone ?? homeTimeZone ?? deviceTimeZone();
                   setTimeZone(nextTimeZone);
                   if (!startsAtTouched.current) setStartsAt(defaultStart(nextTimeZone));
                 }}

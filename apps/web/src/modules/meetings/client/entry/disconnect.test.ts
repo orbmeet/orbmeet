@@ -20,12 +20,16 @@ describe("getMeetingDisconnectDisposition", () => {
     ).toEqual({ kind: "removed" });
   });
 
-  it("ignores client-initiated disconnects and connections that never connected", () => {
-    expect(getMeetingDisconnectDisposition(DisconnectReason.CLIENT_INITIATED, true)).toEqual({ kind: "ignore" });
+  it("ignores a connection that never connected", () => {
     expect(getMeetingDisconnectDisposition(undefined, false)).toEqual({ kind: "ignore" });
+    expect(getMeetingDisconnectDisposition(DisconnectReason.CLIENT_INITIATED, false)).toEqual({ kind: "ignore" });
+  });
+
+  it("rejoins after LiveKit disconnected a frozen or hidden page itself", () => {
+    expect(getMeetingDisconnectDisposition(DisconnectReason.CLIENT_INITIATED, true)).toEqual({ kind: "rejoin", nodeLost: false });
   });
 
   it("rejoins after an unclassified transport disconnect", () => {
-    expect(getMeetingDisconnectDisposition(undefined, true)).toEqual({ kind: "rejoin" });
+    expect(getMeetingDisconnectDisposition(undefined, true)).toEqual({ kind: "rejoin", nodeLost: true });
   });
 });

@@ -1,3 +1,4 @@
+import { isComposing } from "@orbmeet/ui/keyboard";
 import { Node, mergeAttributes } from "@tiptap/core";
 import { Slice, type Mark, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import {
@@ -448,7 +449,7 @@ class InlineMathView implements NodeView {
     input.addEventListener("keydown", (event) => {
       // The canvas listens for keys too — Escape would end the text edit.
       event.stopPropagation();
-      if (event.isComposing) return;
+      if (isComposing(event)) return;
       if (event.key === "Enter") {
         event.preventDefault();
         this.close(input.value.trim() ? "keep" : "remove", true);

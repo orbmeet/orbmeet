@@ -1,3 +1,4 @@
+import { isComposing } from "@orbmeet/ui/keyboard";
 import * as React from "react";
 import { Dialog as BaseDialog } from "@base-ui/react/dialog";
 import { CornerDownLeft, Search } from "lucide-react";
@@ -253,7 +254,7 @@ export function MeetingCommandPalette({ open, onOpenChange, commands, onAskOrb }
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.nativeEvent.isComposing) return;
+    if (isComposing(event.nativeEvent)) return;
     switch (event.key) {
       case "ArrowDown":
         event.preventDefault();

@@ -46,9 +46,29 @@ export async function readConfig(): Promise<CliConfig> {
   return { url: CLOUD_API_URL, token };
 }
 
+/**
+ * Text from a token file or a pipe. Windows PowerShell 5.1 writes UTF-16 with
+ * a byte-order mark for `>` and `Out-File`; read as UTF-8, that is a token of
+ * NUL bytes and replacement characters. The mark says which encoding it is.
+ */
+export function decodeTokenText(bytes: Uint8Array): string {
+  const encoding =
+    bytes[0] === 0xff && bytes[1] === 0xfe ? "utf-16le" : bytes[0] === 0xfe && bytes[1] === 0xff ? "utf-16be" : "utf-8";
+  // Every decoder drops its own byte-order mark.
+  return new TextDecoder(encoding).decode(bytes);
+}
+
+/** An API token travels in an HTTP header, so it is visible ASCII with no spaces. */
+const TOKEN_SHAPE = /^[\x21-\x7e]+$/;
+
 export async function saveToken(token: string): Promise<void> {
   const trimmed = token.trim();
   if (!trimmed) throw new Error("The API token must not be empty");
+  if (!TOKEN_SHAPE.test(trimmed)) {
+    throw new Error(
+      "That is not an Orb Meet API token: it has spaces or characters outside ASCII. Copy the token again from Settings, Developer API.",
+    );
+  }
   const configDirectory = dirname(CONFIG_PATH);
   await mkdir(configDirectory, { recursive: true, mode: 0o700 });
   await chmod(configDirectory, 0o700);

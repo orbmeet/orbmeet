@@ -1,3 +1,4 @@
+import { isKey } from "@orbmeet/ui/keyboard";
 import * as React from "react";
 import { Hand, Lock, Mic, MessageSquareLock, MessageSquareText, Pencil, RefreshCw, Send, X } from "lucide-react";
 import { Avatar, Button, Tooltip } from "@orbmeet/ui/react";
@@ -1205,10 +1206,10 @@ export function MeetingTimeline({
                 setBoardAsk(null);
               }}
               onKeyDown={(event) => {
-                if (offerOrb && event.key === "Tab") {
+                if (offerOrb && isKey(event.nativeEvent, "Tab")) {
                   event.preventDefault();
                   completeMention();
-                } else if (offerOrb && event.key === "Escape") {
+                } else if (offerOrb && isKey(event.nativeEvent, "Escape")) {
                   event.stopPropagation();
                   setMentionDismissedFor(inputValue);
                 }

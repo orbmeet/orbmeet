@@ -1,3 +1,4 @@
+import { isKey } from "@orbmeet/ui/keyboard";
 import {
   BaseBoxShapeUtil,
   HTMLContainer,
@@ -364,8 +365,8 @@ function MathShapeComponent({
             onBlur={() => setDraft(shape.props.input)}
             onKeyDown={(event) => {
               if (
-                event.key === "Escape" ||
-                (event.key === "Enter" && (event.metaKey || event.ctrlKey))
+                isKey(event.nativeEvent, "Escape") ||
+                (isKey(event.nativeEvent, "Enter") && (event.metaKey || event.ctrlKey))
               ) {
                 event.preventDefault();
                 setDraft(shape.props.input);

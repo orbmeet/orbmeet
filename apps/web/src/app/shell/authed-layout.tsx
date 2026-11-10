@@ -1,4 +1,5 @@
 import { BrandMark } from "@orbmeet/ui/react";
+import { isCommandK } from "@/lib/command-k";
 import { getRouteApi } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { Search } from "lucide-react";
@@ -255,7 +256,7 @@ function AuthedLayoutContent() {
   useEffect(() => {
     if (onCanvasPage) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() !== "k" || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      if (!isCommandK(event)) return;
       event.preventDefault();
       void navigate({ to: "/library", search: { find: true } });
     };

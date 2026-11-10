@@ -202,3 +202,30 @@ describe("applyDeviceChangeToStatus", () => {
     ).toEqual({ state: "unavailable", reason: "insecure-context" });
   });
 });
+
+describe("an operating system that refuses the browser", () => {
+  const systemDenial = new DOMException("Permission denied by system", "NotAllowedError");
+
+  it("is told apart from a refused prompt, which Chromium phrases differently", () => {
+    expect(classifyDeviceFailure({ error: systemDenial, enumeratedCount: 1 })).toBe("system-denied");
+    expect(
+      classifyDeviceFailure({
+        error: new DOMException("Permission denied by user", "NotAllowedError"),
+        enumeratedCount: 1,
+      }),
+    ).toBe("permission-denied");
+  });
+
+  it("sends the person to the computer's settings, not the address bar", () => {
+    const reason = getToggleBlockedReason("camera", { state: "unavailable", reason: "system-denied" });
+    expect(reason).toContain("privacy settings");
+    expect(reason).not.toContain("address bar");
+  });
+
+  it("stands when a device appears, since the browser's own grant is what exposes it", () => {
+    expect(applyDeviceChangeToStatus({ state: "unavailable", reason: "system-denied" }, true)).toEqual({
+      state: "unavailable",
+      reason: "system-denied",
+    });
+  });
+});

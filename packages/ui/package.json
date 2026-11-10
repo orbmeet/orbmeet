@@ -8,6 +8,7 @@
   ],
   "exports": {
     "./gradient-hash": "./src/react/gradient-hash.ts",
+    "./keyboard": "./src/keyboard.ts",
     "./react": "./src/react/index.ts",
     "./react/*": "./src/react/*.tsx",
     "./styles/*": "./src/styles/*.ts",

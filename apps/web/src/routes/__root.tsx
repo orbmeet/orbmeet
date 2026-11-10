@@ -40,6 +40,7 @@ import { CSPProvider } from "@base-ui/react/csp-provider";
 import { resolveCspNonce } from "@/platform/http/csp-nonce";
 import { APPEARANCE_SCRIPT, THEME_COLOR, applyThemeColor, readAppearance } from "@/app/appearance/appearance";
 import { IN_APP_BROWSER_SCRIPT } from "@/app/shell/in-app-browser";
+import { UNSUPPORTED_BROWSER_SCRIPT } from "@/app/shell/browser-support";
 
 const styles = stylex.create({
   errorPage: {
@@ -302,6 +303,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           real browser (app/shell/in-app-browser.ts).
         */}
         <script nonce={resolveCspNonce()} dangerouslySetInnerHTML={{ __html: IN_APP_BROWSER_SCRIPT }} suppressHydrationWarning />
+        {/*
+          A browser without the platform features the app needs stops here
+          too, and is told to update (app/shell/browser-support.ts).
+        */}
+        <script nonce={resolveCspNonce()} dangerouslySetInnerHTML={{ __html: UNSUPPORTED_BROWSER_SCRIPT }} suppressHydrationWarning />
         {FONT_PRELOADS.map((href) => (
           <link key={href} rel="preload" as="font" type="font/woff2" href={href} crossOrigin="anonymous" />
         ))}

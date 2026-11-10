@@ -76,24 +76,6 @@ const styles = stylex.create({
   },
 });
 
-// One reusable context, created inside the click that starts the timer.
-// Autoplay policy: a context created in a timer callback (no user activation)
-// can start — and stay — "suspended", silently dropping the chime on Safari.
-// A single long-lived context also stays clear of the per-page context cap.
-let chimeAudioContext: AudioContext | null = null;
-
-function unlockChimeAudioContext() {
-  if (typeof window === "undefined") return;
-  const AudioContextCtor =
-    window.AudioContext ??
-    (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!AudioContextCtor) return;
-  chimeAudioContext ??= new AudioContextCtor();
-  if (chimeAudioContext.state === "suspended") {
-    void chimeAudioContext.resume().catch(() => {});
-  }
-}
-
 /** The shared-countdown controls, embeddable outside the button's own popover. */
 export function CountdownTimerPanel({
   countdown,
@@ -106,7 +88,6 @@ export function CountdownTimerPanel({
 
   const start = (minutes: number) => {
     if (!countdown.canControl || minutes <= 0) return;
-    unlockChimeAudioContext();
     if (!countdown.start(minutes)) return;
     setCustomMinutes("");
     onClose?.();

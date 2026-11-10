@@ -1,3 +1,4 @@
+import { isKey } from "@orbmeet/ui/keyboard";
 import { motion, pressable } from "@orbmeet/ui/styles/atoms";
 import { danger, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
 import { env } from "@orbmeet/ui/tokens/media.stylex";
@@ -128,7 +129,7 @@ export function GoLiveForm({
         placeholder={selectedDestination.placeholder}
         value={streamKey}
         onChange={(e) => setStreamKey(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") void handleStart(); }}
+        onKeyDown={(e) => { if (isKey(e.nativeEvent, "Enter")) void handleStart(); }}
         {...stylex.props(dockPopover.field, styles.key)}
         autoComplete="off"
         spellCheck={false}

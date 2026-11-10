@@ -1,3 +1,4 @@
+import { isKey } from "@orbmeet/ui/keyboard";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent } from "react";
 import { GripHorizontal, Send, Sparkles, Square, Trash2, X } from "lucide-react";
 import * as stylex from "@stylexjs/stylex";
@@ -229,7 +230,7 @@ export function AssistantPanel({
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent) => {
-      if (event.key !== "Enter" || event.shiftKey) return;
+      if (!isKey(event.nativeEvent, "Enter") || event.shiftKey) return;
       event.preventDefault();
       submit();
     },

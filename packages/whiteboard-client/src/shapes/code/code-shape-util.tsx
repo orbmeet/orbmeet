@@ -1,3 +1,4 @@
+import { isComposing } from "@orbmeet/ui/keyboard";
 import {
   BaseBoxShapeUtil,
   HTMLContainer,
@@ -562,6 +563,8 @@ function CodeShapeComponent({ editor, shape }: CodeShapeComponentProps) {
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Escape, Tab and Enter pick and confirm candidates while an IME composes.
+    if (isComposing(event.nativeEvent)) return;
     // The canvas owns single-key shortcuts (delete, space-to-pan, undo); inside
     // a text field they belong to the field.
     event.stopPropagation();
