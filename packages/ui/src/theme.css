@@ -49,20 +49,6 @@
 }
 
 /*
- * Caveat at weight 500 (OFL), cut to ASCII and a few marks (· – — ‘ ’ “ ” … €).
- * Only the landing page names it — the handwriting on its sample whiteboard —
- * so no other page downloads it.
- */
-@font-face {
-  font-family: "Caveat";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("/fonts/caveat-latin.woff2") format("woff2");
-  unicode-range: U+0020-007E, U+00B7, U+2013-2014, U+2018-2019, U+201C-201D, U+2026, U+20AC;
-}
-
-/*
  * Geist Mono, one variable face for every weight (OFL). `swap`, like Figtree:
  * the meeting's code and clock are read the moment the room opens, and must
  * arrive in this face rather than be left in the device's monospace.
