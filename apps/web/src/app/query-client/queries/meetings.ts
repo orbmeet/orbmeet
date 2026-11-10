@@ -1,27 +1,12 @@
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import { getMeetingAttendance } from "@/modules/meetings/server/history/meeting-attendance-queries.functions";
 import { getMyMeetings } from "@/modules/meetings/server/history/personal-meeting-queries.functions";
-import { getMyLastReusableMeeting } from "@/modules/meetings/server/history/last-reusable-meeting.functions";
 import { getMyThreads } from "@/modules/meetings/server/room/threads.functions";
 import { searchMySpokenLines } from "@/modules/transcripts/server/spoken-search.functions";
 import { getSpaceDefaultMeetingLink } from "@/modules/meetings/server/space-default-meeting-link.functions";
 import { getMyUpcomingMeetingSchedules } from "@/modules/scheduling/server/queries.functions";
 import { queryKeys } from "@/app/query-client/query-keys";
 import { keepLastCopyPerId } from "@/lib/infinite-pages";
-
-/**
- * The logged-in user's most recently joined recurring Meeting — the landing page's
- * "rejoin" shortcut. Caller gates on `enabled` until the session resolves,
- * since the server fn requires auth.
- */
-export function myLastReusableMeetingQueryOptions() {
-  return queryOptions({
-    queryKey: queryKeys.meetings.lastReusable(),
-    queryFn: ({ signal }) => getMyLastReusableMeeting({ signal }),
-    staleTime: 30_000,
-    gcTime: 300_000,
-  });
-}
 
 // Paged soonest first, and a reschedule moves a schedule along that order.
 export function myUpcomingMeetingSchedulesQueryOptions(spaceId?: string) {

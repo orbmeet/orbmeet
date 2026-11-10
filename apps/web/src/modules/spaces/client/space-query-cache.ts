@@ -62,7 +62,8 @@ export async function evictSpaceQueryCache(
   void queryClient.invalidateQueries({ queryKey: queryKeys.whiteboards.list() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.meetings.lists() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.meetings.upcomingSchedules() });
-  void queryClient.invalidateQueries({ queryKey: queryKeys.meetings.lastReusable() });
+  // The landing page lists your Spaces to jump back into.
+  void queryClient.invalidateQueries({ queryKey: queryKeys.threads() });
 }
 
 /** The ids, from each cached `[...prefix, id]` entry, whose payload belongs to `spaceId`. */

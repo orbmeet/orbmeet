@@ -15,9 +15,6 @@ export const queryKeys = {
   accountDeletionPending: () => ["account-deletion-pending"] as const,
   threads: () => ["threads"] as const,
   meetings: {
-    // The landing page's "rejoin your last Meeting" shortcut. Reusable links only,
-    // so it never collides with one-time meeting history.
-    lastReusable: () => ["meetings", "last-reusable"] as const,
     list: <T>(input: T) => ["meetings", "list", input] as const,
     lists: () => ["meetings", "list"] as const,
     attendance: (meetingId: string) => ["meetings", meetingId, "attendance"] as const,

@@ -316,9 +316,8 @@ function DefaultMeetingLinkCard({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.spaces.defaultMeetingLink(spaceId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.meetings.upcomingSchedules() }),
+        // The replaced link is archived; Home and the landing page must not offer it.
         queryClient.invalidateQueries({ queryKey: queryKeys.threads() }),
-        // The replaced link is archived; "Rejoin" must not offer it.
-        queryClient.invalidateQueries({ queryKey: queryKeys.meetings.lastReusable() }),
       ]);
     },
   });

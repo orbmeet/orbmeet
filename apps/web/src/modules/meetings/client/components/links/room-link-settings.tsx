@@ -81,12 +81,8 @@ export function RoomLinkSettings({
     }
   }
 
-  // The link's title and its archived state also feed the "Rejoin" shortcut.
-  const refresh = () =>
-    Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.threads() }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.meetings.lastReusable() }),
-    ]);
+  // The link's title and archived state feed Home and the landing page's room list.
+  const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.threads() });
 
   const updateMutation = useMutation({
     mutationFn: () => updateMeetingLink({ data: { meetingLinkId: thread.id, title: title.trim() || null, joinPolicy } }),
