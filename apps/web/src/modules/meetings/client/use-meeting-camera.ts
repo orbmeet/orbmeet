@@ -1,5 +1,12 @@
 import * as React from "react";
-import { RoomEvent, Track, type Room, type LocalVideoTrack } from "livekit-client";
+import {
+  RoomEvent,
+  Track,
+  type LocalVideoTrack,
+  type Participant,
+  type Room,
+  type TrackPublication,
+} from "livekit-client";
 import { logError } from "@/lib/logger";
 import type { useToast } from "@orbmeet/ui/react";
 import {
@@ -14,6 +21,9 @@ import {
 } from "./device-selection";
 import { useCommittedRef } from "@orbmeet/ui/react";
 import { MediaOperationQueue } from "./media-operation-queue";
+import { watchLocalDeviceLoss } from "./local-device-loss";
+import { emitMeetingEntryDiagnostic } from "./entry/diagnostics";
+import { getPlatformEnvironment, needsForegroundCameraReacquire } from "@/lib/browser-capabilities";
 
 // iOS rotates an active camera capture lazily — and some WebKit versions not
 // at all — so after a device rotation the published frames can stay in the old
@@ -60,6 +70,8 @@ export function useMeetingCamera({
   const userActionQueueRef = React.useRef(new MediaOperationQueue());
   const refreshGenerationRef = React.useRef(0);
   const onChoiceRef = useCommittedRef(onChoice);
+  /** Off only because its device went away; nobody chose it. */
+  const cameraLostRef = React.useRef(false);
 
   // Device capture mutations are serialized. A second click or selection is
   // intent, not noise: queueing it means rapid toggle/toggle and switch/toggle
@@ -100,12 +112,84 @@ export function useMeetingCamera({
               "Could not switch to the system camera. Reconnect a camera and try again.",
             data: { variant: "error" },
           });
+          return;
+        }
+      }
+
+      // A camera is available again: bring back one that went off only with
+      // its device. A camera anyone turned off stays off.
+      if (roomInstance && cameraLostRef.current && uniqueDevices.length > 0) {
+        cameraLostRef.current = false;
+        try {
+          await roomInstance.localParticipant.setCameraEnabled(
+            true,
+            getCameraCaptureOptions(currentVideoDeviceIdRef.current),
+            getCameraPublishOptions(),
+          );
+          emitMeetingEntryDiagnostic("local_camera_device_restored");
+          addToast({
+            title: "Camera back on",
+            description: "A camera was connected, so your video is on again.",
+            data: { variant: "info" },
+          });
+        } catch (err) {
+          logError("[Meeting] Failed to restore camera after device change:", err);
         }
       }
     } catch (err) {
       logError("[Meeting] Failed to enumerate video devices:", err);
     }
   }), [addToast, enqueueUserAction, roomInstance]);
+
+  // LiveKit mutes a camera whose device ended and could not be replaced, and
+  // that mute looks like anyone else's. Remember it as a loss, so the camera
+  // comes back with a device, and say so now rather than leave a dark tile.
+  React.useEffect(() => {
+    if (!roomInstance) return;
+    const deviceLoss = watchLocalDeviceLoss(roomInstance, Track.Source.Camera);
+    const handleTrackMuted = (publication: TrackPublication, participant: Participant) => {
+      if (participant !== roomInstance.localParticipant || publication.source !== Track.Source.Camera) return;
+      if (!deviceLoss.lost || cameraLostRef.current) return;
+      cameraLostRef.current = true;
+      emitMeetingEntryDiagnostic("local_camera_device_lost");
+      addToast({
+        title: "Camera disconnected",
+        description: "Your video is off. It turns back on when a camera is connected.",
+        data: { variant: "error" },
+      });
+    };
+    roomInstance.on(RoomEvent.TrackMuted, handleTrackMuted);
+    return () => {
+      roomInstance.off(RoomEvent.TrackMuted, handleTrackMuted);
+      deviceLoss.dispose();
+    };
+  }, [addToast, roomInstance]);
+
+  /**
+   * Re-opens the camera behind a track that is on. LiveKit stops the old
+   * capture before asking for the new one, so a refusal leaves a camera that
+   * reads as on and sends nothing: turn it off instead, and say so.
+   */
+  const restartCameraOrTurnOff = React.useCallback(
+    async (track: LocalVideoTrack, reason: "rotation" | "foreground") => {
+      try {
+        await track.restartTrack();
+      } catch (err) {
+        logError(`[Meeting] Failed to restart camera (${reason}):`, err);
+        emitMeetingEntryDiagnostic("local_camera_restart_failed", {
+          reason,
+          errorName: err instanceof Error ? err.name : undefined,
+        });
+        await roomInstance?.localParticipant.setCameraEnabled(false).catch(() => undefined);
+        addToast({
+          title: "Camera stopped",
+          description: "Your camera could not be reopened. Turn it on to try again.",
+          data: { variant: "error" },
+        });
+      }
+    },
+    [addToast, roomInstance],
+  );
 
   React.useEffect(() => {
     if (!roomInstance) return;
@@ -205,11 +289,7 @@ export function useMeetingCamera({
       lastViewportPortrait = decision.nextViewportPortrait;
       if (!decision.restart) return;
 
-      try {
-        await track.restartTrack();
-      } catch (err) {
-        logError("[Meeting] Failed to restart camera after rotation:", err);
-      }
+      await restartCameraOrTurnOff(track, "rotation");
     });
 
     const handleOrientationChange = () => {
@@ -224,7 +304,25 @@ export function useMeetingCamera({
       window.removeEventListener("orientationchange", handleOrientationChange);
       window.screen?.orientation?.removeEventListener?.("change", handleOrientationChange);
     };
-  }, [enqueueUserAction, roomInstance]);
+  }, [enqueueUserAction, restartCameraOrTurnOff, roomInstance]);
+
+  // The system stops the camera of a page in the background. Returning to it,
+  // re-open a camera that is meant to be on — where LiveKit will not.
+  React.useEffect(() => {
+    if (!roomInstance || !needsForegroundCameraReacquire(getPlatformEnvironment())) return;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      void enqueueUserAction(async () => {
+        const track = roomInstance.localParticipant.getTrackPublication(Track.Source.Camera)?.track as
+          | LocalVideoTrack
+          | undefined;
+        if (!track || track.isMuted || track.mediaStreamTrack.readyState !== "ended") return;
+        await restartCameraOrTurnOff(track, "foreground");
+      });
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [enqueueUserAction, restartCameraOrTurnOff, roomInstance]);
 
   const handleSelectVideoDevice = React.useCallback(
     (deviceId: string | undefined) => enqueueUserAction(async () => {
@@ -263,6 +361,7 @@ export function useMeetingCamera({
       if (!roomInstance) return;
       const lp = roomInstance.localParticipant;
       const nextEnabled = !lp.isCameraEnabled;
+      cameraLostRef.current = false;
 
       try {
         if (!nextEnabled) {

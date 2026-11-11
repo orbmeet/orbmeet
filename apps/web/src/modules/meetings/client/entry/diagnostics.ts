@@ -40,6 +40,15 @@ export type MeetingEntryDiagnosticEvent =
   | "local_mic_interrupted"
   | "local_mic_resume_failed"
   | "local_mic_resumed"
+  // A microphone muted because its device went away, and brought back on
+  // when one was connected again.
+  | "local_mic_device_lost"
+  | "local_mic_device_restored"
+  // The same for the camera.
+  | "local_camera_device_lost"
+  | "local_camera_device_restored"
+  // A camera restart (after rotation) that could not reopen the camera.
+  | "local_camera_restart_failed"
   // A first microphone the browser refused (a hidden page), asked for again.
   | "initial_microphone_retry"
   | "remote_track_subscription_failed"

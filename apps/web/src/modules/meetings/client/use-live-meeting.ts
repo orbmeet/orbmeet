@@ -528,6 +528,7 @@ export function useLiveMeeting(
     initialAudioOutputDeviceId: initialIntent.audioOutputDeviceId,
     addToast,
     onChoice: recordChoice,
+    onInputAvailable: microphone.restoreMicAfterDeviceLoss,
   });
 
   // ── Remote track subscription failures ──

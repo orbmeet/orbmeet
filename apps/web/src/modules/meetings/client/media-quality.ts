@@ -195,7 +195,12 @@ export function getCameraPreviewTrackOptions(
 /**
  * `withSound` is the presenter's choice; it is asked for only where the
  * browser can capture it, and then offers the system's sound too where the
- * platform has it (a whole screen on Windows or ChromeOS).
+ * platform has it (a whole screen on Windows, ChromeOS or macOS).
+ *
+ * The system's sound includes this page's own playback — everyone else's
+ * voices — which would go back out on the share and reach them again, late.
+ * `restrictOwnAudio` leaves this page out of the capture (Chromium; other
+ * browsers ignore a constraint they do not know).
  */
 export function getScreenShareCaptureOptionsForEnvironment(
   env: BrowserMediaEnvironment,
@@ -203,7 +208,7 @@ export function getScreenShareCaptureOptionsForEnvironment(
 ): ScreenShareCaptureOptions {
   const audio = withSound && canCaptureDisplayAudio(env);
   return {
-    audio,
+    audio: audio ? { restrictOwnAudio: true } : false,
     ...(audio ? { systemAudio: "include" as const } : {}),
     video: true,
     contentHint: "detail",

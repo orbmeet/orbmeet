@@ -174,6 +174,27 @@ export function hasVoiceProcessingPlaybackBug(env: PlatformEnvironment): boolean
   return detectEngine(env) === "webkit";
 }
 
+/**
+ * Whether a camera the system stopped while the page was in the background
+ * must be re-acquired by the app. LiveKit does it itself only where it detects
+ * a mobile browser, by user agent, and a desktop-mode iPad reads to it as a
+ * Mac, so there it never happens.
+ */
+export function needsForegroundCameraReacquire(env: PlatformEnvironment): boolean {
+  return detectOS(env) === "ipados" && !/\bMobile\//.test(env.userAgent ?? "");
+}
+
+/**
+ * Whether a capture refusal (`NotAllowedError`) can mean either "the person
+ * cancelled" or "the browser is set to deny this site". Chromium tells a
+ * system denial apart by its message; Firefox and Safari use one error for
+ * all of them, so a refusal there may be a setting the person needs to know
+ * about.
+ */
+export function hasAmbiguousCaptureRefusal(env: PlatformEnvironment): boolean {
+  return detectEngine(env) !== "chromium";
+}
+
 /** WebKit screen capture is unreliable above 720p; skip the 1080p request. */
 export function supportsHighResDisplayCapture(env: PlatformEnvironment): boolean {
   return detectEngine(env) !== "webkit";

@@ -1,9 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useCommittedRef } from "@orbmeet/ui/react";
-import { Track, RoomEvent, type Room, type LocalVideoTrack, type LocalTrackPublication } from "livekit-client";
+import {
+  Track,
+  RoomEvent,
+  type LocalTrackPublication,
+  type LocalVideoTrack,
+  type Participant,
+  type Room,
+  type TrackPublication,
+} from "livekit-client";
 import type { BackgroundProcessorWrapper } from "@livekit/track-processors";
 import { logError, logInfo } from "@/lib/logger";
 import { MEDIAPIPE_FILESET_PATH, SELFIE_SEGMENTER_MODEL_PATH } from "./mediapipe-assets";
+
+/** A camera capturing right now: on, with a live capture behind it. */
+function isCapturing(track: LocalVideoTrack): boolean {
+  return !track.isMuted && track.mediaStreamTrack.readyState === "live";
+}
 
 export type BackgroundMode = "none" | "blur" | "image";
 
@@ -186,8 +199,13 @@ export function useBackgroundEffect(
 
       const cameraTrack = getCameraTrack();
 
-      if (!cameraTrack) {
-        logInfo("[BackgroundEffect] No camera track yet, saving preference for later");
+      // A camera that is off keeps its publication, but LiveKit has stopped
+      // the capture behind it, and a processor cannot be built on a stopped
+      // track. Until a processor exists, an off camera is no camera: keep the
+      // choice and apply it when the camera comes back on. (An attached
+      // processor follows the camera through off and on by itself.)
+      if (!cameraTrack || (!processorRef.current && !isCapturing(cameraTrack))) {
+        logInfo("[BackgroundEffect] No live camera, saving preference for later");
         setMode(newMode);
         setImagePath(newImagePath);
         recordPreference(newMode, newImagePath);
@@ -333,20 +351,37 @@ export function useBackgroundEffect(
       scheduleReapply();
     };
 
+    // A camera turned back on is the same publication, so no publish event:
+    // an effect chosen while it was off is applied here.
+    const handleTrackUnmuted = (pub: TrackPublication, participant: Participant) => {
+      if (participant !== room.localParticipant || pub.source !== Track.Source.Camera) return;
+      if (modeRef.current === "none" || processorRef.current) return;
+
+      logInfo("[BackgroundEffect] Camera back on, applying pending effect");
+      scheduleReapply();
+    };
+
     room.on(RoomEvent.LocalTrackPublished, handleTrackPublished);
+    room.on(RoomEvent.TrackUnmuted, handleTrackUnmuted);
 
     // The initial camera publish races the meeting UI mount (it starts on
     // SignalConnected; this hook only sees the room after Connected), so a
     // pending effect — e.g. the pre-join selection — must also be applied to a
     // track that was already live before this subscription attached.
     const existingCameraPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
-    if (existingCameraPub?.track && modeRef.current !== "none" && !processorRef.current) {
+    if (
+      existingCameraPub?.track &&
+      isCapturing(existingCameraPub.track as LocalVideoTrack) &&
+      modeRef.current !== "none" &&
+      !processorRef.current
+    ) {
       logInfo("[BackgroundEffect] Camera already live, applying pending effect");
       scheduleReapply();
     }
 
     return () => {
       room.off(RoomEvent.LocalTrackPublished, handleTrackPublished);
+      room.off(RoomEvent.TrackUnmuted, handleTrackUnmuted);
       // Clear any pending re-apply timer when the effect re-runs or unmounts
       if (reapplyTimerRef.current !== null) {
         clearTimeout(reapplyTimerRef.current);

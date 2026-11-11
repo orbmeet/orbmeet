@@ -44,8 +44,12 @@ body {
 /*
  * The meeting room follows the appearance like every other page. Only the
  * board keeps to light: it pins its own `color-scheme` (synced-whiteboard).
+ *
+ * On the root element, not `body`: the viewport reads `overscroll-behavior`
+ * from the root only (Chrome since 140; Firefox and Safari always), and it is
+ * what keeps pull-to-refresh and swipe-back from leaving a live call.
  */
-body.meet-route {
+html.meet-route {
   overflow: hidden;
   overscroll-behavior: none;
 }

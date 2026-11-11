@@ -126,12 +126,13 @@ describe("screen-share audio publish options", () => {
 });
 
 describe("getScreenShareCaptureOptionsForEnvironment", () => {
-  it("requests browser audio on Chromium desktop", () => {
+  it("requests browser audio on Chromium desktop, without this page's own playback", () => {
     const options = getScreenShareCaptureOptionsForEnvironment({
       userAgent: UA.chromeWindows,
     });
 
-    expect(options.audio).toBe(true);
+    expect(options.audio).toEqual({ restrictOwnAudio: true });
+    expect(options.systemAudio).toBe("include");
     expect(options.video).toBe(true);
     expect(options.contentHint).toBe("detail");
     expect(options.resolution).toMatchObject({ width: 1920, height: 1080 });
@@ -212,6 +213,6 @@ describe("desktop-mode iPad", () => {
       ...MAC_DESKTOP,
       userAgent: UA.chromeWindows,
     });
-    expect(options.audio).toBe(true);
+    expect(options.audio).toEqual({ restrictOwnAudio: true });
   });
 });

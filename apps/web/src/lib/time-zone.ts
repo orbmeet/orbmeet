@@ -78,3 +78,27 @@ export function formatCalendarDayLabel(instant: Date, timeZone: string | null): 
     return new Intl.DateTimeFormat("en-US", { ...options, timeZone: "UTC" }).format(instant);
   }
 }
+
+/**
+ * `instant` formatted for a person, in `timeZone` when this browser knows it.
+ *
+ * The server accepts any zone its own runtime knows, and a browser with older
+ * zone data throws `RangeError` for one it does not (a zone added in a recent
+ * tzdata release, read on a guest's older Firefox or Safari). The instant is
+ * what matters, so that case reads it in the viewer's own zone instead of
+ * breaking the screen it is on.
+ */
+export function formatInstant(
+  instant: Date,
+  timeZone: string | null | undefined,
+  options: Intl.DateTimeFormatOptions,
+): string {
+  if (timeZone) {
+    try {
+      return new Intl.DateTimeFormat(undefined, { ...options, timeZone }).format(instant);
+    } catch {
+      // Fall through to the viewer's zone.
+    }
+  }
+  return new Intl.DateTimeFormat(undefined, options).format(instant);
+}

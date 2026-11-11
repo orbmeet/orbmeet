@@ -16,6 +16,7 @@ vi.mock("@/modules/meetings/server/runtime/live.functions", () => ({
 vi.mock("@/lib/browser-capabilities", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/browser-capabilities")>()),
   canCaptureDisplay: () => true,
+  refusalIsAmbiguous: () => false,
 }));
 
 const { useMeetingScreenShare } = await import("./use-meeting-screen-share");

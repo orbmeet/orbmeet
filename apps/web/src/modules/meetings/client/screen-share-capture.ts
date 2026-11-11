@@ -20,13 +20,16 @@ export type ScreenShareNotice =
   | "publish-failed"
   | "request-failed"
   | "decision-timed-out"
-  | "permission-timed-out";
+  | "permission-timed-out"
+  | "refused";
 
 /** What the controller needs from the browser, the room and the server. */
 export interface ScreenShareCapturePort {
   isSharing(): boolean;
   stopSharing(): Promise<void>;
   canCaptureDisplay(): boolean;
+  /** A refusal here may be a browser setting rather than the person cancelling. */
+  refusalIsAmbiguous(): boolean;
   capture(): Promise<LocalTrack[]>;
   publish(tracks: LocalTrack[]): Promise<void>;
   request(): Promise<unknown>;
@@ -241,11 +244,7 @@ export class ScreenShareCapture {
       await this.port.publish(tracks);
     } catch (error) {
       stopTracks(tracks);
-      if (userCancelledPicker(error)) return;
-      if (isSystemPermissionDenial(error)) {
-        this.port.notify("system-denied");
-        return;
-      }
+      if (this.reportedRefusal(error)) return;
       this.port.logError("[Meeting] Screen share error:", error);
       this.port.notify("start-failed");
     }
@@ -267,17 +266,28 @@ export class ScreenShareCapture {
       this.changed();
       await this.sendRequest(tracks);
     } catch (error) {
-      if (userCancelledPicker(error)) return;
-      if (isSystemPermissionDenial(error)) {
-        this.port.notify("system-denied");
-        return;
-      }
+      if (this.reportedRefusal(error)) return;
       this.port.logError("[Meeting] Screen share capture error:", error);
       this.port.notify("capture-failed");
     } finally {
       if (this.flow.kind === "picking") this.flow = IDLE;
       this.changed();
     }
+  }
+
+  /**
+   * Handles a capture the browser or the person refused; false for any other
+   * failure. A plain cancel is not news to the person who cancelled, but where
+   * a cancel and a "deny this site" setting share one error, say how to tell.
+   */
+  private reportedRefusal(error: unknown): boolean {
+    if (isSystemPermissionDenial(error)) {
+      this.port.notify("system-denied");
+      return true;
+    }
+    if (!userCancelledPicker(error)) return false;
+    if (this.port.refusalIsAmbiguous()) this.port.notify("refused");
+    return true;
   }
 
   private async sendRequest(tracks: LocalTrack[]): Promise<void> {

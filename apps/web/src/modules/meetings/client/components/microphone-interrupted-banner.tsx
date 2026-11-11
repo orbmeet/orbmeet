@@ -9,9 +9,10 @@ import type { MicrophoneInterruptionCause } from "@/modules/meetings/client/audi
 /**
  * Says that the microphone the user has on is not reaching anyone.
  *
- * `MicrophoneInterruption` owns the recovery — it restarts the microphone when
- * the system lets go of it and on the next tap anywhere — so this is the
- * explanation, with the restart in reach. Without it the mute control says
+ * `MicrophoneInterruption` owns the recovery — for an interruption the system
+ * caused it restarts the microphone on its own and on the next tap anywhere;
+ * a bare pause waits for Resume — so this is the explanation, with the
+ * restart in reach. Without it the mute control says
  * "on" while nobody hears a word.
  */
 export function MicrophoneInterruptedBanner({
@@ -26,7 +27,9 @@ export function MicrophoneInterruptedBanner({
   const body =
     cause === "silent"
       ? "Your microphone stopped sending sound, so nobody can hear you."
-      : "Your device paused it, often for a call, so nobody can hear you.";
+      : cause === "session"
+        ? "Your device paused it, often for a call, so nobody can hear you."
+        : "Your microphone is paused, so nobody can hear you.";
 
   return (
     <div role="alert" {...stylex.props(banner.slot, bannerLayer.abovePip)}>

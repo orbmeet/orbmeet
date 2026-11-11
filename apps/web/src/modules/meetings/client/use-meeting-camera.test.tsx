@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
+import { EventEmitter } from "node:events";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { Room } from "livekit-client";
+import { Room, RoomEvent, Track, TrackEvent } from "livekit-client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { useMeetingCamera } from "./use-meeting-camera";
 
@@ -42,7 +43,7 @@ function mount(options: { initialVideoDeviceId?: string; devices?: MediaDeviceIn
     root = createRoot(container);
     root.render(<Probe />);
   });
-  return { room, setCameraEnabled, enumerateDevices, camera: () => latest! };
+  return { room, setCameraEnabled, enumerateDevices, addToast, camera: () => latest! };
 }
 
 const camera = (deviceId: string) =>
@@ -71,5 +72,120 @@ describe("choosing the system camera", () => {
     await act(async () => cameraHook().refreshVideoDevices());
     expect(room.options.videoCaptureDefaults?.deviceId).toBe("default");
     expect(setCameraEnabled).not.toHaveBeenCalled();
+  });
+});
+
+/** A camera publication on the room, whose track can end the way an unplug ends it. */
+function publishFakeCamera(room: Room, track: Partial<{ isMuted: boolean; readyState: string; restartTrack: () => Promise<unknown> }> = {}) {
+  const emitter = new EventEmitter();
+  const fakeTrack = Object.assign(emitter, {
+    isMuted: track.isMuted ?? false,
+    mediaStreamTrack: { readyState: track.readyState ?? "live" },
+    restartTrack: vi.fn(track.restartTrack ?? (async () => undefined)),
+  });
+  const publication = { source: Track.Source.Camera, track: fakeTrack };
+  vi.spyOn(room.localParticipant, "getTrackPublication").mockImplementation((source) =>
+    (source === Track.Source.Camera ? publication : undefined) as never);
+  // Bind the watcher to the track, as a real publish would.
+  act(() => {
+    room.emit(RoomEvent.LocalTrackPublished, publication as never, room.localParticipant);
+  });
+  return {
+    track: fakeTrack,
+    /** LocalParticipant.handleTrackEnded: no camera to fall back to, so it mutes. */
+    deviceLost() {
+      fakeTrack.emit(TrackEvent.Ended, fakeTrack);
+      fakeTrack.isMuted = true;
+      room.emit(RoomEvent.TrackMuted, publication as never, room.localParticipant);
+    },
+    mutedByChoice() {
+      fakeTrack.isMuted = true;
+      room.emit(RoomEvent.TrackMuted, publication as never, room.localParticipant);
+    },
+  };
+}
+
+describe("a camera whose device went away", () => {
+  it("says so, and turns the camera back on when one is connected", async () => {
+    const { room, setCameraEnabled, enumerateDevices, camera: cameraHook, addToast } = mount();
+    setCameraEnabled.mockResolvedValue(undefined);
+    const published = publishFakeCamera(room);
+
+    act(() => published.deviceLost());
+    expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Camera disconnected" }));
+
+    enumerateDevices.mockResolvedValue([camera("cam-2")]);
+    await act(async () => cameraHook().refreshVideoDevices());
+
+    expect(setCameraEnabled).toHaveBeenCalledWith(true, expect.anything(), expect.anything());
+    expect(addToast).toHaveBeenLastCalledWith(expect.objectContaining({ title: "Camera back on" }));
+  });
+
+  it("leaves a camera somebody turned off alone", async () => {
+    const { room, setCameraEnabled, enumerateDevices, camera: cameraHook, addToast } = mount();
+    const published = publishFakeCamera(room);
+
+    act(() => published.mutedByChoice());
+    enumerateDevices.mockResolvedValue([camera("cam-2")]);
+    await act(async () => cameraHook().refreshVideoDevices());
+
+    expect(setCameraEnabled).not.toHaveBeenCalled();
+    expect(addToast).not.toHaveBeenCalled();
+  });
+});
+
+describe("a camera the system stopped while the page was away", () => {
+  const IPAD_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Safari/605.1.15";
+  let visibility: DocumentVisibilityState = "visible";
+  beforeAll(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
+  });
+  afterEach(() => {
+    visibility = "visible";
+    vi.unstubAllGlobals();
+    Reflect.deleteProperty(navigator, "userAgent");
+    Reflect.deleteProperty(navigator, "maxTouchPoints");
+  });
+
+  function asIpad() {
+    Object.defineProperty(navigator, "userAgent", { configurable: true, get: () => IPAD_UA });
+    Object.defineProperty(navigator, "maxTouchPoints", { configurable: true, get: () => 5 });
+  }
+
+  it("re-opens it on an iPad, which LiveKit takes for a Mac", async () => {
+    asIpad();
+    const { room } = mount();
+    const published = publishFakeCamera(room, { readyState: "ended" });
+
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+
+    expect(published.track.restartTrack).toHaveBeenCalledTimes(1);
+  });
+
+  it("turns it off and says so when it cannot be re-opened", async () => {
+    asIpad();
+    const { room, setCameraEnabled, addToast } = mount();
+    setCameraEnabled.mockResolvedValue(undefined);
+    publishFakeCamera(room, {
+      readyState: "ended",
+      restartTrack: async () => {
+        throw new DOMException("Could not start video source", "NotReadableError");
+      },
+    });
+
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+
+    expect(setCameraEnabled).toHaveBeenCalledWith(false);
+    expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Camera stopped" }));
+  });
+
+  it("leaves a live camera alone", async () => {
+    asIpad();
+    const { room } = mount();
+    const published = publishFakeCamera(room, { readyState: "live" });
+
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+
+    expect(published.track.restartTrack).not.toHaveBeenCalled();
   });
 });

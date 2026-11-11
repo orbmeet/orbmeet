@@ -1,4 +1,5 @@
 import { isKey } from "@orbmeet/ui/keyboard";
+import { formatInstant } from "@/lib/time-zone";
 import { BrandMark } from "@orbmeet/ui/react";
 import * as React from "react";
 import {
@@ -687,11 +688,7 @@ export function PreJoinScreen({
     if (!scheduledStartsAt) return null;
     const startsAt = new Date(scheduledStartsAt);
     if (Number.isNaN(startsAt.getTime())) return null;
-    return new Intl.DateTimeFormat(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-      ...(scheduledTimeZone ? { timeZone: scheduledTimeZone } : {}),
-    }).format(startsAt);
+    return formatInstant(startsAt, scheduledTimeZone, { dateStyle: "medium", timeStyle: "short" });
   }, [scheduledStartsAt, scheduledTimeZone]);
 
   const joinLabel = scheduledNotOpenYet

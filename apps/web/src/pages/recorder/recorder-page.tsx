@@ -1,5 +1,6 @@
 import { ClientOnly, useRouter } from "@tanstack/react-router";
 import * as React from "react";
+import { LIVE_CALL_PAGE_CLASS } from "@/modules/meetings/client/use-live-call-page";
 import { useMeetingClockSync } from "@/modules/meetings/client/use-meeting-elapsed-seconds";
 import { spinner } from "@orbmeet/ui/styles/animations";
 import { decor, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
@@ -124,8 +125,8 @@ function RecorderPageInner() {
   }, [router]);
 
   React.useEffect(() => {
-    document.body.classList.add("meet-route");
-    return () => document.body.classList.remove("meet-route");
+    document.documentElement.classList.add(LIVE_CALL_PAGE_CLASS);
+    return () => document.documentElement.classList.remove(LIVE_CALL_PAGE_CLASS);
   }, []);
 
   // The recorder route is only for the internal LiveKit egress bot, which

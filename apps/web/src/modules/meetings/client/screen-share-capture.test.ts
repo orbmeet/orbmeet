@@ -25,6 +25,7 @@ function fakePort(overrides: Partial<ScreenShareCapturePort> = {}) {
     isSharing: vi.fn(() => false),
     stopSharing: vi.fn(async () => {}),
     canCaptureDisplay: vi.fn(() => true),
+    refusalIsAmbiguous: vi.fn(() => false),
     capture: vi.fn(async () => [track as unknown as LocalTrack]),
     publish: vi.fn(async () => {}),
     request: vi.fn(async () => {}),
@@ -154,6 +155,27 @@ describe("ScreenShareCapture", () => {
     await capture.toggle();
     expect(port.notify).not.toHaveBeenCalled();
     expect(state()).toBe("idle");
+    capture.deactivate();
+  });
+
+  it("says how to tell a cancel from a site setting where the browser cannot", async () => {
+    const safariRefusal = new DOMException(
+      "The request is not allowed by the user agent or the platform in the current context, possibly because the user denied permission.",
+      "NotAllowedError",
+    );
+    const { capture, port, state } = started({
+      refusalIsAmbiguous: vi.fn(() => true),
+      capture: vi.fn(async () => {
+        throw safariRefusal;
+      }),
+    });
+    await capture.toggle();
+    expect(port.notify).toHaveBeenCalledWith("refused");
+    expect(port.logError).not.toHaveBeenCalled();
+    expect(state()).toBe("idle");
+    capture.setCanModerate(true);
+    await capture.toggle();
+    expect(port.notify).toHaveBeenLastCalledWith("refused");
     capture.deactivate();
   });
 

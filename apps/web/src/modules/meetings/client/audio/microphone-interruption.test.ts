@@ -65,6 +65,20 @@ function createDevice() {
       state.upstreamPaused = true;
       state.flowing = false;
     },
+    /** A call as the audio session reports it: interrupted, then active with the capture still muted. */
+    callInterrupts() {
+      this.callArrives();
+      state.audioSession = "interrupted";
+    },
+    callEnds() {
+      state.audioSession = "active";
+    },
+    /** The browser's own pause control (Safari's address-bar microphone): a mute, nothing else. */
+    userPausesInBrowser() {
+      state.trackMuted = true;
+      state.upstreamPaused = true;
+      state.flowing = false;
+    },
     get armed() {
       return pendingGesture !== null;
     },
@@ -111,19 +125,47 @@ describe("MicrophoneInterruption", () => {
     watch.dispose();
   });
 
-  it("notices a capture the system muted, and arms the next gesture", async () => {
+  it("notices a capture the system interrupted, and arms the next gesture", async () => {
     const device = createDevice();
     const { watch, diagnostics } = track(device);
     watch.start();
     await samples(1);
 
-    device.callArrives();
+    device.callInterrupts();
     await samples(1);
 
-    expect(watch.interrupted).toBe(true);
+    expect(watch.interruptionCause).toBe("session");
+    expect(diagnostics[0]).toMatchObject({ event: "interrupted", cause: "session" });
+    expect(device.armed).toBe(true);
+    watch.dispose();
+  });
+
+  it("leaves a bare mute, such as the browser's own pause, to the user", async () => {
+    const device = createDevice();
+    const { watch, diagnostics } = track(device);
+    watch.start();
+    await samples(1);
+
+    device.userPausesInBrowser();
+    await samples(1);
     expect(watch.interruptionCause).toBe("device");
     expect(diagnostics[0]).toMatchObject({ event: "interrupted", cause: "device" });
-    expect(device.armed).toBe(true);
+
+    // No restart on a timer, on returning to the page, or on a tap elsewhere.
+    device.state.visible = false;
+    watch.check();
+    device.state.visible = true;
+    watch.check();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(device.armed).toBe(false);
+    expect(device.port.restart).not.toHaveBeenCalled();
+
+    // Resume is the user's to press.
+    watch.resumeFromUserGesture();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(device.port.restart).toHaveBeenCalledTimes(1);
+    await samples(2);
+    expect(watch.interrupted).toBe(false);
     watch.dispose();
   });
 
@@ -195,10 +237,11 @@ describe("MicrophoneInterruption", () => {
     const { watch } = track(device);
     watch.start();
     await samples(1);
-    device.callArrives();
+    device.callInterrupts();
     await samples(1);
-
-    await vi.advanceTimersByTimeAsync(1_000);
+    device.callEnds();
+    watch.check();
+    await vi.advanceTimersByTimeAsync(0);
     expect(device.port.restart).toHaveBeenCalledTimes(1);
     await samples(2);
 
@@ -214,7 +257,7 @@ describe("MicrophoneInterruption", () => {
     const { watch, diagnostics } = track(device);
     watch.start();
     await samples(1);
-    device.callArrives();
+    device.callInterrupts();
     await samples(1);
 
     device.fireGesture();
@@ -235,23 +278,28 @@ describe("MicrophoneInterruption", () => {
     const { watch } = track(device);
     watch.start();
     await samples(1);
-    device.callArrives();
+    device.callInterrupts();
     watch.check();
+    // The call ends: that is what recovery waits for, so it restarts once at once.
+    device.callEnds();
+    watch.check();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(device.port.restart).toHaveBeenCalledTimes(1);
 
-    // Reconnects, session state changes, mute toggles: each checks again, and
-    // none is what recovery waits for.
+    // Reconnects, mute toggles: each checks again, and none is a reason to
+    // restart again.
     for (let i = 0; i < 20; i++) {
       watch.check();
       await vi.advanceTimersByTimeAsync(0);
     }
-    expect(device.port.restart).not.toHaveBeenCalled();
-
-    // The backoff is what retries.
-    await vi.advanceTimersByTimeAsync(1_000);
     expect(device.port.restart).toHaveBeenCalledTimes(1);
+
+    // The backoff is what retries: its second step, after the first attempt.
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(device.port.restart).toHaveBeenCalledTimes(2);
     watch.check();
     await vi.advanceTimersByTimeAsync(0);
-    expect(device.port.restart).toHaveBeenCalledTimes(1);
+    expect(device.port.restart).toHaveBeenCalledTimes(2);
     watch.dispose();
   });
 
@@ -261,9 +309,10 @@ describe("MicrophoneInterruption", () => {
     watch.start();
     await samples(1);
     device.state.visible = false;
-    device.callArrives();
-    // Noticed by sampling, with no check while hidden.
+    device.callInterrupts();
+    // Noticed by sampling, with no check while hidden; the call ends unseen.
     await samples(1);
+    device.callEnds();
     expect(watch.interrupted).toBe(true);
     expect(device.port.restart).not.toHaveBeenCalled();
 

@@ -14,6 +14,10 @@ import {
 import { emitMeetingEntryDiagnostic } from "@/modules/meetings/client/entry/diagnostics";
 import { installMeetingMicrophoneSpeechHint } from "@/modules/meetings/client/audio/speech-content-hint";
 import { useCommittedRef } from "@orbmeet/ui/react";
+import {
+  InitialMeetingMediaContext,
+  type InitialMeetingMediaResult,
+} from "@/modules/meetings/client/initial-meeting-media";
 
 type InitialMediaParticipant = Pick<
   Room["localParticipant"],
@@ -52,11 +56,6 @@ export async function publishInitialMeetingMedia(
     audioError: audio.status === "rejected" ? audio.reason : null,
     videoError: video.status === "rejected" ? video.reason : null,
   };
-}
-
-export interface InitialMeetingMediaResult {
-  audioError: unknown | null;
-  videoError: unknown | null;
 }
 
 interface MeetingConnectionProps {
@@ -127,6 +126,8 @@ export function MeetingConnection({
     videoDeviceId,
   }));
   const [connected, setConnected] = React.useState(false);
+  const [initialMediaSettled, setInitialMediaSettled] =
+    React.useState<Promise<InitialMeetingMediaResult> | null>(null);
   const { connect, disconnect } = useSequentialRoomConnectDisconnect(room);
 
   const callbacksRef = useCommittedRef({
@@ -157,12 +158,10 @@ export function MeetingConnection({
       // Wait for the initial mic/camera publish to settle before signalling
       // media-settled. If SignalConnected never fired (e.g. a fast connect),
       // there is no publish to wait on — settle immediately.
-      const pending = initialMediaPromiseRef.current;
-      if (pending) {
-        void pending.then((result) => callbacksRef.current.onInitialMediaSettled(result));
-      } else {
-        callbacksRef.current.onInitialMediaSettled({ audioError: null, videoError: null });
-      }
+      const pending = initialMediaPromiseRef.current
+        ?? Promise.resolve<InitialMeetingMediaResult>({ audioError: null, videoError: null });
+      setInitialMediaSettled(pending);
+      void pending.then((result) => callbacksRef.current.onInitialMediaSettled(result));
     };
     const handleDisconnected = (reason?: DisconnectReason) => {
       setConnected(false);
@@ -259,7 +258,9 @@ export function MeetingConnection({
     // rather than carried over as a dead class.
     <div>
       <RoomContext.Provider value={room}>
-        {connected ? children : fallback}
+        <InitialMeetingMediaContext.Provider value={initialMediaSettled}>
+          {connected ? children : fallback}
+        </InitialMeetingMediaContext.Provider>
       </RoomContext.Provider>
     </div>
   );

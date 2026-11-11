@@ -35,6 +35,8 @@ export interface MicrophoneControllerOptions {
   onRecoveryAttempt?: (snapshot: MicrophoneRecoverySnapshot) => void;
   onRecoveryResult?: (result: MicrophoneRecoveryResult) => void;
   onFailure?: (failure: MicrophoneFailure, error: unknown) => void;
+  /** The microphone was muted because its device went away, not by anyone's choice. */
+  onDeviceLost?: () => void;
   /** Seam for tests; defaults to the real repair ladder. */
   recover?: typeof recoverLocalMicrophoneAfterUnmute;
 }
@@ -52,6 +54,8 @@ export class MicrophoneController {
   private disposed = false;
   /** The next track event expected from a mutation owned by this controller. */
   private expectedPortState: MicrophoneIntent | null = null;
+  /** Off because the device went away while on; nobody chose it. */
+  private lost = false;
 
   constructor(
     private readonly port: MicrophoneControllerPort,
@@ -65,13 +69,24 @@ export class MicrophoneController {
     return this.intent === "on";
   }
 
+  /**
+   * Off only because its device went away. Recorded so the microphone the
+   * participant had on comes back with a device, while a mute anyone chose
+   * stays a mute.
+   */
+  get lostToDevice(): boolean {
+    return this.lost;
+  }
+
   /** True while the loop is driving the track toward intent. */
   get pending(): boolean {
     return this.loop !== null;
   }
 
   setIntent(next: MicrophoneIntent): void {
-    if (this.disposed || next === this.intent) return;
+    if (this.disposed) return;
+    this.lost = false;
+    if (next === this.intent) return;
     this.intent = next;
     this.generation += 1;
     this.options.onStateChange?.();
@@ -100,8 +115,13 @@ export class MicrophoneController {
    * what keeps reconciliation from fighting the rest of the app. Only the
    * exact event expected from our own current mutation is ignored; an external
    * mute while recovery is waiting is still authoritative.
+   *
+   * `cause` says what the caller knows that the track does not: `"device-lost"`
+   * is LiveKit muting a microphone whose device ended and could not be
+   * replaced. That mute is adopted too — there is nothing to capture — but
+   * recorded as a loss, for {@link restoreAfterDeviceLoss}.
    */
-  syncFromPort(): void {
+  syncFromPort(cause?: "device-lost"): void {
     if (this.disposed) return;
     const actual: MicrophoneIntent = this.port.isMicrophoneEnabled ? "on" : "off";
     if (actual === this.expectedPortState) {
@@ -109,10 +129,24 @@ export class MicrophoneController {
       return;
     }
     if (actual === this.intent) return;
+    const lostNow = cause === "device-lost" && actual === "off";
+    this.lost = lostNow;
     this.intent = actual;
     this.generation += 1;
     this.verifiedGeneration = this.generation;
     this.options.onStateChange?.();
+    if (lostNow) this.options.onDeviceLost?.();
+  }
+
+  /**
+   * Turns back on a microphone that went off only because its device went
+   * away, now that one is available. False when there is nothing to restore:
+   * the microphone is on, or someone chose the mute.
+   */
+  restoreAfterDeviceLoss(): boolean {
+    if (this.disposed || !this.lost) return false;
+    this.setIntent("on");
+    return true;
   }
 
   /**

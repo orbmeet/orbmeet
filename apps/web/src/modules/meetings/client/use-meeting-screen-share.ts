@@ -24,7 +24,11 @@ import {
 } from "@/modules/meetings/server/runtime/live.functions";
 import type { HostPermissionRequest } from "./types";
 import { useCommittedRef, type useToast } from "@orbmeet/ui/react";
-import { canCaptureDisplay, getPlatformEnvironment } from "@/lib/browser-capabilities";
+import {
+  canCaptureDisplay,
+  getPlatformEnvironment,
+  hasAmbiguousCaptureRefusal,
+} from "@/lib/browser-capabilities";
 
 type AddToast = ReturnType<typeof useToast>["add"];
 
@@ -68,6 +72,11 @@ const NOTICES: Record<ScreenShareNotice, Parameters<AddToast>[0]> = {
     title: "Screen share approval timed out",
     description: "The grant did not reach your browser. Request screen share again.",
     data: { variant: "error" },
+  },
+  refused: {
+    title: "Screen sharing didn't start",
+    description: "If you didn't cancel it, your browser may be set to deny screen sharing for this site. Check its website settings, then try again.",
+    data: { variant: "info" },
   },
 };
 
@@ -130,6 +139,34 @@ export async function publishScreenTracksPerKind(
   }
 }
 
+/**
+ * One share, published as two tracks that the browser and LiveKit end one at
+ * a time. The picture ending (its window closed, its display unplugged) ends
+ * the share, so its sound is stopped too rather than left playing to the room
+ * with no control to stop it. The sound ending alone (a loopback device reset)
+ * leaves the picture showing. Only when neither is left is the share over.
+ */
+export function settleEndedScreenSharePart(
+  participant: {
+    getTrackPublication: (source: Track.Source) => { track?: LocalTrack } | undefined;
+    unpublishTrack: (track: LocalTrack) => Promise<unknown>;
+  },
+  source: Track.Source,
+  onShareOver: () => void,
+): void {
+  if (source !== Track.Source.ScreenShare && source !== Track.Source.ScreenShareAudio) return;
+  const sound = participant.getTrackPublication(Track.Source.ScreenShareAudio)?.track;
+  if (source === Track.Source.ScreenShare && sound) {
+    // Its own unpublish comes back here, with nothing left: the share is over then.
+    void participant.unpublishTrack(sound).catch((error: unknown) => {
+      logError("[Meeting] Failed to stop screen share sound:", error);
+    });
+    return;
+  }
+  if (participant.getTrackPublication(Track.Source.ScreenShare)) return;
+  onShareOver();
+}
+
 function createCapture(
   room: Room | undefined,
   meetingId: string,
@@ -147,6 +184,7 @@ function createCapture(
       await participant().setScreenShareEnabled(false);
     },
     canCaptureDisplay: () => canCaptureDisplay(getPlatformEnvironment()),
+    refusalIsAmbiguous: () => hasAmbiguousCaptureRefusal(getPlatformEnvironment()),
     capture: () => participant().createScreenTracks(getScreenShareCaptureOptions()),
     publish: (tracks) => publishScreenTracksPerKind(participant(), tracks),
     request: () => requestScreenShare({ data }),
@@ -221,12 +259,7 @@ export function useMeetingScreenShare({
   React.useEffect(() => {
     if (!roomInstance) return;
     const handleLocalTrackUnpublished = (publication: LocalTrackPublication) => {
-      if (
-        publication.source === Track.Source.ScreenShare ||
-        publication.source === Track.Source.ScreenShareAudio
-      ) {
-        capture.giveBack();
-      }
+      settleEndedScreenSharePart(roomInstance.localParticipant, publication.source, () => capture.giveBack());
     };
     const handleDisconnected = () => capture.disconnected();
     roomInstance.on(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished);

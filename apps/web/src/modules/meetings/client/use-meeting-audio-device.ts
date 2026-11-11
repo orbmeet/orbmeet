@@ -16,6 +16,7 @@ export function useMeetingAudioDevice({
   initialAudioOutputDeviceId,
   addToast,
   onChoice,
+  onInputAvailable,
 }: {
   roomInstance: Room | undefined;
   initialAudioDeviceId: string | undefined;
@@ -25,8 +26,14 @@ export function useMeetingAudioDevice({
   onChoice?: (
     choice: { audioDeviceId: string | undefined } | { audioOutputDeviceId: string | undefined },
   ) => void;
+  /**
+   * A refresh found a microphone to use and pointed the room at it — the
+   * moment a microphone lost with its device can come back.
+   */
+  onInputAvailable?: () => void;
 }) {
   const onChoiceRef = useCommittedRef(onChoice);
+  const onInputAvailableRef = useCommittedRef(onInputAvailable);
   const [audioDevices, setAudioDevices] = React.useState<MediaDeviceInfo[]>([]);
   const [currentAudioDeviceId, setCurrentAudioDeviceId] = React.useState<string | undefined>(
     initialAudioDeviceId,
@@ -91,12 +98,14 @@ export function useMeetingAudioDevice({
               "Could not switch to the system microphone. Reconnect a microphone and try again.",
             data: { variant: "error" },
           });
+          return;
         }
       }
+      if (uniqueDevices.length > 0) onInputAvailableRef.current?.();
     } catch (err) {
       logError("[Meeting] Failed to enumerate audio devices:", err);
     }
-  }), [addToast, enqueueMediaOperation, roomInstance]);
+  }), [addToast, enqueueMediaOperation, onInputAvailableRef, roomInstance]);
 
   React.useEffect(() => {
     void refreshAudioDevices();

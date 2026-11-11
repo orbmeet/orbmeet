@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { coerceSuggestedTimeZone, deviceTimeZone, formatCalendarDay } from "./time-zone";
+import { coerceSuggestedTimeZone, deviceTimeZone, formatCalendarDay, formatInstant } from "./time-zone";
 
 describe("coerceSuggestedTimeZone", () => {
   it("keeps a usable zone", () => {
@@ -73,5 +73,24 @@ describe("deviceTimeZone", () => {
   it("is UTC when Chromium cannot name the system's zone", () => {
     deviceReports("Etc/Unknown");
     expect(deviceTimeZone()).toBe("UTC");
+  });
+});
+
+describe("formatInstant", () => {
+  const instant = new Date("2026-11-11T09:30:00Z");
+  const options = { dateStyle: "medium", timeStyle: "short" } as const;
+
+  it("formats in the given zone", () => {
+    expect(formatInstant(instant, "Asia/Dhaka", options)).toBe(
+      new Intl.DateTimeFormat(undefined, { ...options, timeZone: "Asia/Dhaka" }).format(instant),
+    );
+  });
+
+  it("reads a zone this browser does not know in the viewer's own zone, rather than throwing", () => {
+    // What a guest's older browser does with a zone from a newer tzdata release.
+    expect(() => new Intl.DateTimeFormat(undefined, { timeZone: "Mars/Olympus_Mons" })).toThrow(RangeError);
+    expect(formatInstant(instant, "Mars/Olympus_Mons", options)).toBe(
+      new Intl.DateTimeFormat(undefined, options).format(instant),
+    );
   });
 });

@@ -7,6 +7,8 @@ import { RoomAudioRenderer } from "@livekit/components-react";
 import { LiveMeeting } from "@/pages/meeting/live-meeting";
 import { useDocumentTitle } from "@/app/shell/use-document-title";
 import { MeetingConnection } from "@/modules/meetings/client/components/meeting-connection";
+import { MeetingViewBoundary } from "@/modules/meetings/client/components/meeting-view-boundary";
+import { useLiveCallPage } from "@/modules/meetings/client/use-live-call-page";
 import { AudioPlaybackBlockedBanner } from "@/modules/meetings/client/components/audio-playback-blocked-banner";
 import { PreJoinScreen, stopWarmupAudio } from "@/modules/meetings/client/components/pre-join-screen";
 import { MeetingStatusScreen } from "@/modules/meetings/client/components/meeting-status-screen";
@@ -350,11 +352,8 @@ function LiveMeetingRoute() {
     setInMeetingElsewhere(viewerAdmissions.split(" ").some((admissionId) => admissionId && admissionId !== own));
   }, [code, viewerAdmissions]);
 
-  React.useEffect(() => {
-    if (phase !== "connected") return;
-    document.body.classList.add("meet-route");
-    return () => document.body.classList.remove("meet-route");
-  }, [phase]);
+  // From the first connect through every reconnect the page belongs to the call.
+  useLiveCallPage(phase === "connecting" || phase === "connected" || phase === "recovering");
 
   // The macOS microphone warmup deliberately survives the pre-join component
   // while LiveKit takes ownership of the device. A terminal join failure has
@@ -500,17 +499,19 @@ function LiveMeetingRoute() {
       <RoomAudioRenderer />
       <AudioPlaybackBlockedBanner />
       {/* The board keeps its pager and zoom along the bottom edge. */}
-      <ToastProvider liftAboveBottomControls>
-        <TooltipProvider>
-          <LiveMeeting
-            code={code}
-            joinResult={access}
-            entry={session}
-            showConnectingOverlay={phase !== "connected"}
-            isAuthenticated={isSignedIn}
-          />
-        </TooltipProvider>
-      </ToastProvider>
+      <MeetingViewBoundary>
+        <ToastProvider liftAboveBottomControls>
+          <TooltipProvider>
+            <LiveMeeting
+              code={code}
+              joinResult={access}
+              entry={session}
+              showConnectingOverlay={phase !== "connected"}
+              isAuthenticated={isSignedIn}
+            />
+          </TooltipProvider>
+        </ToastProvider>
+      </MeetingViewBoundary>
     </MeetingConnection>
   );
 }

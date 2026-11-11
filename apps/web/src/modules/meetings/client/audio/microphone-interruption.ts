@@ -19,12 +19,14 @@
  *   still sends a frame every 400 ms through silence, so a quiet speaker is
  *   never mistaken for this; it catches a capture that stalls without saying so.
  *
- * Recovery is a restart of the capture (a new `getUserMedia`), tried with a
- * backoff while the page is visible and the session is not interrupted, at
- * once when either of those changes, on the next user gesture anywhere, and
- * from the explicit affordance. The state clears only once packets are seen
- * flowing again — a restart that returns a track the system still holds muted
- * is not a recovery.
+ * Recovery is a restart of the capture (a new `getUserMedia`). For `session`
+ * and `silent`, which only the system causes, it is tried with a backoff while
+ * the page is visible and the session is not interrupted, at once when either
+ * of those changes, and on the next user gesture anywhere. A `device` mute may
+ * be the user's own (the browser's pause control), so it waits for the
+ * explicit affordance. The state clears only once packets are seen flowing
+ * again — a restart that returns a track the system still holds muted is not
+ * a recovery.
  */
 
 export type MicrophoneInterruptionCause = "session" | "device" | "silent";
@@ -295,10 +297,24 @@ export class MicrophoneInterruption {
    * hands back a muted track or refuses), and a hidden page may not capture.
    */
   private mayRestartUnprompted(): boolean {
-    if (!this.restartAllowed()) return false;
+    if (!this.recoversUnprompted() || !this.restartAllowed()) return false;
     // The system may have let go by itself; the next sample will tell, and a
     // restart then would only cut the sound it just gave back.
     return this.observedCause() !== null;
+  }
+
+  /**
+   * Whether this interruption may be undone without the user asking.
+   *
+   * Only with evidence the system did it: the audio session said it was
+   * interrupted, or packets stopped while the capture claimed to be live. A
+   * capture that is merely muted is also what the browser's own pause control
+   * produces (Safari's address-bar microphone), and restarting that would undo
+   * the user's choice, or, under "Ask", put a permission prompt up every few
+   * seconds. That one waits for Resume.
+   */
+  private recoversUnprompted(): boolean {
+    return this.cause === "session" || this.cause === "silent";
   }
 
   /** What unprompted recovery waits for: a page that may capture, and audio the system has let go of. */
@@ -308,7 +324,7 @@ export class MicrophoneInterruption {
 
   private scheduleRetry(): void {
     this.clearRetry();
-    if (!this.cause) return;
+    if (!this.recoversUnprompted()) return;
     const delays = MICROPHONE_RESUME_DELAYS_MS;
     const delay = delays[Math.min(this.attempts, delays.length - 1)];
     this.retryTimer = setTimeout(() => {
@@ -352,7 +368,7 @@ export class MicrophoneInterruption {
   }
 
   private arm(): void {
-    if (this.disposed || this.disarmGesture) return;
+    if (this.disposed || this.disarmGesture || !this.recoversUnprompted()) return;
     this.disarmGesture = this.port.onNextUserGesture(() => {
       this.disarmGesture = null;
       if (this.now() - this.lastAttemptAt < GESTURE_RESTART_SPACING_MS) {

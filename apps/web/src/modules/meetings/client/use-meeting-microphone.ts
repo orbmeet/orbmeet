@@ -23,6 +23,11 @@ import {
 import { onNextUserGesture } from "@/modules/meetings/client/audio/user-gesture";
 import { emitMeetingEntryDiagnostic } from "@/modules/meetings/client/entry/diagnostics";
 import { useCommittedRef } from "@orbmeet/ui/react";
+import { watchLocalDeviceLoss } from "@/modules/meetings/client/local-device-loss";
+import {
+  InitialMeetingMediaContext,
+  type InitialMeetingMediaResult,
+} from "@/modules/meetings/client/initial-meeting-media";
 
 interface UseMeetingMicrophoneParams {
   roomInstance: Room | undefined;
@@ -87,6 +92,59 @@ const FAILURE_TOASTS: Record<
 };
 
 /**
+ * Each join's initial publish is reported once, even when the view that
+ * reports it is rebuilt.
+ */
+const reportedInitialMedia = new WeakSet<Promise<InitialMeetingMediaResult>>();
+
+/** Surfaces a failed first microphone. Returns a cleanup for a pending retry. */
+function reportInitialMicrophoneFailure(
+  error: Error,
+  controller: MicrophoneController,
+  callbacks: Pick<UseMeetingMicrophoneParams, "addToast" | "code">,
+): () => void {
+  const failure = getDeviceFailure(error);
+  emitMeetingEntryDiagnostic("initial_microphone_publish_failed", {
+    code: callbacks.code,
+    failure,
+    errorName: error.name,
+    errorMessage: error.message,
+    pageVisible: isPageVisible(),
+  });
+
+  // A browser refuses capture to a page that is not showing: Chrome on
+  // Android denies a backgrounded tab, and that is exactly when an automatic
+  // rejoin runs. The joiner asked for their microphone, so ask once more
+  // when the page shows; a refusal that stands then surfaces as the
+  // controller's own unmute failure.
+  if (failure === MediaDeviceFailure.PermissionDenied) {
+    const retry = () => {
+      emitMeetingEntryDiagnostic("initial_microphone_retry", { code: callbacks.code });
+      controller.setIntent("on");
+    };
+    if (isPageVisible()) {
+      retry();
+      return () => {};
+    }
+    const handleVisible = () => {
+      if (!isPageVisible()) return;
+      document.removeEventListener("visibilitychange", handleVisible);
+      retry();
+    };
+    document.addEventListener("visibilitychange", handleVisible);
+    return () => document.removeEventListener("visibilitychange", handleVisible);
+  }
+
+  callbacks.addToast({
+    title: "Joined with microphone off",
+    description:
+      "The selected microphone could not start. Choose another microphone, then unmute.",
+    data: { variant: "error" },
+  });
+  return () => {};
+}
+
+/**
  * Binds the microphone controller to React and to LiveKit's events.
  *
  * The hook holds no microphone state of its own: `MicrophoneController` owns
@@ -102,7 +160,7 @@ export function useMeetingMicrophone({
   const [, bumpRenderVersion] = React.useReducer((version: number) => version + 1, 0);
   const [controller, setController] = React.useState<MicrophoneController | null>(null);
   const [interruption, setInterruption] = React.useState<MicrophoneInterruption | null>(null);
-  const initialFailureReportedForRoomRef = React.useRef<Room | undefined>(undefined);
+  const initialMedia = React.useContext(InitialMeetingMediaContext);
 
   const callbacksRef = useCommittedRef({ addToast, code, onChoice });
 
@@ -150,6 +208,14 @@ export function useMeetingMicrophone({
             data: { variant: "error" },
           });
         },
+        onDeviceLost: () => {
+          emitMeetingEntryDiagnostic("local_mic_device_lost", { code: callbacksRef.current.code });
+          callbacksRef.current.addToast({
+            title: "Microphone disconnected",
+            description: "You're muted. Your microphone turns back on when one is connected.",
+            data: { variant: "error" },
+          });
+        },
       },
     );
 
@@ -164,9 +230,11 @@ export function useMeetingMicrophone({
   // the controller did not cause are adopted as intent so reconciliation never
   // fights teardown or a server-side mute. Publication counts too: the join's
   // first publish often lands after this controller was seeded "off", and a
-  // first publish emits no unmute.
+  // first publish emits no unmute. A mute that follows the device ending is
+  // adopted as a loss, not a choice.
   React.useEffect(() => {
     if (!roomInstance || !controller) return;
+    const deviceLoss = watchLocalDeviceLoss(roomInstance, Track.Source.Microphone);
 
     const handleTrackMuteChanged = (
       publication: TrackPublication,
@@ -178,7 +246,7 @@ export function useMeetingMicrophone({
       ) {
         return;
       }
-      controller.syncFromPort();
+      controller.syncFromPort(deviceLoss.lost ? "device-lost" : undefined);
     };
 
     const handleLocalPublicationChanged = (publication: TrackPublication) => {
@@ -198,6 +266,7 @@ export function useMeetingMicrophone({
         .off(RoomEvent.TrackUnmuted, handleTrackMuteChanged)
         .off(RoomEvent.LocalTrackPublished, handleLocalPublicationChanged)
         .off(RoomEvent.LocalTrackUnpublished, handleLocalPublicationChanged);
+      deviceLoss.dispose();
     };
   }, [roomInstance, controller]);
 
@@ -348,61 +417,40 @@ export function useMeetingMicrophone({
     interruption?.check();
   }, [interruption, intentOn]);
 
-  // Initial capture starts before the meeting UI mounts. If it loses the race
-  // with RTC connection, the controller-level callback can only log the failure;
-  // surface it as soon as this hook receives the LiveKit connection.
+  // The join's own publish usually settles after this view mounted, so its
+  // outcome is waited for, not sampled: a failure that lands a moment after
+  // mount is still this join's failure.
   React.useEffect(() => {
-    if (!roomInstance || !controller) return;
-    if (initialFailureReportedForRoomRef.current === roomInstance) return;
-    initialFailureReportedForRoomRef.current = roomInstance;
-
-    const participant = roomInstance.localParticipant;
-    const error = participant.lastMicrophoneError;
-    if (!error || participant.isMicrophoneEnabled) return;
-
-    const failure = getDeviceFailure(error);
-    emitMeetingEntryDiagnostic("initial_microphone_publish_failed", {
-      code: callbacksRef.current.code,
-      failure,
-      errorName: error.name,
-      errorMessage: error.message,
-      pageVisible: isPageVisible(),
+    if (!roomInstance || !controller || !initialMedia) return;
+    let disposed = false;
+    let cleanup = () => {};
+    void initialMedia.then(({ audioError }) => {
+      if (disposed || reportedInitialMedia.has(initialMedia)) return;
+      reportedInitialMedia.add(initialMedia);
+      if (!(audioError instanceof Error) || roomInstance.localParticipant.isMicrophoneEnabled) return;
+      cleanup = reportInitialMicrophoneFailure(audioError, controller, callbacksRef.current);
     });
-
-    // A browser refuses capture to a page that is not showing: Chrome on
-    // Android denies a backgrounded tab, and that is exactly when an automatic
-    // rejoin runs. The joiner asked for their microphone, so ask once more
-    // when the page shows; a refusal that stands then surfaces as the
-    // controller's own unmute failure.
-    if (failure === MediaDeviceFailure.PermissionDenied) {
-      const retry = () => {
-        emitMeetingEntryDiagnostic("initial_microphone_retry", { code: callbacksRef.current.code });
-        controller.setIntent("on");
-      };
-      if (isPageVisible()) {
-        retry();
-        return;
-      }
-      const handleVisible = () => {
-        if (!isPageVisible()) return;
-        document.removeEventListener("visibilitychange", handleVisible);
-        retry();
-      };
-      document.addEventListener("visibilitychange", handleVisible);
-      return () => document.removeEventListener("visibilitychange", handleVisible);
-    }
-
-    callbacksRef.current.addToast({
-      title: "Joined with microphone off",
-      description:
-        "The selected microphone could not start. Choose another microphone, then unmute.",
-      data: { variant: "error" },
-    });
-  }, [callbacksRef, controller, roomInstance]);
+    return () => {
+      disposed = true;
+      cleanup();
+    };
+  }, [callbacksRef, controller, initialMedia, roomInstance]);
 
   const resumeMicrophone = React.useCallback(() => {
     interruption?.resumeFromUserGesture();
   }, [interruption]);
+
+  // A microphone is available again (the device refresh has settled which
+  // one): bring back a microphone that only went off with its device.
+  const restoreMicAfterDeviceLoss = React.useCallback(() => {
+    if (!controller?.restoreAfterDeviceLoss()) return;
+    emitMeetingEntryDiagnostic("local_mic_device_restored", { code: callbacksRef.current.code });
+    callbacksRef.current.addToast({
+      title: "Microphone back on",
+      description: "A microphone was connected, so you're unmuted again.",
+      data: { variant: "info" },
+    });
+  }, [callbacksRef, controller]);
 
   const handleToggleMic = React.useCallback(() => {
     if (!controller) return;
@@ -422,6 +470,7 @@ export function useMeetingMicrophone({
     micInterruption: interruption?.interruptionCause ?? null,
     /** Restart the stopped microphone from inside a click. */
     resumeMic: resumeMicrophone,
+    restoreMicAfterDeviceLoss,
     handleToggleMic,
   };
 }

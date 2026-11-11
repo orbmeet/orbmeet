@@ -5,7 +5,7 @@ import {
   type LocalTrackPublication,
   type TrackPublishOptions,
 } from "livekit-client";
-import { publishScreenTracksPerKind } from "./use-meeting-screen-share";
+import { publishScreenTracksPerKind, settleEndedScreenSharePart } from "./use-meeting-screen-share";
 import { SCREEN_SHARE_AUDIO_PUBLISH_OPTIONS, SCREEN_SHARE_PUBLISH_OPTIONS } from "./media-quality";
 
 function makeTrack(kind: Track.Kind): LocalTrack {
@@ -97,5 +97,47 @@ describe("publishScreenTracksPerKind", () => {
       "publish failed",
     );
     expect(unpublishSpy).toHaveBeenCalledWith(video);
+  });
+});
+
+describe("settleEndedScreenSharePart", () => {
+  /** The local participant's screen share publications, as LiveKit leaves them after one ends. */
+  function sharing(remaining: Track.Source[]) {
+    const tracks = new Map(remaining.map((source) => [source, { source } as unknown as LocalTrack]));
+    return {
+      getTrackPublication: vi.fn((source: Track.Source) => (tracks.has(source) ? { track: tracks.get(source) } : undefined)),
+      unpublishTrack: vi.fn(async () => {}),
+      sound: tracks.get(Track.Source.ScreenShareAudio),
+    };
+  }
+
+  it("stops the sound when the picture ends, so it does not play on with no control", () => {
+    const participant = sharing([Track.Source.ScreenShareAudio]);
+    const onShareOver = vi.fn();
+    settleEndedScreenSharePart(participant, Track.Source.ScreenShare, onShareOver);
+    expect(participant.unpublishTrack).toHaveBeenCalledWith(participant.sound);
+    expect(onShareOver).not.toHaveBeenCalled();
+  });
+
+  it("keeps the picture showing when only the sound ends", () => {
+    const participant = sharing([Track.Source.ScreenShare]);
+    const onShareOver = vi.fn();
+    settleEndedScreenSharePart(participant, Track.Source.ScreenShareAudio, onShareOver);
+    expect(participant.unpublishTrack).not.toHaveBeenCalled();
+    expect(onShareOver).not.toHaveBeenCalled();
+  });
+
+  it("ends the share once neither is left", () => {
+    const participant = sharing([]);
+    const onShareOver = vi.fn();
+    settleEndedScreenSharePart(participant, Track.Source.ScreenShareAudio, onShareOver);
+    expect(onShareOver).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores other tracks", () => {
+    const participant = sharing([]);
+    const onShareOver = vi.fn();
+    settleEndedScreenSharePart(participant, Track.Source.Camera, onShareOver);
+    expect(onShareOver).not.toHaveBeenCalled();
   });
 });
