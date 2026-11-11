@@ -76,9 +76,10 @@ const SAME_ZOOM = 0.01;
 const RESTING_ZOOM_TOLERANCE = 0.1;
 
 /**
- * How long a view may sit in the pull room past the last page before it
- * springs back: past `usePullToAddPage`'s wheel idle delay (320ms), so a pull
- * that means to add a page does so first.
+ * How long a view may sit in the pull room past the last page, counted from
+ * the last time it moved or was scrolled, before it springs back: past
+ * `usePullToAddPage`'s wheel idle delay (320ms), so a pull that means to add
+ * a page does so first.
  */
 const PULL_ROOM_RETURN_MS = 500;
 
@@ -227,6 +228,11 @@ export class CameraDirector {
     const onTick = (elapsed: number) => this.step(elapsed);
     const onEvent = (event: TLEventInfo) => {
       if (event.type === "pinch" || event.type === "wheel" || event.type === "keyboard") this.zoomInputAt = Date.now();
+      // A wheel held against the end of the pull room moves nothing, so no
+      // camera change re-arms the return, and it would fire mid-scroll: while
+      // a trackpad's momentum is still arriving, ahead of the page the pull
+      // was for. The return counts from the last wheel event instead.
+      if (event.type === "wheel" && this.pullTimer) this.schedulePullReturn();
       if (this.stale && isWhiteboardCameraInteractionEndEvent(editor, event)) this.syncGeometry();
     };
     // Synchronous, unlike a store listener (batched to the next frame), so

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useMemo, useState, useRef } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useSyncExternalStore } from "react";
 import type { Room } from "livekit-client";
 import { ConnectionState, DataPacket_Kind, RoomEvent } from "livekit-client";
 import { logError, logInfo } from "@/lib/logger";
@@ -6,21 +6,22 @@ import { MESSAGE_LIMITS, LIVEKIT_TOPICS } from "@/modules/meetings/contract/cons
 import { isExpectedClosedPublishError } from "@/modules/meetings/contract/livekit-helpers";
 import { ReceiverRateLimiter } from "@/platform/realtime/receiver-rate-limiter";
 import { useTokenBucket } from "./use-token-bucket";
+import type { MeetingConversation } from "./meeting-conversation";
 
 // Chat rate limit: 5 tokens, 1 token/sec refill
 const CHAT_BUCKET_CAPACITY = 5;
 const CHAT_BUCKET_REFILL_RATE = 1;
 
-/**
- * Chat message — kept compatible with UI consumers.
- */
 export interface LiveKitChatMessage {
   type: "chat";
   id: string;
   userId: string;
   userName: string;
   text: string;
+  /** This browser's clock: when it was sent from here or arrived here. */
   sentAt: number;
+  /** Sent from this browser; a participant's identity changes with every connection. */
+  fromSelf: boolean;
   /**
    * A private message: the one other person it was for. On a message you sent
    * that is the recipient; on one you received, it is you.
@@ -101,53 +102,28 @@ export function parseChatPacket(text: string, localIdentity: string): ChatPacket
  * - Private messages addressed to one identity and delivered only to it, so
  *   nobody else in the room — the recorder included — ever receives them
  *
- * Chat is a stream of messages, not shared state; one missed during a
- * disconnect is gone, as LiveKit does not replay data packets.
+ * Messages are kept in the stay's `conversation`, so a new connection picks
+ * up where the last one left off. One sent while this participant was
+ * disconnected is gone: LiveKit does not replay data packets.
  */
 export function useLiveKitChat(
   room: Room | undefined,
-  userId?: string,
-  userName?: string,
-  maxMessages = 100,
-  onSendError?: () => void
+  conversation: MeetingConversation,
+  onSendError?: () => void,
 ) {
-  const [messages, setMessages] = useState<LiveKitChatMessage[]>([]);
-  const [remoteMessageCount, setRemoteMessageCount] = useState(0);
-  const messageIdsRef = useRef<Set<string>>(new Set());
-  const { consume } = useTokenBucket(
-    CHAT_BUCKET_CAPACITY,
-    CHAT_BUCKET_REFILL_RATE
+  const { messages, receivedCount, readUpTo } = useSyncExternalStore(
+    conversation.subscribe,
+    conversation.getSnapshot,
+    conversation.getSnapshot,
   );
+  const { consume } = useTokenBucket(CHAT_BUCKET_CAPACITY, CHAT_BUCKET_REFILL_RATE);
   const receiverLimiter = useMemo(() => new ReceiverRateLimiter(), []);
-
-  const addMessage = useCallback(
-    (message: LiveKitChatMessage) => {
-      if (messageIdsRef.current.has(message.id)) {
-        return false;
-      }
-      messageIdsRef.current.add(message.id);
-
-      setMessages((prev) => {
-        const updated = [...prev, message];
-        if (updated.length > maxMessages) {
-          const overflow = updated.length - maxMessages;
-          for (let i = 0; i < overflow; i++) {
-            messageIdsRef.current.delete(updated[i].id);
-          }
-          return updated.slice(overflow);
-        }
-        return updated;
-      });
-      return true;
-    },
-    [maxMessages]
-  );
 
   const receive = useEffectEvent((senderIdentity: string, text: string) => {
     const local = room?.localParticipant;
     const packet = parseChatPacket(text, local?.identity ?? "");
     if (!packet) return;
-    const added = addMessage({
+    conversation.add({
       type: "chat",
       id: `${senderIdentity}:${packet.id}`,
       userId: senderIdentity,
@@ -155,9 +131,9 @@ export function useLiveKitChat(
       userName: room?.remoteParticipants.get(senderIdentity)?.name?.trim() || "Participant",
       text: packet.text.trim(),
       sentAt: Date.now(), // local receive time, not sender timestamp
+      fromSelf: false,
       ...(packet.to ? { to: { id: packet.to, name: local?.name?.trim() || "You" } } : {}),
     });
-    if (added) setRemoteMessageCount((count) => count + 1);
   });
 
   useEffect(() => {
@@ -186,10 +162,7 @@ export function useLiveKitChat(
       if (!room || room.state !== ConnectionState.Connected) return false;
 
       const lp = room.localParticipant;
-      const resolvedUserId = lp.identity || userId;
-      const resolvedUserName = lp.name || lp.identity || userName;
-
-      if (!resolvedUserId || !resolvedUserName) {
+      if (!lp.identity) {
         logInfo("[LiveKitChat] Cannot send: identity not available yet");
         return false;
       }
@@ -201,7 +174,7 @@ export function useLiveKitChat(
 
       // Someone who has left cannot be written to; a private message must
       // never fall back to the room.
-      if (to && (to.id === resolvedUserId || !room.remoteParticipants.has(to.id))) {
+      if (to && (to.id === lp.identity || !room.remoteParticipants.has(to.id))) {
         return false;
       }
 
@@ -209,22 +182,8 @@ export function useLiveKitChat(
         return false;
       }
 
-      const message: LiveKitChatMessage = {
-        type: "chat",
-        id: `local:${crypto.randomUUID()}`,
-        userId: resolvedUserId,
-        userName: resolvedUserName,
-        text: trimmedText,
-        sentAt: Date.now(),
-        ...(to ? { to } : {}),
-      };
-
-      const packet: ChatPacket = {
-        type: "chat",
-        id: message.id.slice("local:".length),
-        text: trimmedText,
-        ...(to ? { to: to.id } : {}),
-      };
+      const id = crypto.randomUUID();
+      const packet: ChatPacket = { type: "chat", id, text: trimmedText, ...(to ? { to: to.id } : {}) };
       const bytes = encodeBoundedPacket(JSON.stringify(packet), MAX_CHAT_PACKET_BYTES);
       if (!bytes) return false;
       try {
@@ -240,21 +199,31 @@ export function useLiveKitChat(
         }
         return false;
       }
-      addMessage(message);
+      conversation.add({
+        type: "chat",
+        id: `local:${id}`,
+        userId: lp.identity,
+        userName: lp.name || lp.identity,
+        text: trimmedText,
+        sentAt: Date.now(),
+        fromSelf: true,
+        ...(to ? { to } : {}),
+      });
       return true;
     },
-    [room, userId, userName, consume, addMessage, onSendError]
+    [room, consume, conversation, onSendError],
   );
 
-  const clearMessages = useCallback(() => {
-    setMessages([]);
-    messageIdsRef.current.clear();
-  }, []);
+  const markRead = useCallback(
+    (threadKey: string, upTo: number) => conversation.markRead(threadKey, upTo),
+    [conversation],
+  );
 
   return {
     messages,
-    remoteMessageCount,
+    remoteMessageCount: receivedCount,
+    readUpTo,
+    markRead,
     sendMessage,
-    clearMessages,
   };
 }

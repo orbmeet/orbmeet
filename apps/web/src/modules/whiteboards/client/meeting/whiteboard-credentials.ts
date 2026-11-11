@@ -86,7 +86,7 @@ export class WhiteboardCredentials {
     this.now = options.now ?? Date.now;
     const { token, url, documentId, documentTitle } = options.initial;
     this.currentValue = token && url && documentId
-      ? { access: accessFromToken(token, url), documentId, documentTitle, revision: -1, mintedAt: this.now() }
+      ? { access: accessFromToken(token, url, this.now()), documentId, documentTitle, revision: -1, mintedAt: this.now() }
       : null;
   }
 
@@ -130,7 +130,7 @@ export class WhiteboardCredentials {
   accept(minted: MintedWhiteboardAccess, revision: number): void {
     if (this.currentValue && this.currentValue.revision > revision) return;
     this.currentValue = {
-      access: accessFromToken(minted.token, minted.whiteboardUrl),
+      access: accessFromToken(minted.token, minted.whiteboardUrl, this.now()),
       documentId: minted.documentId,
       documentTitle: minted.documentTitle,
       revision,
@@ -149,7 +149,7 @@ export class WhiteboardCredentials {
     const request: Promise<WhiteboardCredential> = withinMintDeadline(this.options.mint())
       .then((minted) => {
         const credential: WhiteboardCredential = {
-          access: accessFromToken(minted.token, minted.whiteboardUrl),
+          access: accessFromToken(minted.token, minted.whiteboardUrl, this.now()),
           documentId: minted.documentId,
           documentTitle: minted.documentTitle,
           revision,
@@ -219,12 +219,18 @@ export class WhiteboardCredentials {
   }
 }
 
-function accessFromToken(token: string, whiteboardUrl: string): WhiteboardAccessState {
+/**
+ * `receivedAt` is this browser's clock when the token arrived. The token's
+ * `exp` is on the server's clock, which a browser set to the wrong hour can be
+ * far from, so expiry is its lifetime (`exp - iat`, one clock) counted from
+ * receipt rather than `exp` compared with `Date.now()`.
+ */
+function accessFromToken(token: string, whiteboardUrl: string, receivedAt: number): WhiteboardAccessState {
   const claims = readTokenClaims(token);
   return {
     token,
     whiteboardUrl,
-    expiresAt: claims?.expiresAt ?? null,
+    expiresAt: claims?.lifetimeMs == null ? null : receivedAt + claims.lifetimeMs,
     connectionId: claims?.connectionId ?? null,
     participantBound: !!claims?.connectionId || claims?.service === "recorder",
     canEditWhiteboard: claims?.canEditWhiteboard ?? false,
@@ -234,7 +240,7 @@ function accessFromToken(token: string, whiteboardUrl: string): WhiteboardAccess
 
 /** The claims the client acts on. The server verifies the token; this only reads it. */
 function readTokenClaims(token: string): {
-  expiresAt: number | null;
+  lifetimeMs: number | null;
   connectionId: string | null;
   service: string | null;
   canEditWhiteboard: boolean;
@@ -247,12 +253,15 @@ function readTokenClaims(token: string): {
     if (!bytes) return null;
     const decoded = JSON.parse(new TextDecoder().decode(bytes)) as {
       exp?: number;
+      iat?: number;
       connectionId?: string;
       service?: string;
       capabilities?: { canEditWhiteboard?: boolean; canManageWhiteboard?: boolean };
     };
     return {
-      expiresAt: typeof decoded.exp === "number" ? decoded.exp * 1000 : null,
+      lifetimeMs: typeof decoded.exp === "number" && typeof decoded.iat === "number"
+        ? (decoded.exp - decoded.iat) * 1000
+        : null,
       connectionId: typeof decoded.connectionId === "string" ? decoded.connectionId : null,
       service: typeof decoded.service === "string" ? decoded.service : null,
       canEditWhiteboard: decoded.capabilities?.canEditWhiteboard === true,

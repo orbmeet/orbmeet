@@ -5,8 +5,6 @@ import {
   parseCaptionStreamAttributes,
 } from "@orbmeet/caption-protocol";
 import {
-  ParticipantKind,
-  RoomEvent,
   Track,
   type Participant,
   type Room,
@@ -146,19 +144,10 @@ export function useLiveTranscriptions({ room }: { room: Room | undefined }) {
     return () => clearTimeout(timer);
   }, [board]);
 
-  useEffect(() => {
-    if (!room) return;
-    const onParticipantDisconnected = (participant: Participant) => {
-      if (participant.kind === ParticipantKind.STANDARD && participant.identity) {
-        dispatchBoard({ type: "speaker-left", userId: participant.identity });
-      }
-    };
-    room.on(RoomEvent.ParticipantDisconnected, onParticipantDisconnected);
-    return () => {
-      room.off(RoomEvent.ParticipantDisconnected, onParticipantDisconnected);
-      dispatchBoard({ type: "clear" });
-    };
-  }, [room]);
+  // A speaker who leaves mid-sentence is closed by the silence timeout like
+  // any other. Not on their disconnect: a full reconnect drops and re-adds
+  // everyone, and would close every live caption under its speaker.
+  useEffect(() => () => dispatchBoard({ type: "clear" }), [room]);
 
   return board.transcript;
 }

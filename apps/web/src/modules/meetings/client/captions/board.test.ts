@@ -97,16 +97,6 @@ describe("reduceCaptionBoard", () => {
     expect(straggler.transcript[0].text).toBe("cut off");
   });
 
-  it("closes a departed speaker's open segments and keeps their words", () => {
-    const state = apply(
-      update({ segmentId: "a:u0", userId: "a", text: "leaving now" }),
-      update({ segmentId: "b:u0", userId: "b", text: "staying" }),
-    );
-    const left = reduceCaptionBoard(state, { type: "speaker-left", userId: "a" });
-    expect(left.transcript.map((entry) => [entry.id, entry.isFinal])).toEqual([["a:u0", true], ["b:u0", false]]);
-    expect(reduceCaptionBoard(left, { type: "speaker-left", userId: "a" })).toBe(left);
-  });
-
   it("caps the scrollback, dropping the oldest entries", () => {
     let state = emptyCaptionBoard();
     for (let index = 0; index < MAX_TRANSCRIPT_ENTRIES + 5; index += 1) {

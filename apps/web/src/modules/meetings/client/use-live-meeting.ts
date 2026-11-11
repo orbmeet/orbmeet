@@ -1,6 +1,5 @@
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   ConnectionQuality,
   ConnectionState,
@@ -51,7 +50,6 @@ import { useMeetingModerators } from "@/modules/meetings/client/use-meeting-mode
 import { useMeetingRemovals } from "@/modules/meetings/client/use-meeting-removals";
 import { configureLiveKitLogging } from "@/modules/meetings/client/livekit-logging";
 import type { MeetingClockSync } from "@/modules/meetings/client/meeting-clock";
-import { useMeetingClockSync } from "@/modules/meetings/client/use-meeting-elapsed-seconds";
 import type { JoinResult } from "@/modules/meetings/contract/types";
 import type { MeetingLifecycleHooks, HostPermissionRequest } from "@/modules/meetings/client/types";
 import type { MeetingEntrySession } from "@/modules/meetings/client/entry/meeting-entry-session";
@@ -71,7 +69,8 @@ export interface LiveMeetingProps {
    * in `entry.intent` so the next connection starts from it.
    */
   entry: MeetingEntrySession;
-  showConnectingOverlay: boolean;
+  /** The server's clock, read by the entry session when `joinResult` arrived. */
+  meetingClock: MeetingClockSync;
   isAuthenticated: boolean;
 }
 
@@ -79,7 +78,6 @@ export interface LiveMeetingState {
   // ── Route/context props ──
   code: string;
   meetingClock: MeetingClockSync;
-  showConnectingOverlay: boolean;
   recordingEnabled: boolean;
   meetingTitle: string | null;
   spaceName: string | null;
@@ -122,7 +120,10 @@ export interface LiveMeetingState {
   removals?: ReturnType<typeof useMeetingRemovals>;
 
   // ── Chat ──
-  chatMessages: LiveKitChatMessage[];
+  chatMessages: readonly LiveKitChatMessage[];
+  /** Per Timeline thread, the newest time read up to; kept with the messages. */
+  chatReadUpTo: Readonly<Record<string, number>>;
+  markChatRead: (threadKey: string, upTo: number) => void;
   /**
    * Sends to everyone, or — with `to` — only to that one person. Anything
    * that wraps this must pass `to` on: dropping it would send a private
@@ -213,7 +214,7 @@ export function useLiveMeeting(
     code,
     joinResult,
     entry,
-    showConnectingOverlay,
+    meetingClock,
     isAuthenticated,
   } = props;
 
@@ -235,15 +236,7 @@ export function useLiveMeeting(
   const onIntentionalDisconnect = React.useCallback(() => entry.beginLeave(), [entry]);
 
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const { add: addToast } = useToast();
-  // Reconciled here, not in the header: this hook owns the join result and
-  // outlives every layout change, so the offset is sampled exactly once per
-  // server response.
-  const meetingClock = useMeetingClockSync({
-    meetingStartedAtMs: joinResult.meetingStartedAtMs,
-    serverNowMs: joinResult.serverNowMs,
-  });
   const {
     isPhone,
     isTablet,
@@ -313,14 +306,10 @@ export function useLiveMeeting(
   const {
     messages: chatMessages,
     remoteMessageCount: remoteChatMessageCount,
+    readUpTo: chatReadUpTo,
+    markRead: markChatRead,
     sendMessage: sendChatMessage,
-  } = useLiveKitChat(
-    roomInstance,
-    currentUserId,
-    currentUserName,
-    100,
-    handleSendError,
-  );
+  } = useLiveKitChat(roomInstance, entry.conversation, handleSendError);
 
   const {
     handRaiseQueue,
@@ -465,6 +454,9 @@ export function useLiveMeeting(
    * real meeting means the hand is never seen at all. The dock badge covers the
    * steady state; this covers the moment of arrival.
    */
+  // Raises already announced, never forgotten: every raise has its own id, so
+  // raising again is news, while a hand that only vanished and came back —
+  // LiveKit drops and re-adds everyone in a full reconnect — is not.
   const announcedRaisesRef = React.useRef<Set<string>>(new Set());
   React.useEffect(() => {
     if (!canModerate) return;
@@ -486,12 +478,6 @@ export function useLiveMeeting(
         title: `${raise.userName} raised their hand`,
         description: "It is waiting at the top of the conversation.",
       });
-    }
-
-    // Forget resolved raises so the same person raising again is announced.
-    const stillPending = new Set(pending.map((raise) => raise.nonce));
-    for (const nonce of seen) {
-      if (!stillPending.has(nonce)) seen.delete(nonce);
     }
   }, [handRaiseQueue, canModerate, ui.panel, addToast]);
 
@@ -544,7 +530,6 @@ export function useLiveMeeting(
     code,
     isAuthenticated,
     navigate,
-    queryClient,
     onIntentionalDisconnect,
     lifecycleHooks,
     disconnectMeetingNow,
@@ -587,7 +572,6 @@ export function useLiveMeeting(
     // Route/context props
     code,
     meetingClock,
-    showConnectingOverlay,
     recordingEnabled: joinResult.recordingEnabled ?? false,
     meetingTitle: joinResult.meetingTitle,
     spaceName: joinResult.spaceName ?? null,
@@ -624,6 +608,8 @@ export function useLiveMeeting(
 
     // Chat
     chatMessages,
+    chatReadUpTo,
+    markChatRead,
     sendChatMessage,
 
     // Hand raises

@@ -443,6 +443,8 @@ export function LiveMeetingLayout({
     currentUserId: meeting.currentUserId,
     participants: meeting.participantsList,
     timelineOpen: openPanel === "timeline",
+    readUpTo: meeting.chatReadUpTo,
+    markRead: meeting.markChatRead,
   });
   const { openPrivate: openPrivateThread, showRoom: showRoomThread, showOrb: showOrbThread } = timelineThreads;
   const openTimelinePanel = meeting.ui.openPanel;
@@ -1070,7 +1072,7 @@ export function LiveMeetingLayout({
           </div>
         )}
 
-      {(meeting.showConnectingOverlay || meeting.isLiveKitConnecting || showReconnecting) && (
+      {(meeting.isLiveKitConnecting || showReconnecting) && (
         <div
           // No backdrop-filter: at 95% opacity nothing behind this is visible,
           // so the blur was a viewport-sized filter pass over live video that

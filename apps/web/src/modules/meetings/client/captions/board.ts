@@ -48,7 +48,6 @@ export interface CaptionBoardState {
 export type CaptionBoardEvent =
   | { type: "caption"; update: CaptionUpdate }
   | { type: "expire"; now: number }
-  | { type: "speaker-left"; userId: string }
   | { type: "clear" };
 
 /**
@@ -78,19 +77,6 @@ export function reduceCaptionBoard(state: CaptionBoardState, event: CaptionBoard
       let changed = false;
       const transcript = state.transcript.map((entry) => {
         if (entry.isFinal || entry.updatedAt + OPEN_SEGMENT_SILENCE_MS > event.now) return entry;
-        changed = true;
-        return { ...entry, isFinal: true };
-      });
-      if (!changed) return state;
-      return { transcript, segments: closeSegments(state.segments, transcript) };
-    }
-
-    case "speaker-left": {
-      // Their words stay in the scrollback. Someone leaving does not un-say
-      // what the room already heard; it only means nothing more is coming.
-      let changed = false;
-      const transcript = state.transcript.map((entry) => {
-        if (entry.isFinal || entry.userId !== event.userId) return entry;
         changed = true;
         return { ...entry, isFinal: true };
       });

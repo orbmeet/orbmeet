@@ -2,20 +2,27 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ConnectionState, type Room } from "livekit-client";
 import { describe, expect, it, vi } from "vitest";
+import { MeetingConversation } from "./meeting-conversation";
 import { decodeBoundedPacket, encodeBoundedPacket, parseChatPacket, useLiveKitChat } from "./use-livekit-chat";
 
-function renderChat(publishData: (...args: unknown[]) => Promise<void>, onSendError = vi.fn(), remoteIdentities: string[] = []) {
+function renderChat(
+  publishData: (...args: unknown[]) => Promise<void>,
+  onSendError = vi.fn(),
+  remoteIdentities: string[] = [],
+  conversation = new MeetingConversation(),
+  identity = "me",
+) {
   let chat: ReturnType<typeof useLiveKitChat> | null = null;
   const room = {
     state: ConnectionState.Connected,
-    localParticipant: { identity: "me", name: "Me", publishData },
+    localParticipant: { identity, name: "Me", publishData },
     remoteParticipants: new Map(remoteIdentities.map((identity) => [identity, { identity }])),
     on: vi.fn(),
     off: vi.fn(),
   } as unknown as Room;
 
   function Harness() {
-    chat = useLiveKitChat(room, "me", "Me", 100, onSendError);
+    chat = useLiveKitChat(room, conversation, onSendError);
     return null;
   }
 
@@ -86,6 +93,17 @@ describe("private messages", () => {
     await expect(chat.sendMessage("hello?", { id: "gone", name: "Gone" })).resolves.toBe(false);
     await expect(chat.sendMessage("note to self", { id: "me", name: "Me" })).resolves.toBe(false);
     expect(publishData).not.toHaveBeenCalled();
+  });
+
+  it("keeps what was said in the stay's conversation, across a new connection", async () => {
+    const conversation = new MeetingConversation();
+    const publishData = vi.fn().mockResolvedValue(undefined);
+    await renderChat(publishData, vi.fn(), [], conversation, "me_connection_1").sendMessage("before the drop");
+
+    // A rejoin: a new room, and a new identity for this participant.
+    const again = renderChat(publishData, vi.fn(), [], conversation, "me_connection_2");
+    expect(again.messages.map((message) => [message.text, message.fromSelf])).toEqual([["before the drop", true]]);
+    expect(again.remoteMessageCount).toBe(0);
   });
 
   it("sends a room message with no recipient list", async () => {

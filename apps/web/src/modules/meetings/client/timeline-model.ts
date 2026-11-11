@@ -31,6 +31,12 @@ export interface TimelineChatInput {
   userName: string;
   text: string;
   sentAt: number;
+  /**
+   * Sent from this browser. Recorded when the message is made rather than
+   * read off `userId`: a participant's identity is new on every connection,
+   * and the conversation outlives a connection.
+   */
+  fromSelf: boolean;
   /** A private message: the one other person in it besides the sender. */
   to?: { id: string; name: string };
 }
@@ -156,10 +162,10 @@ export type TimelineItem =
 export const SPEECH_RUN_GAP_MS = 45_000;
 
 /** Whether a message belongs in a thread. */
-function inThread(message: TimelineChatInput, thread: TimelineThread, currentUserId: string): boolean {
+function inThread(message: TimelineChatInput, thread: TimelineThread): boolean {
   if (thread.kind === "room") return !message.to;
   if (thread.kind === "orb" || !message.to) return false;
-  const other = message.userId === currentUserId ? message.to.id : message.userId;
+  const other = message.fromSelf ? message.to.id : message.userId;
   return other === thread.withId;
 }
 
@@ -187,7 +193,7 @@ export function buildTimeline({
     | { kind: "orb"; at: number; order: number; value: AssistantEntry };
   const entries: Entry[] = [
     ...chat
-      .filter((value) => inThread(value, thread, currentUserId))
+      .filter((value) => inThread(value, thread))
       .map((value, order): Entry => ({ kind: "chat", at: value.sentAt, order, value })),
     ...(inRoom ? speech : []).map((value, order): Entry => ({ kind: "speech", at: value.startedAt, order, value })),
     ...orbEntries(orb.filter((entry) => inOrbThread(entry.audience, thread, currentUserId))),
@@ -220,7 +226,7 @@ export function buildTimeline({
         userId: message.userId,
         userName: message.userName,
         text: message.text,
-        mine: message.userId === currentUserId,
+        mine: message.fromSelf,
       });
       continue;
     }
@@ -335,7 +341,7 @@ export function privateThreads(
   }
   for (const message of chat) {
     if (!message.to) continue;
-    const mine = message.userId === currentUserId;
+    const mine = message.fromSelf;
     const withId = mine ? message.to.id : message.userId;
     const withName = mine ? message.to.name : message.userName;
     const existing = threads.get(withId);
@@ -364,7 +370,7 @@ export function unreadByThread(
     unread.set(key, (unread.get(key) ?? 0) + 1);
   };
   for (const message of chat) {
-    if (message.userId === currentUserId) continue;
+    if (message.fromSelf) continue;
     count(threadKey(message.to ? { kind: "private", withId: message.userId } : ROOM_THREAD), message.sentAt);
   }
   for (const entry of orb) {
@@ -384,7 +390,7 @@ export function newestInThread(
 ): number {
   let newest = 0;
   for (const message of chat) {
-    if (inThread(message, thread, currentUserId)) newest = Math.max(newest, message.sentAt);
+    if (inThread(message, thread)) newest = Math.max(newest, message.sentAt);
   }
   for (const entry of orb) {
     if (inOrbThread(entry.audience, thread, currentUserId)) newest = Math.max(newest, entry.at);

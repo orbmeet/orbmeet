@@ -15,7 +15,7 @@ import {
 } from "./timeline-model";
 
 function chat(id: string, sentAt: number, userId = "rafi", text = id): TimelineChatInput {
-  return { id, userId, userName: userId === "me" ? "Atiq" : "Rafi", text, sentAt };
+  return { id, userId, userName: userId === "me" ? "Atiq" : "Rafi", text, sentAt, fromSelf: userId === "me" };
 }
 
 function said(id: string, startedAt: number, userId = "rafi", updatedAt = startedAt + 2_000): TimelineSpeechInput {
@@ -97,7 +97,7 @@ describe("buildTimeline", () => {
 
 function whisper(id: string, sentAt: number, from: string, to: string): TimelineChatInput {
   const names: Record<string, string> = { me: "Atiq", fayaz: "Fayaz", rafi: "Rafi" };
-  return { id, userId: from, userName: names[from], text: id, sentAt, to: { id: to, name: names[to] } };
+  return { id, userId: from, userName: names[from], text: id, sentAt, fromSelf: from === "me", to: { id: to, name: names[to] } };
 }
 
 describe("private threads", () => {

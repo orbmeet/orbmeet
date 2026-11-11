@@ -1,20 +1,9 @@
 import type { Room } from "livekit-client";
 import { describe, expect, it, vi } from "vitest";
-import { followMeetingSpeaker, getRemoteMessageDelta } from "./use-meeting-ui";
+import { followMeetingSpeaker } from "./use-meeting-ui";
 
 const outputSelection = vi.hoisted(() => ({ supported: true }));
 vi.mock("./speaker-test", () => ({ canSelectAudioOutput: () => outputSelection.supported }));
-
-describe("chat notification counter", () => {
-  it("counts events independently of bounded history length", () => {
-    expect(getRemoteMessageDelta(100, 101)).toBe(1);
-    expect(getRemoteMessageDelta(100, 105)).toBe(5);
-  });
-
-  it("treats a counter reset as a new baseline", () => {
-    expect(getRemoteMessageDelta(10, 0)).toBe(0);
-  });
-});
 
 describe("followMeetingSpeaker", () => {
   const roomOn = (deviceId: string | undefined) =>

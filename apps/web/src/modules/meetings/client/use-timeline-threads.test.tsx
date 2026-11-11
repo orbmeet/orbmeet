@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
-import { act } from "react";
+import { act, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it } from "vitest";
+import { MeetingConversation } from "./meeting-conversation";
 import type { TimelineChatInput } from "./timeline-model";
 import { useTimelineThreads } from "./use-timeline-threads";
 
@@ -20,14 +21,27 @@ const fromFayaz: TimelineChatInput = {
   userName: "Fayaz",
   text: "saved?",
   sentAt: 2_000,
+  fromSelf: false,
   to: { id: "me", name: "Atiq" },
 };
-const toRoom: TimelineChatInput = { id: "room", userId: "sam", userName: "Sam", text: "hi all", sentAt: 1_000 };
+const toRoom: TimelineChatInput = { id: "room", userId: "sam", userName: "Sam", text: "hi all", sentAt: 1_000, fromSelf: false };
 
-function harness(initial: { messages: TimelineChatInput[]; timelineOpen: boolean }) {
+/** `conversation`: the stay's, which outlives any one view of it. */
+function harness(
+  initial: { messages: TimelineChatInput[]; timelineOpen: boolean },
+  conversation = new MeetingConversation(),
+) {
   let latest: ReturnType<typeof useTimelineThreads> | null = null;
   function Probe(props: { messages: TimelineChatInput[]; timelineOpen: boolean }) {
-    latest = useTimelineThreads({ ...props, orb: undefined, currentUserId: "me", participants: people });
+    const { readUpTo } = useSyncExternalStore(conversation.subscribe, conversation.getSnapshot);
+    latest = useTimelineThreads({
+      ...props,
+      orb: undefined,
+      currentUserId: "me",
+      participants: people,
+      readUpTo,
+      markRead: (key, upTo) => conversation.markRead(key, upTo),
+    });
     return null;
   }
   const root = createRoot(document.createElement("div"));
@@ -54,6 +68,18 @@ describe("useTimelineThreads", () => {
     act(() => threads.current.props.onSelect({ kind: "private", withId: "fayaz" }));
     expect(threads.current.props.threads[0].unread).toBe(0);
     threads.unmount();
+  });
+
+  it("keeps what was read when the view is rebuilt, as on a rejoin", () => {
+    const conversation = new MeetingConversation();
+    const first = harness({ messages: [toRoom, fromFayaz], timelineOpen: true }, conversation);
+    act(() => first.current.props.onSelect({ kind: "private", withId: "fayaz" }));
+    first.unmount();
+
+    const again = harness({ messages: [toRoom, fromFayaz], timelineOpen: false }, conversation);
+    expect(again.current.props.roomUnread).toBe(0);
+    expect(again.current.props.threads[0].unread).toBe(0);
+    again.unmount();
   });
 
   it("reads nothing while the Timeline is closed", () => {

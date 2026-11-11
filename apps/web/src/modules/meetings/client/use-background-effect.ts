@@ -343,11 +343,13 @@ export function useBackgroundEffect(
     };
 
     const handleTrackPublished = (pub: LocalTrackPublication) => {
-      // Only re-apply when the camera track is published
       if (pub.source !== Track.Source.Camera) return;
       if (modeRef.current === "none") return;
+      // After a full reconnect LiveKit publishes the same track again, effect
+      // and all: replacing it would only freeze the picture while a new one loads.
+      if ((pub.track as LocalVideoTrack | undefined)?.getProcessor()) return;
 
-      logInfo("[BackgroundEffect] Camera published, re-applying effect");
+      logInfo("[BackgroundEffect] Camera published, applying effect");
       scheduleReapply();
     };
 

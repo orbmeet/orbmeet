@@ -170,6 +170,14 @@ export class MicrophoneController {
     return restarted;
   }
 
+  /**
+   * Drives the track toward intent where it drifted with no event to say so:
+   * a full reconnect that could not publish the microphone again.
+   */
+  driveToIntent(): void {
+    this.kick();
+  }
+
   dispose(): void {
     this.disposed = true;
   }

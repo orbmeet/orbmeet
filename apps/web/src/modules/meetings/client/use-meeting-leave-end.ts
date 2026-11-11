@@ -1,13 +1,14 @@
 import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
 import { logError } from "@/lib/logger";
 import { endMeeting, leaveMeeting } from "@/modules/meetings/server/runtime/live.functions";
 import { clearReconnectAdmissionId } from "./reconnect-storage";
-import { queryKeys } from "@/app/query-client/query-keys";
 import type { MeetingLifecycleHooks } from "./types";
 import type { useToast } from "@orbmeet/ui/react";
 import { meetingHistoryPath } from "@/modules/meetings/client/urls";
+
+/** How long leaving waits to tell the server, before going anyway. */
+const LEAVE_NOTICE_WAIT_MS = 3_000;
 
 export function useMeetingLeaveEnd({
   meetingId,
@@ -16,7 +17,6 @@ export function useMeetingLeaveEnd({
   code,
   isAuthenticated,
   navigate,
-  queryClient,
   onIntentionalDisconnect,
   lifecycleHooks,
   disconnectMeetingNow,
@@ -28,7 +28,6 @@ export function useMeetingLeaveEnd({
   code: string;
   isAuthenticated: boolean;
   navigate: ReturnType<typeof useNavigate>;
-  queryClient: ReturnType<typeof useQueryClient>;
   onIntentionalDisconnect: () => void;
   lifecycleHooks?: MeetingLifecycleHooks;
   disconnectMeetingNow: () => Promise<void>;
@@ -52,19 +51,18 @@ export function useMeetingLeaveEnd({
       });
     }
     await disconnectMeetingNow();
-    try {
-      await leaveMeeting({
-        data: { meetingId, connectionId },
-      });
-    } catch (err) {
-      logError("[Meeting] Failed to leave:", err);
-    }
+    // Telling the server ends the connection at once; without it, the server
+    // ends it once it has been gone a while. A courtesy, then, which must not
+    // hold anyone on the way out of a connection that is failing.
+    await Promise.race([
+      leaveMeeting({ data: { meetingId, connectionId } }).catch((err: unknown) => {
+        logError("[Meeting] Failed to leave:", err);
+      }),
+      new Promise((resolve) => setTimeout(resolve, LEAVE_NOTICE_WAIT_MS)),
+    ]);
     clearReconnectAdmissionId(code);
+    // Out of the meeting's document: Home loads afresh, lists and all.
     if (isAuthenticated) {
-      // Read again on arrival: the last one out ends the meeting, and Home
-      // would otherwise show lists from before it did.
-      void queryClient.invalidateQueries({ queryKey: queryKeys.meetings.lists() });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.threads() });
       void navigate({ to: "/home", search: { left: meetingId } });
     } else {
       void navigate({
@@ -78,7 +76,6 @@ export function useMeetingLeaveEnd({
     connectionId,
     isAuthenticated,
     navigate,
-    queryClient,
     onIntentionalDisconnect,
     lifecycleHooks,
     disconnectMeetingNow,
@@ -130,11 +127,6 @@ export function useMeetingLeaveEnd({
     // down — so that if endMeeting() throws, external disconnects (webhook,
     // another host) still trigger the normal handling path in the parent.
     onIntentionalDisconnect();
-    await Promise.allSettled([
-      queryClient.invalidateQueries({ queryKey: queryKeys.meetings.lists() }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.threads() }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.meetings.summaries() }),
-    ]);
     await disconnectMeetingNow();
     clearReconnectAdmissionId(code);
     window.location.assign(meetingHistoryPath(meetingId));
@@ -145,7 +137,6 @@ export function useMeetingLeaveEnd({
     lifecycleHooks,
     disconnectMeetingNow,
     code,
-    queryClient,
   ]);
 
   return {

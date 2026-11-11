@@ -26,8 +26,8 @@ interface Person {
  * and what in each has not been read.
  *
  * A thread counts as read up to its newest message while it is on screen in
- * an open Timeline. Kept here, above the Timeline, so closing the panel keeps
- * your place.
+ * an open Timeline. Where each thread was read up to is the conversation's,
+ * so it lasts as long as the messages do.
  */
 export function useTimelineThreads({
   messages,
@@ -35,6 +35,8 @@ export function useTimelineThreads({
   currentUserId,
   participants,
   timelineOpen,
+  readUpTo,
+  markRead,
 }: {
   messages: readonly TimelineChatInput[];
   /** Orb's entries this viewer can see; undefined where Orb has no part in the room. */
@@ -42,10 +44,11 @@ export function useTimelineThreads({
   currentUserId: string;
   participants: readonly Person[];
   timelineOpen: boolean;
+  readUpTo: Readonly<Record<string, number>>;
+  markRead: (threadKey: string, upTo: number) => void;
 }) {
   const [active, setActive] = React.useState<TimelineThread>(ROOM_THREAD);
   const [started, setStarted] = React.useState<readonly PrivateThread[]>([]);
-  const [readUpTo, setReadUpTo] = React.useState<Readonly<Record<string, number>>>({});
 
   const orbEntries = orb ?? NO_ENTRIES;
   const threads = React.useMemo(() => {
@@ -64,9 +67,8 @@ export function useTimelineThreads({
   const activeKey = threadKey(active);
   React.useEffect(() => {
     if (!timelineOpen) return;
-    const newest = newestInThread(messages, orbEntries, active, currentUserId);
-    setReadUpTo((current) => (newest > (current[activeKey] ?? 0) ? { ...current, [activeKey]: newest } : current));
-  }, [active, activeKey, currentUserId, messages, orbEntries, timelineOpen]);
+    markRead(activeKey, newestInThread(messages, orbEntries, active, currentUserId));
+  }, [active, activeKey, currentUserId, markRead, messages, orbEntries, timelineOpen]);
 
   const presentIds = React.useMemo(() => new Set(participants.map((person) => person.id)), [participants]);
   const others = React.useMemo(

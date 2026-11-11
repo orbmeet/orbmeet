@@ -52,7 +52,8 @@ latest=$(jq -r 'select(.SYSLOG_IDENTIFIER == "orbmeet-health" and (.MESSAGE | ty
 previous=$(cat "$state/health" 2>/dev/null || echo PASS)
 health=${latest%% *}
 health=${health:-$previous}
-now=$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)
+# Seconds are enough for a heartbeat, and this format is the same in GNU and BSD date.
+now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 if [[ $health != "$previous" ]]; then
   jq -nc --arg node "$NODE" --arg time "$now" --arg line "$latest" \
     '{_time: $time, source: "node", node: $node, service: "health",

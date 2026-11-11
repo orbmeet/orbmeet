@@ -287,6 +287,33 @@ describe("CameraDirector", () => {
     expect((last.y + rest.y) * rest.z).toBeLessThan(editor.getViewportScreenBounds().h);
   });
 
+  it("holds the pull room while the wheel is still turning against its end", async () => {
+    vi.useFakeTimers();
+    const { editor, navigator } = boardWithPages(3);
+    const { cameraConstraints } = navigator;
+    editor.setCamera(cameraConstraints.constrain({ ...editor.getCamera(), y: -100_000 }));
+    await settle();
+    const pulled = editor.getCamera();
+
+    // A trackpad's momentum: wheel events for well over the return delay,
+    // none of which can move a camera already at the end of the room.
+    for (let elapsed = 0; elapsed < 1_500; elapsed += 100) {
+      editor.emit("event", { type: "wheel", name: "wheel" } as Parameters<typeof editor.dispatch>[0]);
+      vi.advanceTimersByTime(100);
+      glide(editor, 1);
+    }
+    expect(editor.getCamera()).toEqual(pulled);
+
+    // Pull-to-add's idle delay (320ms) passes with the view still pulled.
+    vi.advanceTimersByTime(400);
+    glide(editor, 1);
+    expect(cameraConstraints.isInPullRoom(editor.getCamera())).toBe(true);
+
+    vi.advanceTimersByTime(200);
+    glide(editor);
+    expect(cameraConstraints.isInPullRoom(editor.getCamera())).toBe(false);
+  });
+
   it("finishes the leader's move when let go mid-glide, and rests where they were going", () => {
     const { editor, navigator, pages } = boardWithPages(3);
     const { director, cameraConstraints } = navigator;

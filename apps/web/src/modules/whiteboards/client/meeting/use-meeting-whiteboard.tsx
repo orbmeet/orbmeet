@@ -2,6 +2,7 @@ import * as React from "react";
 
 import type { MeetingExtensions } from "@/modules/meetings/client/components/live-meeting-layout";
 import type { LiveMeetingState } from "@/modules/meetings/client/use-live-meeting";
+import { toLocalTime } from "@/modules/meetings/client/meeting-clock";
 import type { JoinResult } from "@/modules/meetings/contract/types";
 import type { MeetingSurfaceState } from "@/modules/meetings/contract/live-state";
 import type { AssistantHost, AssistantView, WhiteboardFollowState } from "@orbmeet/whiteboard-client/react";
@@ -134,14 +135,22 @@ export function useMeetingWhiteboard({
   // What Orb said stays in the Timeline after the board closes; the board
   // brings the conversation back up to date when it opens again.
   const [orbHistory, setOrbHistory] = React.useState<AssistantView["entries"]>([]);
+  // Orb's entries are stamped by the board's server; the Timeline sorts them
+  // among chat and speech stamped by this browser, so each is put on this
+  // browser's clock as it arrives.
+  const { meetingClock } = meeting;
   const orbHost = React.useMemo<AssistantHost>(
     () => ({
       onChange: (assistant) => {
-        setOrbAssistant(assistant);
-        if (assistant) setOrbHistory(assistant.entries);
+        const local = assistant && {
+          ...assistant,
+          entries: assistant.entries.map((entry) => ({ ...entry, at: toLocalTime(meetingClock, entry.at) })),
+        };
+        setOrbAssistant(local);
+        if (local) setOrbHistory(local.entries);
       },
     }),
-    [],
+    [meetingClock],
   );
 
   const addToast = meeting.addToast;

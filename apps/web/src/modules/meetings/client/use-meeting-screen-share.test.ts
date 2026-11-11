@@ -102,6 +102,11 @@ describe("publishScreenTracksPerKind", () => {
 
 describe("settleEndedScreenSharePart", () => {
   /** The local participant's screen share publications, as LiveKit leaves them after one ends. */
+  /** An unpublished part, its capture in `readyState`. */
+  function part(source: Track.Source, readyState: MediaStreamTrackState = "ended") {
+    return { source, track: { mediaStreamTrack: { readyState } } as unknown as LocalTrack };
+  }
+
   function sharing(remaining: Track.Source[]) {
     const tracks = new Map(remaining.map((source) => [source, { source } as unknown as LocalTrack]));
     return {
@@ -114,7 +119,7 @@ describe("settleEndedScreenSharePart", () => {
   it("stops the sound when the picture ends, so it does not play on with no control", () => {
     const participant = sharing([Track.Source.ScreenShareAudio]);
     const onShareOver = vi.fn();
-    settleEndedScreenSharePart(participant, Track.Source.ScreenShare, onShareOver);
+    settleEndedScreenSharePart(participant, part(Track.Source.ScreenShare), onShareOver);
     expect(participant.unpublishTrack).toHaveBeenCalledWith(participant.sound);
     expect(onShareOver).not.toHaveBeenCalled();
   });
@@ -122,7 +127,7 @@ describe("settleEndedScreenSharePart", () => {
   it("keeps the picture showing when only the sound ends", () => {
     const participant = sharing([Track.Source.ScreenShare]);
     const onShareOver = vi.fn();
-    settleEndedScreenSharePart(participant, Track.Source.ScreenShareAudio, onShareOver);
+    settleEndedScreenSharePart(participant, part(Track.Source.ScreenShareAudio), onShareOver);
     expect(participant.unpublishTrack).not.toHaveBeenCalled();
     expect(onShareOver).not.toHaveBeenCalled();
   });
@@ -130,14 +135,22 @@ describe("settleEndedScreenSharePart", () => {
   it("ends the share once neither is left", () => {
     const participant = sharing([]);
     const onShareOver = vi.fn();
-    settleEndedScreenSharePart(participant, Track.Source.ScreenShareAudio, onShareOver);
+    settleEndedScreenSharePart(participant, part(Track.Source.ScreenShareAudio), onShareOver);
     expect(onShareOver).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a part LiveKit unpublished to publish again, its capture still running", () => {
+    const participant = sharing([Track.Source.ScreenShareAudio]);
+    const onShareOver = vi.fn();
+    settleEndedScreenSharePart(participant, part(Track.Source.ScreenShare, "live"), onShareOver);
+    expect(participant.unpublishTrack).not.toHaveBeenCalled();
+    expect(onShareOver).not.toHaveBeenCalled();
   });
 
   it("ignores other tracks", () => {
     const participant = sharing([]);
     const onShareOver = vi.fn();
-    settleEndedScreenSharePart(participant, Track.Source.Camera, onShareOver);
+    settleEndedScreenSharePart(participant, part(Track.Source.Camera), onShareOver);
     expect(onShareOver).not.toHaveBeenCalled();
   });
 });

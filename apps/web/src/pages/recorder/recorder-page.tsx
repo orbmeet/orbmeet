@@ -1,7 +1,7 @@
 import { ClientOnly, useRouter } from "@tanstack/react-router";
 import * as React from "react";
 import { LIVE_CALL_PAGE_CLASS } from "@/modules/meetings/client/use-live-call-page";
-import { useMeetingClockSync } from "@/modules/meetings/client/use-meeting-elapsed-seconds";
+import type { MeetingClockSync } from "@/modules/meetings/client/meeting-clock";
 import { spinner } from "@orbmeet/ui/styles/animations";
 import { decor, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
 import * as stylex from "@stylexjs/stylex";
@@ -203,14 +203,12 @@ function RecorderMeetingContent({
   }, [presentedBoard]);
   const egressMode = useRecorderEgressMode(room, initialEgressMode);
   const startedRef = React.useRef(false);
-  const [meetingStartTimeMs] = React.useState(() => Date.now());
-  const [recorderServerNowMs] = React.useState(() => Date.now());
-  // Both timestamps are sampled locally at mount, so the reconciled offset is
-  // zero — but going through the same hook keeps one definition of the clock.
-  const recorderClock = useMeetingClockSync({
-    meetingStartedAtMs: meetingStartTimeMs,
-    serverNowMs: recorderServerNowMs,
-  });
+  // The recording's own clock: it starts at mount, on this machine's time.
+  const [recorderClock] = React.useState<MeetingClockSync>(() => ({
+    meetingStartedAtMs: Date.now(),
+    serverClockOffsetMs: 0,
+  }));
+  const meetingStartTimeMs = recorderClock.meetingStartedAtMs;
 
   const hasWhiteboard = Boolean(whiteboardUrl && recorderToken);
   const showWhiteboard = shouldMountRecorderWhiteboard({
@@ -356,7 +354,6 @@ function RecorderMeetingContent({
       ({
         code: meetingCode || "orbmeet",
         meetingClock: recorderClock,
-        showConnectingOverlay: false,
         recordingEnabled: false,
         meetingTitle: null,
         spaceName: null,
@@ -391,6 +388,8 @@ function RecorderMeetingContent({
             isGuest: participant.isGuest,
           })),
         chatMessages: [],
+        chatReadUpTo: {},
+        markChatRead: noop,
         sendChatMessage: async () => true,
         handRaiseQueue: [],
         isHandRaised: false,

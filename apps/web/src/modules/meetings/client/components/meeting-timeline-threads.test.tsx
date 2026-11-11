@@ -212,8 +212,8 @@ describe("private threads in the Timeline", () => {
     await mount({
       threads: privateWithFayaz(),
       messages: [
-        { id: "room", userId: "sam", userName: "Sam", text: "for everyone", sentAt: 1_000 },
-        { id: "dm", userId: "fayaz", userName: "Fayaz", text: "just for you", sentAt: 2_000, to: { id: "me", name: "Atiq" } },
+        { id: "room", userId: "sam", userName: "Sam", text: "for everyone", sentAt: 1_000, fromSelf: false },
+        { id: "dm", userId: "fayaz", userName: "Fayaz", text: "just for you", sentAt: 2_000, fromSelf: false, to: { id: "me", name: "Atiq" } },
       ],
     });
     expect(container.textContent).toContain("just for you");

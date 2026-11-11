@@ -81,6 +81,8 @@ function subscribe(callback: () => void) {
     if (listeners.size === 0 && typeof window !== "undefined") {
       window.removeEventListener("resize", notify);
       window.removeEventListener("orientationchange", notify);
+      // Nothing keeps it current now; the next reader measures afresh.
+      cache = null;
     }
   };
 }

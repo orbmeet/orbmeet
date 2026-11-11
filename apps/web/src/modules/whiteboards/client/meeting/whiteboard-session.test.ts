@@ -8,9 +8,12 @@ import { WhiteboardSession, type WhiteboardSessionApi } from "./whiteboard-sessi
 const CONNECTION = "connection-1";
 const URL_BASE = "https://whiteboard.example";
 
-function token(documentId: string): string {
+/** A token as the server mints it: an hour from `serverNowMs`, on the server's clock. */
+function token(documentId: string, serverNowMs = Date.now()): string {
+  const iat = Math.floor(serverNowMs / 1000);
   const payload = {
-    exp: Math.floor(Date.now() / 1000) + 3600,
+    iat,
+    exp: iat + 3600,
     connectionId: CONNECTION,
     documentId,
     capabilities: { canEditWhiteboard: true, canManageWhiteboard: false },
@@ -428,6 +431,28 @@ describe("WhiteboardSession", () => {
     await session.webSocketUri({ tokenRejected: true });
     expect(server.mintAccess).toHaveBeenCalledTimes(1);
     session.deactivate();
+  });
+});
+
+describe("WhiteboardSession on a browser clock set to the wrong hour", () => {
+  it("opens the board and mints once, whichever way the clock is off", async () => {
+    for (const skewMs of [2 * 3_600_000, -2 * 3_600_000]) {
+      const serverNow = Date.UTC(2026, 10, 11, 15);
+      vi.setSystemTime(serverNow + skewMs);
+      const mintAccess = vi.fn(async () => ({
+        token: token("wb_1", serverNow),
+        whiteboardUrl: URL_BASE,
+        documentId: "wb_1",
+        documentTitle: "Board",
+      }));
+      const session = await createSession({ api: { mintAccess, writeSurface: vi.fn() } });
+      session.setSurface(surfaceState());
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(session.getSnapshot()).toMatchObject({ accessReady: true, documentId: "wb_1" });
+      expect(mintAccess).toHaveBeenCalledTimes(1);
+      session.deactivate();
+    }
   });
 });
 

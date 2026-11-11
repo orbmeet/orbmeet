@@ -18,6 +18,9 @@ export const queryKeys = {
     list: <T>(input: T) => ["meetings", "list", input] as const,
     lists: () => ["meetings", "list"] as const,
     attendance: (meetingId: string) => ["meetings", meetingId, "attendance"] as const,
+    /** Who waits to be let in, as of the room's admissions version. */
+    pendingAdmissions: (meetingId: string, connectionId: string, admissionsVersion: number | undefined) =>
+      ["meetings", meetingId, "pending-admissions", connectionId, admissionsVersion] as const,
     upcomingSchedules: (spaceId?: string) => spaceId
       ? (["meetings", "scheduled", "upcoming", "space", spaceId] as const)
       : (["meetings", "scheduled", "upcoming"] as const),

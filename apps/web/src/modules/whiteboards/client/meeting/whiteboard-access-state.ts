@@ -5,6 +5,7 @@ export const WHITEBOARD_TOKEN_REFRESH_BUFFER_MS = 60 * 1000;
 export interface WhiteboardAccessState {
   token: string | null;
   whiteboardUrl: string | null;
+  /** When it expires, on this browser's clock. */
   expiresAt: number | null;
   connectionId: string | null;
   participantBound: boolean;

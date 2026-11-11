@@ -1,5 +1,6 @@
 import {
   createRootRouteWithContext,
+  redirect,
   Outlet,
   HeadContent,
   Link,
@@ -20,6 +21,7 @@ import "@/styles.css";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { PwaStatus } from "@/app/shell/pwa-status";
 import { DeadEnd } from "@/app/shell/dead-end";
+import { DOCUMENT_PATHNAME, crossesDocumentBoundary } from "@/app/shell/document-boundary";
 import { BillingCheckoutSync } from "@/modules/billing/client/billing-checkout-sync";
 import {
   SITE_DESCRIPTION,
@@ -115,6 +117,13 @@ interface RouterContext {
 }
 
 export const Route = createRootRouteWithContext<RouterContext>()({
+  // Into or out of a meeting, by any link, redirect or history push: a new
+  // document, served with the headers its destination needs.
+  beforeLoad: ({ location }) => {
+    if (DOCUMENT_PATHNAME !== null && crossesDocumentBoundary(DOCUMENT_PATHNAME, location.pathname)) {
+      throw redirect({ href: location.href, reloadDocument: true });
+    }
+  },
   head: () => ({
     meta: [
       { charSet: "utf-8" },

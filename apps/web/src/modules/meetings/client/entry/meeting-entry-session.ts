@@ -17,6 +17,8 @@ import {
   LocalMediaIntentStore,
   intentFromPreJoin,
 } from "./local-media-intent";
+import { meetingClockFrom, type MeetingClockSync } from "@/modules/meetings/client/meeting-clock";
+import { MeetingConversation } from "@/modules/meetings/client/meeting-conversation";
 
 // ── Schedules ────────────────────────────────────────────────────────────────
 
@@ -86,6 +88,8 @@ export interface MeetingEntrySnapshot {
   failure: { message: string; code: string | null } | null;
   /** The most recent access the server issued; kept through recovery for continuity. */
   access: JoinResult | null;
+  /** The server's clock, read when `access` arrived; set whenever `access` is. */
+  clock: MeetingClockSync | null;
   /** The connection to mount, or null when none should exist. */
   link: MeetingEntryLink | null;
 }
@@ -104,7 +108,7 @@ export interface MeetingJoinRequest {
   captionLanguage: string;
   unreachableMediaUrl?: string;
   /**
-   * The connection a removal took, when asking why. The server refuses to
+   * The connection a recovery or removal lost. The server refuses to
    * take the seat back if another tab or device took it over.
    */
   replacesConnectionId?: string;
@@ -171,7 +175,7 @@ interface Episode {
   won: boolean;
   lobbyDelayMs: number;
   unreachableMediaUrl?: string;
-  /** For a removal recheck: the connection the removal took. */
+  /** For a recovery or removal recheck: the connection that was lost. */
   replacesConnectionId?: string;
 }
 
@@ -198,6 +202,8 @@ function scheduleFor(kind: Exclude<Episode["kind"], "lobby">): readonly number[]
  */
 export class MeetingEntrySession {
   readonly intent = new LocalMediaIntentStore();
+  /** The meeting's chat for this stay, kept across every connection in it. */
+  readonly conversation = new MeetingConversation();
 
   private readonly listeners = new Set<() => void>();
   private readonly timers = new Set<Timer>();
@@ -207,6 +213,7 @@ export class MeetingEntrySession {
   private lobby: MeetingEntrySnapshot["lobby"] = null;
   private failure: MeetingEntrySnapshot["failure"] = null;
   private access: JoinResult | null = null;
+  private clock: MeetingClockSync | null = null;
   private link: LinkState | null = null;
   private snapshot: MeetingEntrySnapshot;
 
@@ -301,6 +308,8 @@ export class MeetingEntrySession {
     this.compatTried = false;
     this.lastRemovalRecheckAt = null;
     this.access = null;
+    this.clock = null;
+    this.conversation.clear();
     this.link = null;
     this.failure = null;
     this.lobby = null;
@@ -326,6 +335,7 @@ export class MeetingEntrySession {
     this.compatTried = false;
     this.lastRemovalRecheckAt = null;
     this.access = null;
+    this.clock = null;
     this.link = null;
     this.failure = null;
     this.lobby = null;
@@ -453,7 +463,9 @@ export class MeetingEntrySession {
       case "rejoin":
         this.link = null;
         this.phase = "recovering";
-        this.startEpisode("recover", 0, undefined, disposition.nodeLost);
+        // Named, so a server that saw this participant move to another device
+        // meanwhile answers "open elsewhere" instead of taking it back.
+        this.startEpisode("recover", 0, this.access?.connectionId, disposition.nodeLost);
         this.changed();
         return;
     }
@@ -705,6 +717,7 @@ export class MeetingEntrySession {
     this.deps.metric?.("joinCredentialsReadyAt");
     this.diagnostic("access_issued");
     this.access = access;
+    this.clock = meetingClockFrom(access, this.now());
     this.lobby = null;
     this.failure = null;
     this.openLink();
@@ -808,6 +821,7 @@ export class MeetingEntrySession {
       lobby: this.lobby,
       failure: this.failure,
       access: this.access,
+      clock: this.clock,
       link: link
         ? { id: link.id, token: link.token, serverUrl: link.serverUrl, peer: link.peer }
         : null,

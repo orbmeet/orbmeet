@@ -228,10 +228,16 @@ export function useMeetingMicrophone({
 
   // LiveKit is the authority on what the track is actually doing. Mute events
   // the controller did not cause are adopted as intent so reconciliation never
-  // fights teardown or a server-side mute. Publication counts too: the join's
+  // fights teardown or a server-side mute. A publish counts too: the join's
   // first publish often lands after this controller was seeded "off", and a
   // first publish emits no unmute. A mute that follows the device ending is
   // adopted as a loss, not a choice.
+  //
+  // An unpublish is not adopted: nothing here unpublishes the microphone, and
+  // LiveKit does so only to publish it again after a full reconnect. If that
+  // republish fails, the reconnect's end is where the track has drifted from
+  // what the user wants, so the controller drives it back — and says so if
+  // the microphone cannot start.
   React.useEffect(() => {
     if (!roomInstance || !controller) return;
     const deviceLoss = watchLocalDeviceLoss(roomInstance, Track.Source.Microphone);
@@ -253,11 +259,13 @@ export function useMeetingMicrophone({
       handleTrackMuteChanged(publication, roomInstance.localParticipant);
     };
 
+    const handleReconnected = () => controller.driveToIntent();
+
     roomInstance
       .on(RoomEvent.TrackMuted, handleTrackMuteChanged)
       .on(RoomEvent.TrackUnmuted, handleTrackMuteChanged)
       .on(RoomEvent.LocalTrackPublished, handleLocalPublicationChanged)
-      .on(RoomEvent.LocalTrackUnpublished, handleLocalPublicationChanged);
+      .on(RoomEvent.Reconnected, handleReconnected);
     // A publish that landed between seeding and subscribing.
     controller.syncFromPort();
     return () => {
@@ -265,7 +273,7 @@ export function useMeetingMicrophone({
         .off(RoomEvent.TrackMuted, handleTrackMuteChanged)
         .off(RoomEvent.TrackUnmuted, handleTrackMuteChanged)
         .off(RoomEvent.LocalTrackPublished, handleLocalPublicationChanged)
-        .off(RoomEvent.LocalTrackUnpublished, handleLocalPublicationChanged);
+        .off(RoomEvent.Reconnected, handleReconnected);
       deviceLoss.dispose();
     };
   }, [roomInstance, controller]);

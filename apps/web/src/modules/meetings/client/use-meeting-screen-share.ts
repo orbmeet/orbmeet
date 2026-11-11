@@ -145,16 +145,22 @@ export async function publishScreenTracksPerKind(
  * the share, so its sound is stopped too rather than left playing to the room
  * with no control to stop it. The sound ending alone (a loopback device reset)
  * leaves the picture showing. Only when neither is left is the share over.
+ *
+ * A part is over when its capture is. LiveKit also unpublishes every track to
+ * publish it again after a full reconnect, and leaves the capture running for
+ * that; such an unpublish is not an ending.
  */
 export function settleEndedScreenSharePart(
   participant: {
     getTrackPublication: (source: Track.Source) => { track?: LocalTrack } | undefined;
     unpublishTrack: (track: LocalTrack) => Promise<unknown>;
   },
-  source: Track.Source,
+  publication: { source: Track.Source; track?: LocalTrack },
   onShareOver: () => void,
 ): void {
+  const { source } = publication;
   if (source !== Track.Source.ScreenShare && source !== Track.Source.ScreenShareAudio) return;
+  if (publication.track?.mediaStreamTrack.readyState === "live") return;
   const sound = participant.getTrackPublication(Track.Source.ScreenShareAudio)?.track;
   if (source === Track.Source.ScreenShare && sound) {
     // Its own unpublish comes back here, with nothing left: the share is over then.
@@ -259,7 +265,7 @@ export function useMeetingScreenShare({
   React.useEffect(() => {
     if (!roomInstance) return;
     const handleLocalTrackUnpublished = (publication: LocalTrackPublication) => {
-      settleEndedScreenSharePart(roomInstance.localParticipant, publication.source, () => capture.giveBack());
+      settleEndedScreenSharePart(roomInstance.localParticipant, publication, () => capture.giveBack());
     };
     const handleDisconnected = () => capture.disconnected();
     roomInstance.on(RoomEvent.LocalTrackUnpublished, handleLocalTrackUnpublished);

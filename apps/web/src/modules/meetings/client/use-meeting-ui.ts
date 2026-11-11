@@ -9,10 +9,6 @@ import { canSelectAudioOutput } from "./speaker-test";
 const CHAT_NOTIFICATION_MIN_INTERVAL_MS = 300;
 const CHAT_NOTIFICATION_SOUND_SRC = "/sounds/chat-notification.m4a";
 
-export function getRemoteMessageDelta(previous: number, current: number): number {
-  return current >= previous ? current - previous : 0;
-}
-
 /**
  * Point a sound the meeting plays itself at the speaker the meeting's voices
  * use. LiveKit routes every remote voice to the chosen output; a plain audio
@@ -73,7 +69,9 @@ export function useMeetingUI(opts: MeetingUIOptions): MeetingUIState {
   const [timelineUnreadCount, setTimelineUnreadCount] = React.useState(0);
   const [controlsVisible, setControlsVisible] = React.useState(true);
   const hideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const previousRemoteMessageCountRef = React.useRef(0);
+  // The count belongs to the stay and outlives this view: what arrived before
+  // it mounted was announced already.
+  const previousRemoteMessageCountRef = React.useRef(remoteChatMessageCount);
   const chatNotificationAudioRef = React.useRef<HTMLAudioElement | null>(null);
   const lastChatSoundAtRef = React.useRef(0);
   const timelineOpen = panel === "timeline";
@@ -125,15 +123,10 @@ export function useMeetingUI(opts: MeetingUIOptions): MeetingUIState {
       .catch(() => {});
   }, [room]);
 
-  // The chat history is bounded, so array length is not an event counter. The
-  // chat hook supplies a monotonic count that continues across history eviction.
+  // The chat history is bounded, so its length is not an event counter; the
+  // conversation counts every message received, and the count only rises.
   React.useEffect(() => {
-    const previous = previousRemoteMessageCountRef.current;
-    if (remoteChatMessageCount < previous) {
-      previousRemoteMessageCountRef.current = remoteChatMessageCount;
-      return;
-    }
-    const received = getRemoteMessageDelta(previous, remoteChatMessageCount);
+    const received = remoteChatMessageCount - previousRemoteMessageCountRef.current;
     if (!timelineOpen && received > 0) {
       setTimelineUnreadCount((count) => count + received);
       playChatNotificationSound();

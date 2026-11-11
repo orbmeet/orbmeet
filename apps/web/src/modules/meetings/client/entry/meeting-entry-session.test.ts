@@ -153,6 +153,19 @@ describe("joining", () => {
     expect(h.snapshot().phase).toBe("connected");
   });
 
+  it("reads the server's clock when its answer arrives, whenever the meeting view mounts", async () => {
+    const h = createHarness();
+    vi.setSystemTime(1_000_000);
+    h.session.submitPreJoin(submission);
+    await vi.advanceTimersByTimeAsync(0);
+    // The server's clock reads 30 s ahead of this browser's.
+    await h.answer(joined(access({ meetingStartedAtMs: 1_000_000, serverNowMs: 1_030_000 })));
+    // Connecting, a compatibility retry, a "Reload view": none of it is the offset's business.
+    await vi.advanceTimersByTimeAsync(25_000);
+    h.connect();
+    expect(h.snapshot().clock).toEqual({ meetingStartedAtMs: 1_000_000, serverClockOffsetMs: 30_000 });
+  });
+
   it("refuses to start in a browser that cannot place calls", () => {
     const h = createHarness({ unsupported: "Open this in Chrome." });
     h.session.submitPreJoin(submission);
@@ -486,6 +499,36 @@ describe("recovery after losing an established connection", () => {
     expect(h.snapshot()).toMatchObject({ phase: "recovering", link: null });
     await vi.advanceTimersByTimeAsync(0);
     expect(h.requests[0].request.unreachableMediaUrl).toBe("wss://node-a.test");
+  });
+
+  it("names the connection it lost, and stops when the participant moved to another device", async () => {
+    const h = createHarness();
+    const link = await joinAndConnect(h);
+    const lost = h.snapshot().access?.connectionId;
+    h.session.linkDisconnected(link.id, undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.requests[0].request.replacesConnectionId).toBe(lost);
+    // The server saw the phone's join take this connection over.
+    await h.answer(blocked("MEETING_OPEN_ELSEWHERE", false));
+    expect(h.snapshot()).toMatchObject({ phase: "failed", failure: { code: "MEETING_OPEN_ELSEWHERE" } });
+  });
+
+  it("keeps the conversation through the rejoin, and starts a new stay without it", async () => {
+    const h = createHarness();
+    const link = await joinAndConnect(h);
+    h.session.conversation.add({
+      type: "chat", id: "m1", userId: "rafi_1", userName: "Rafi", text: "the dial-in is 4417", sentAt: 1, fromSelf: false,
+    });
+    h.session.linkDisconnected(link.id, undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    await h.answer(joined());
+    h.connect();
+    expect(h.session.conversation.getSnapshot().messages.map((message) => message.text)).toEqual(["the dial-in is 4417"]);
+
+    h.session.beginLeave();
+    h.session.retry();
+    h.session.submitPreJoin(submission);
+    expect(h.session.conversation.getSnapshot().messages).toEqual([]);
   });
 
   it("rejoins when LiveKit disconnected a frozen page itself, without blaming the node", async () => {

@@ -299,7 +299,7 @@ function LiveMeetingRoute() {
     code,
     authenticatedUserName: authenticatedUser?.name,
   });
-  const { phase, access, link } = entry;
+  const { phase, access, link, clock } = entry;
 
   // The route head is fixed at "Join Meeting" because one head covers the join
   // screen, the room and the ended state, so the tab has to be set here.
@@ -466,13 +466,11 @@ function LiveMeetingRoute() {
     return <ConnectingCard message="Opening Meeting history..." />;
   }
 
+  const waitingMessage =
+    phase === "leaving" ? "Leaving meeting..." : phase === "recovering" ? "Reconnecting to meeting..." : "Joining meeting...";
   const intent = session.intent.get();
-  if (!link || !access || !intent) {
-    return (
-      <ConnectingCard
-        message={phase === "recovering" ? "Reconnecting to meeting..." : "Joining meeting..."}
-      />
-    );
+  if (!link || !access || !clock || !intent) {
+    return <ConnectingCard message={waitingMessage} />;
   }
 
   return (
@@ -486,7 +484,7 @@ function LiveMeetingRoute() {
       videoDeviceId={intent.videoDeviceId}
       audioEnabled={intent.audioEnabled}
       audioDeviceId={intent.audioDeviceId}
-      fallback={<ConnectingCard message="Joining meeting..." />}
+      fallback={<ConnectingCard message={waitingMessage} />}
       onConnected={() => session.linkConnected(link.id)}
       // The meeting is mounted on RTC connect, but the pre-join warmup audio
       // stream is only torn down once the initial mic/camera publish has
@@ -506,7 +504,7 @@ function LiveMeetingRoute() {
               code={code}
               joinResult={access}
               entry={session}
-              showConnectingOverlay={phase !== "connected"}
+              meetingClock={clock}
               isAuthenticated={isSignedIn}
             />
           </TooltipProvider>
