@@ -110,7 +110,14 @@ export function usePullToAddPage({
       const c = containerRef.current;
       const onCanvas = !c || c.contains(e.target as Node);
       if (!onCanvas) return;
-      if (typeof WheelEvent !== "undefined" && e instanceof WheelEvent && e.deltaY <= 0) return;
+      if (typeof WheelEvent !== "undefined" && e instanceof WheelEvent) {
+        if (e.deltaY <= 0) return;
+        // tldraw zooms on a wheel with Ctrl or Cmd held (useGestureEvents
+        // reads `metaKey || ctrlKey`), and a trackpad pinch arrives as a Ctrl
+        // wheel in Chrome, Edge and Firefox. Zooming out near the last page
+        // widens the view past its end; that is not a pull for a new page.
+        if (e.ctrlKey || e.metaKey) return;
+      }
       if (isReadyNow() && gestureStateRef.current !== "cooldown") {
         gestureStateRef.current = "armed";
         scheduleIdleAdd();

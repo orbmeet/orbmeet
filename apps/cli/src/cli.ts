@@ -40,6 +40,7 @@ import {
 import {
   assertTimeZone,
   localTimeZone,
+  requireLocalTimeZone,
   minutesBetween,
   parseDurationMinutes,
   wallClockToIso,
@@ -119,7 +120,7 @@ async function scheduleTimeZone(args: ParsedArgs): Promise<TimeZoneChoice> {
       source: "account",
     };
   }
-  const timeZone = localTimeZone();
+  const timeZone = requireLocalTimeZone();
   return {
     timeZone,
     source: "machine",

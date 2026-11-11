@@ -235,13 +235,22 @@ export function useWhiteboardImageImport({
     setIsDraggingOver(true);
   }, []);
 
+  // A drag over the board moves between tldraw's own elements, and each move
+  // fires `dragleave` on the one it left; only a leave whose next element is
+  // outside the board (or nowhere: out of the window, or cancelled with Esc)
+  // ends it. A file dragged in from the desktop has no source in the page, so
+  // no `dragend` ever comes to say so.
   const handleDragLeave = useCallback((e: DragEvent<Element>) => {
-    if (e.currentTarget === e.target) {
+    const next = e.relatedTarget;
+    if (!(next instanceof Node) || !e.currentTarget.contains(next)) {
       setIsDraggingOver(false);
     }
   }, []);
 
-  const handleDragEnd = useCallback(() => {
+  // Wired to the capture phase: tldraw's canvas stops the drop from bubbling,
+  // and whatever the drop turns into (an image, a bookmark, a refused link)
+  // the drag is over.
+  const handleDrop = useCallback(() => {
     setIsDraggingOver(false);
   }, []);
 
@@ -255,7 +264,6 @@ export function useWhiteboardImageImport({
     // re-registering the same content type replaces the previous handler in tldraw
     const handleFiles = async (files: File[]) => {
       if (!canEditWhiteboard) return;
-      setIsDraggingOver(false);
       try {
         await importImageFilesToCurrentPage(files);
       } catch (err) {
@@ -315,7 +323,6 @@ export function useWhiteboardImageImport({
       }
 
       try {
-        setIsDraggingOver(false);
         await importExternalImageUrl(externalContent.url);
       } catch (err) {
         if (isAbortError(err)) return;
@@ -348,7 +355,7 @@ export function useWhiteboardImageImport({
     isDraggingOver,
     handleDragOver,
     handleDragLeave,
-    handleDragEnd,
+    handleDrop,
     tldrawOptions,
   };
 }

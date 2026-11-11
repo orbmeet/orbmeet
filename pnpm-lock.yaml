@@ -727,6 +727,9 @@ importers:
       '@base-ui/react':
         specifier: 'catalog:'
         version: 1.8.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@orbmeet/public-api-contract':
+        specifier: workspace:*
+        version: link:../public-api-contract
       '@stylexjs/stylex':
         specifier: 'catalog:'
         version: 0.19.1

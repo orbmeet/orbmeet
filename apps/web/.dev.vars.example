@@ -17,7 +17,7 @@ EMAIL_FROM_ADDRESS="Orb Meet <noreply@example.com>"
 
 # The self-hosted nodes: one JSON object of independent machines, each with
 # the services it runs, every keyring's first key signing.
-# Locally, one node: the LiveKit started from infra/dev/livekit.dev.yaml and
+# Locally, one node: the LiveKit apps/web/scripts/setup-livekit.mjs starts and
 # the whiteboard server on :8787, whose keyrings match its .env. Whiteboard
 # keyrings are JSON {"<key id>":"<32+ char secret>"}.
 NODES={"dev":{"media":{"url":"ws://localhost:27880","capacity":100,"keys":{"devkey":"secret"}},"whiteboard":{"url":"http://localhost:8787","jwt":{"dev":"local-whiteboard-jwt-signing-key-change-me-0001"},"command":{"dev":"local-whiteboard-command-key-change-me-0001"},"callback":{"dev":"local-whiteboard-callback-key-change-me-0001"}}}}

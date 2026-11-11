@@ -30,6 +30,8 @@ const styles = stylex.create({
     gap: space.s1,
     overflowX: "auto",
     scrollbarWidth: "none",
+    // Safari before 18.2 ignores `scrollbar-width`.
+    "::-webkit-scrollbar": { display: "none" },
   },
   tab: {
     display: "inline-flex",

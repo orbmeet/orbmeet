@@ -52,7 +52,8 @@ the closest healthy node and moves it if that node goes down.
 ## Run it locally
 
 You need Node 24.22.1 or newer, pnpm 12 (`corepack enable` picks the version
-the repo names), and Docker, which runs LiveKit for local development.
+the repo names), and Docker, which runs LiveKit for local development: Docker
+Engine on Linux, or Docker Desktop, OrbStack or colima on macOS.
 
 ```sh
 pnpm install
@@ -107,7 +108,9 @@ pnpm --filter @orbmeet/web run deploy    # checks, applies migrations, deploys
 
 **The nodes.** Describe your servers in `infra/ops/inventory.json`, kept out of
 git; `infra/ops/src/test-fixtures.ts` shows its shape. Secrets live encrypted in
-`infra/ops/secrets.age`. Then:
+`infra/ops/secrets.age`. Deploying needs rsync itself on your PATH: macOS's
+own `rsync` is openrsync, which skips deletions here (`brew install rsync`).
+Then:
 
 ```sh
 pnpm ops deploy [node]   # from a fresh VM to a running node; drains live meetings before restarting media

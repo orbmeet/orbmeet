@@ -124,6 +124,7 @@ import {
   revokePersonalAccessToken,
 } from "@/modules/developer-api/server/personal-access-tokens.functions";
 import { getErrorMessage } from "@/lib/error-inspection";
+import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
 import { queryKeys } from "@/app/query-client/query-keys";
 import { personalAccessTokensQueryOptions } from "@/app/query-client/queries/settings";
 import { Button } from "@orbmeet/ui/react";
@@ -139,7 +140,7 @@ export function DeveloperApiSection() {
   const { data } = useSuspenseQuery(personalAccessTokensQueryOptions());
   const [name, setName] = useState("Terminal agent");
   const [secret, setSecret] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
   const [error, setError] = useState<string | null>(null);
   // A key acts as the account and outlives the session that minted it, so
   // creation carries the same email step-up as the other durable-credential
@@ -159,7 +160,6 @@ export function DeveloperApiSection() {
     onSuccess: async (result) => {
       setVerifying(false);
       setSecret(result.secret);
-      setCopied(false);
       await queryClient.invalidateQueries({ queryKey: queryKeys.personalAccessTokens() });
     },
     onError: (caught) => setError(getErrorMessage(caught, "Could not create API key.")),
@@ -196,16 +196,12 @@ export function DeveloperApiSection() {
               variant="secondary"
               size="sm"
               onClick={() => {
-                void navigator.clipboard.writeText(secret)
-                  .then(() => setCopied(true))
-                  .catch((error) => {
-                    setCopied(false);
-                    setError(
-                      error instanceof Error
-                        ? `Could not copy the key: ${error.message}`
-                        : "Could not copy the key. Select and copy it manually.",
-                    );
-                  });
+                // No clipboard outside a secure context (a self-hosted
+                // instance over plain http), and a denied write: either way
+                // the key is on screen to copy by hand.
+                void copy(secret).then((ok) => {
+                  setError(ok ? null : "Could not copy the key. Select and copy it manually.");
+                });
               }}
             >
               {copied ? <Check size={14} /> : <Copy size={14} />}

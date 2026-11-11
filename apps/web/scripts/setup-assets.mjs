@@ -16,7 +16,7 @@
 import { copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { findPackageJSON } from "node:module";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import {
@@ -55,13 +55,19 @@ function mirror(source, destination) {
   copyFileSync(source, destination);
 }
 
+/** Whether `path` lies strictly inside `directory`, in this platform's path syntax. */
+function isInside(path, directory) {
+  const rest = relative(directory, path);
+  return rest !== "" && rest !== ".." && !rest.startsWith(`..${sep}`) && !isAbsolute(rest);
+}
+
 /** Remove everything under `root` but the paths in `keep` (and their parents). */
 function prune(root, keep) {
   if (!existsSync(root)) return;
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     const path = join(root, entry.name);
     if (keep.some((kept) => kept === path)) continue;
-    if (entry.isDirectory() && keep.some((kept) => kept.startsWith(`${path}/`))) {
+    if (entry.isDirectory() && keep.some((kept) => isInside(kept, path))) {
       prune(path, keep);
       continue;
     }

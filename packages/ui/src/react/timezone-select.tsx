@@ -2,6 +2,7 @@ import { Combobox } from "@base-ui/react/combobox";
 import * as stylex from "@stylexjs/stylex";
 import { Check, ChevronDown, Search } from "lucide-react";
 import * as React from "react";
+import { currentTimeZoneName } from "@orbmeet/public-api-contract/time-zone";
 
 import { layout } from "../styles/atoms";
 import { control, listbox } from "../styles/controls";
@@ -25,7 +26,7 @@ const styles = stylex.create({
 });
 
 interface ZoneEntry {
-  /** IANA identifier — the stored value. */
+  /** IANA identifier under its current name: what picking the row stores. */
   value: string;
   /** Display form; `{ value, label }` is the shape Combobox labels items by. */
   label: string;
@@ -54,14 +55,20 @@ function normalizeSearch(value: string): string {
   return value.replaceAll("_", " ").replaceAll("/", " ").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+/**
+ * One row, under the zone's current name whatever spelling `zone` uses: V8
+ * lists India as `Asia/Calcutta`, and someone typing "Kolkata" should find it.
+ * The spelling it came in stays searchable too.
+ */
 function toEntry(zone: string, at: Date): ZoneEntry {
   const offset = offsetFor(zone, at);
+  const name = currentTimeZoneName(zone);
   return {
-    value: zone,
-    label: zone.replaceAll("_", " "),
+    value: name,
+    label: name.replaceAll("_", " "),
     offsetLabel: offset.label,
     offsetMinutes: offset.minutes,
-    searchText: normalizeSearch(`${zone} ${offset.label}`),
+    searchText: normalizeSearch(name === zone ? `${name} ${offset.label}` : `${name} ${zone} ${offset.label}`),
   };
 }
 
@@ -82,8 +89,12 @@ function buildZoneEntries(): ZoneEntry[] {
   const zones: string[] =
     typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
   // Intl enumerates geographic zones, but UTC is also a valid choice.
-  zoneEntriesCache = [...new Set(["UTC", ...zones])]
-    .map((zone) => toEntry(zone, now))
+  const entries = new Map<string, ZoneEntry>();
+  for (const zone of ["UTC", ...zones]) {
+    const entry = toEntry(zone, now);
+    if (!entries.has(entry.value)) entries.set(entry.value, entry);
+  }
+  zoneEntriesCache = [...entries.values()]
     .sort((a, b) => a.offsetMinutes - b.offsetMinutes || a.value.localeCompare(b.value));
   return zoneEntriesCache;
 }

@@ -3,8 +3,6 @@
 // which prepares the stack first (e2e/run.ts).
 import { defineConfig, devices } from "@playwright/test";
 import {
-  LIVEKIT_CONTAINER,
-  LIVEKIT_IMAGE,
   LIVEKIT_PORT,
   WEB_DIR,
   WEB_PORT,
@@ -41,10 +39,8 @@ export default defineConfig({
   webServer: [
     {
       name: "livekit",
-      // e2e/run.ts removes the container before and after a run.
-      command:
-        `exec docker run --rm --name ${LIVEKIT_CONTAINER} --network host --cpus 1 ` +
-        `-v ${WEB_DIR}e2e/livekit.yaml:/etc/livekit.yaml:ro ${LIVEKIT_IMAGE} --config /etc/livekit.yaml`,
+      command: "node e2e/livekit.ts",
+      cwd: WEB_DIR,
       url: `http://127.0.0.1:${LIVEKIT_PORT}`,
       reuseExistingServer: false,
       timeout: 60_000,
@@ -59,7 +55,9 @@ export default defineConfig({
     },
     {
       name: "web",
-      command: `pnpm exec vite dev --mode e2e --port ${WEB_PORT} --strictPort`,
+      // On 127.0.0.1, where LiveKit's webhooks arrive, rather than whichever
+      // address `localhost` resolves to first (::1 on macOS).
+      command: `pnpm exec vite dev --mode e2e --host 127.0.0.1 --port ${WEB_PORT} --strictPort`,
       cwd: WEB_DIR,
       url: WEB_URL,
       reuseExistingServer: false,

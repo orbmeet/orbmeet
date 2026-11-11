@@ -6,7 +6,7 @@
     "dev": "cf dev",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
-    "test:image": "docker build --quiet -t orbmeet-code-runner:dev . && vitest run --config vitest.container.config.ts",
+    "test:image": "docker build --quiet --platform linux/amd64 -t orbmeet-code-runner:dev . && vitest run --config vitest.container.config.ts",
     "deploy": "pnpm -C ../.. run check && cf deploy"
   },
   "dependencies": {

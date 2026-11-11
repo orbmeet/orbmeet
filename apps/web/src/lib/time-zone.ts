@@ -1,4 +1,4 @@
-import { MAX_TIME_ZONE_LENGTH, isValidTimeZone } from "@orbmeet/public-api-contract/time-zone";
+import { MAX_TIME_ZONE_LENGTH, currentTimeZoneName, isValidTimeZone } from "@orbmeet/public-api-contract/time-zone";
 
 // IANA time zones. The validator itself (`timeZoneSchema`) is shared with the
 // public API in `@orbmeet/public-api-contract/fields`; these are the app-side
@@ -18,7 +18,9 @@ export function deviceTimeZone(): string {
     // A browser that cannot map the system's zone to an IANA one says so as
     // `Etc/Unknown` (Chromium, with some Windows and Linux settings), which
     // is not a zone anything can format with or the server will accept.
-    return zone && isValidTimeZone(zone) ? zone : "UTC";
+    // Under its current name: Chromium still says `Asia/Calcutta`, and a
+    // zone chosen here should read the same as one chosen in Safari.
+    return zone && isValidTimeZone(zone) ? currentTimeZoneName(zone) : "UTC";
   } catch {
     return "UTC";
   }

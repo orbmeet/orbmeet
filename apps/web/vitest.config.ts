@@ -1,5 +1,6 @@
 import viteReact from "@vitejs/plugin-react";
 import stylex from "@stylexjs/unplugin";
+import { fileURLToPath } from "node:url";
 import { configDefaults, defineConfig } from "vitest/config";
 
 import { stylexOptions } from "../../stylex.config.ts";
@@ -26,7 +27,7 @@ export default defineConfig({
   resolve: {
     tsconfigPaths: true,
     alias: {
-      "cloudflare:workers": new URL("./src/test/cloudflare-workers-stub.ts", import.meta.url).pathname,
+      "cloudflare:workers": fileURLToPath(new URL("./src/test/cloudflare-workers-stub.ts", import.meta.url)),
     },
   },
 });

@@ -1,5 +1,7 @@
 import * as React from "react";
+import type { Room } from "livekit-client";
 import { isKey, isLetter } from "@orbmeet/ui/keyboard";
+import { canSelectAudioOutput } from "./speaker-test";
 
 // Chat notification sound. Its quietness is in the file itself: iOS ignores
 // `HTMLMediaElement.volume`, so a level set here would play at full volume
@@ -11,7 +13,22 @@ export function getRemoteMessageDelta(previous: number, current: number): number
   return current >= previous ? current - previous : 0;
 }
 
+/**
+ * Point a sound the meeting plays itself at the speaker the meeting's voices
+ * use. LiveKit routes every remote voice to the chosen output; a plain audio
+ * element would play on the system default, so a ping meant for a headset
+ * would come out of the laptop. Where the meeting offers no speaker choice,
+ * both play on the default anyway.
+ */
+export async function followMeetingSpeaker(audio: HTMLAudioElement, room: Room | undefined): Promise<void> {
+  if (!room || !canSelectAudioOutput()) return;
+  // The default speaker is the empty id everywhere.
+  const sinkId = room.getActiveDevice("audiooutput") ?? "";
+  if (audio.sinkId !== sinkId) await audio.setSinkId(sinkId);
+}
+
 interface MeetingUIOptions {
+  room: Room | undefined;
   remoteChatMessageCount: number;
   controlBarAutoHide: boolean;
   canModerate: boolean;
@@ -44,6 +61,7 @@ export interface MeetingUIState {
 
 export function useMeetingUI(opts: MeetingUIOptions): MeetingUIState {
   const {
+    room,
     remoteChatMessageCount,
     controlBarAutoHide,
     canModerate,
@@ -99,8 +117,13 @@ export function useMeetingUI(opts: MeetingUIOptions): MeetingUIState {
     }
     const audio = chatNotificationAudioRef.current;
     audio.currentTime = 0;
-    audio.play().catch(() => {});
-  }, []);
+    // A ping is a courtesy: if the speaker has gone or the browser holds the
+    // sound back until the page is interacted with, the unread count says it.
+    followMeetingSpeaker(audio, room)
+      .catch(() => {})
+      .then(() => audio.play())
+      .catch(() => {});
+  }, [room]);
 
   // The chat history is bounded, so array length is not an event counter. The
   // chat hook supplies a monotonic count that continues across history eviction.
@@ -168,6 +191,8 @@ export function useMeetingUI(opts: MeetingUIOptions): MeetingUIState {
       // press meant for it must not also close the panel or raise a hand.
       if (target?.closest(".tl-container")) return;
       if (event.ctrlKey || event.metaKey || event.altKey) return;
+      // Each of these toggles: a held key would flip it at the repeat rate.
+      if (event.repeat) return;
 
       if (isKey(event, "Escape")) {
         if (panel !== null) setPanel(null);

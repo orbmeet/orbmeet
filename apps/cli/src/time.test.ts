@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { formatInTimeZone, minutesBetween, parseDurationMinutes, wallClockToIso } from "./time.ts";
+import {
+  formatInTimeZone,
+  localTimeZone,
+  minutesBetween,
+  parseDurationMinutes,
+  requireLocalTimeZone,
+  wallClockToIso,
+} from "./time.ts";
 
 describe("wallClockToIso", () => {
   it("converts a wall clock time in a named zone", () => {
@@ -62,5 +69,38 @@ describe("parseDurationMinutes", () => {
 describe("minutesBetween", () => {
   it("derives a meeting's duration from its bounds", () => {
     expect(minutesBetween("2026-07-20T14:00:00.000Z", "2026-07-20T15:30:00.000Z")).toBe(90);
+  });
+});
+
+describe("localTimeZone", () => {
+  // The runtime names no zone (`TZ=`, `TZ=:/etc/localtime`), and the clock
+  // runs at `offsetMinutes` from UTC all year.
+  function withUnnamedZone(timeZone: string | undefined, offsetMinutes: number, run: () => void) {
+    const resolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+    Intl.DateTimeFormat.prototype.resolvedOptions = function () {
+      return { ...resolvedOptions.call(this), timeZone } as Intl.ResolvedDateTimeFormatOptions;
+    };
+    const offset = vi.spyOn(Date.prototype, "getTimezoneOffset").mockReturnValue(offsetMinutes);
+    try {
+      run();
+    } finally {
+      Intl.DateTimeFormat.prototype.resolvedOptions = resolvedOptions;
+      offset.mockRestore();
+    }
+  }
+
+  it("is UTC when the zone has no name but the clock never leaves UTC", () => {
+    for (const timeZone of ["Etc/Unknown", undefined]) {
+      withUnnamedZone(timeZone, 0, () => expect(localTimeZone()).toBe("UTC"));
+    }
+  });
+
+  it("does not pass off a nameless local clock as UTC", () => {
+    for (const timeZone of ["Etc/Unknown", undefined]) {
+      withUnnamedZone(timeZone, -360, () => {
+        expect(localTimeZone()).toBeNull();
+        expect(() => requireLocalTimeZone()).toThrow(/--timezone/);
+      });
+    }
   });
 });

@@ -1,5 +1,5 @@
 import { option, optionList, type ParsedArgs } from "./args.ts";
-import { assertTimeZone, localTimeZone } from "./time.ts";
+import { assertTimeZone, requireLocalTimeZone } from "./time.ts";
 
 /** Meeting content kinds the API accepts in `include`. */
 export type MeetingInclude = "summary" | "transcript" | "recordings" | "whiteboard_pdf";
@@ -29,7 +29,7 @@ function selectorTimeZone(args: ParsedArgs): string {
   if (process.env.ORBMEET_TIMEZONE) {
     return assertTimeZone(process.env.ORBMEET_TIMEZONE, "ORBMEET_TIMEZONE");
   }
-  return localTimeZone();
+  return requireLocalTimeZone();
 }
 
 export function buildSelectorParams(args: ParsedArgs, subject: string): URLSearchParams {

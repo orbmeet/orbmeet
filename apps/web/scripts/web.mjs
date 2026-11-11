@@ -25,7 +25,10 @@ try {
 
   if (action === "dev") {
     runCommand(process.execPath, ["scripts/setup-livekit.mjs"], { cwd: web });
-    runCommand(process.execPath, [vite, "dev", "--port", "3000"], { cwd: web });
+    // On 127.0.0.1, where LiveKit's webhooks arrive (setup-livekit.mjs),
+    // rather than whichever address `localhost` resolves to first (::1 on
+    // macOS). http://localhost:3000 still finds it.
+    runCommand(process.execPath, [vite, "dev", "--host", "127.0.0.1", "--port", "3000"], { cwd: web });
     process.exit(0);
   }
 

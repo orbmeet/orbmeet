@@ -447,6 +447,7 @@ export function useLiveMeeting(
 
   // ── UI state ──
   const ui = useMeetingUI({
+    room: roomInstance,
     remoteChatMessageCount,
     controlBarAutoHide,
     canModerate,

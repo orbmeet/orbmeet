@@ -762,7 +762,7 @@ export function SyncedWhiteboard({
     isDraggingOver,
     handleDragOver,
     handleDragLeave,
-    handleDragEnd,
+    handleDrop,
     tldrawOptions,
   } = useWhiteboardImageImport({
     editor,
@@ -849,8 +849,7 @@ export function SyncedWhiteboard({
       onLostPointerCapture={handlePresencePointerUp}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
-      onDragEnd={handleDragEnd}
-      onDrop={handleDragEnd}
+      onDropCapture={handleDrop}
     >
       {roomSizeLimited && (
         <div

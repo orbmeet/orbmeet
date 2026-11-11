@@ -18,7 +18,9 @@ export const RUN_DIR = fileURLToPath(new URL("../.cloudflare/e2e-run", import.me
 export const WHITEBOARD_PID_FILE = `${RUN_DIR}/whiteboard.pid`;
 
 export const LIVEKIT_CONTAINER = "orbmeet-e2e-livekit";
-export const LIVEKIT_IMAGE = "livekit/livekit-server:v1.13.6";
+// Test-only, like the secrets below.
+export const LIVEKIT_API_KEY = "e2ekey";
+export const LIVEKIT_KEYS = { [LIVEKIT_API_KEY]: "e2e-livekit-secret-0123456789abcdef" };
 
 // Test-only secrets. They guard nothing outside this loopback stack.
 const WHITEBOARD_JWT_KEYS = JSON.stringify({ e2e: "e2e-whiteboard-jwt-key-0123456789abcdef" });
@@ -33,7 +35,7 @@ export const WEB_VARS: Record<string, string> = {
   EMAIL_FROM_ADDRESS: "Orb Meet <noreply@example.com>",
   NODES: JSON.stringify({
     e2e: {
-      media: { url: `ws://localhost:${LIVEKIT_PORT}`, capacity: 100, keys: { e2ekey: "e2e-livekit-secret-0123456789abcdef" } },
+      media: { url: `ws://localhost:${LIVEKIT_PORT}`, capacity: 100, keys: LIVEKIT_KEYS },
       whiteboard: {
         url: WHITEBOARD_URL,
         jwt: JSON.parse(WHITEBOARD_JWT_KEYS),

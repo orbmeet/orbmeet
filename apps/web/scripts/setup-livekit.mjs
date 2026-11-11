@@ -1,23 +1,25 @@
+// Starts `pnpm dev`'s LiveKit, or keeps the one already running when it is
+// this configuration's. The smoke tests run their own (e2e/livekit.ts), on
+// other ports, so the two can run side by side.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import http from "node:http";
 import { resolve } from "node:path";
+import { dockerNetworking, liveKitRunArgs } from "./lib/livekit-container.ts";
 
 const root = resolve(import.meta.dirname, "../../..");
-const configPath = resolve(root, "infra/dev/livekit.dev.yaml");
 const CONTAINER = "livekit-dev";
-const IMAGE = "livekit/livekit-server:v1.13.6";
-
-// The signalling port lives in the config alone, so the two cannot disagree.
-// It is never a media node's: this machine may run one (see the config).
-const config = readFileSync(configPath, "utf8");
-const port = Number(/^port:\s*(\d+)\s*$/m.exec(config)?.[1]);
-if (!Number.isInteger(port)) throw new Error(`[livekit] No top-level port in ${configPath}`);
+const PORT = 27880;
+/** The Vite dev server, as scripts/web.mjs starts it. */
+const WEB_PORT = 3000;
+// apps/web/.dev.vars.example's NODES and the transcription agent's
+// .env.example name the same key.
+const KEYS = { devkey: "secret" };
 
 function answers() {
   return new Promise((res) => {
-    const req = http.get(`http://127.0.0.1:${port}`, { timeout: 1000 }, (response) => {
+    const req = http.get(`http://127.0.0.1:${PORT}`, { timeout: 1000 }, (response) => {
       res(response.statusCode === 200);
     });
     req.on("error", () => res(false));
@@ -40,46 +42,30 @@ function containerState() {
   return { running: running === "true", configHash: label };
 }
 
-function hasDocker() {
-  return spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0;
-}
+const networking = dockerNetworking();
 
-// A config edit replaces the container instead of reusing a stale one.
-const configHash = createHash("sha256").update(config).digest("hex").slice(0, 16);
-
-if (!hasDocker()) {
+if (!networking) {
   console.warn("[livekit] Docker is not available. Skipping automatic LiveKit start.");
 } else {
+  const run = liveKitRunArgs({ networking, name: CONTAINER, port: PORT, keys: KEYS, webhook: { apiKey: "devkey", port: WEB_PORT } });
+  // Any change to what would run (image, configuration, networking) replaces
+  // the container instead of reusing a stale one.
+  const configHash = createHash("sha256").update(JSON.stringify(run)).digest("hex").slice(0, 16);
   const state = containerState();
   if (state?.running && state.configHash === configHash && await answers()) {
-    console.log(`[livekit] Development LiveKit is already running on 127.0.0.1:${port}.`);
+    console.log(`[livekit] Development LiveKit is already running on 127.0.0.1:${PORT}.`);
   } else {
-    console.log("[livekit] Starting the development LiveKit...");
+    console.log(`[livekit] Starting the development LiveKit (${networking === "host" ? "host networking" : "ports published on 127.0.0.1"})...`);
     spawnSync("docker", ["rm", "-f", CONTAINER], { stdio: "ignore" });
-    const run = spawnSync(
+    const [command, ...rest] = run;
+    const started = spawnSync(
       "docker",
-      [
-        "run",
-        "-d",
-        "--name",
-        CONTAINER,
-        "--label",
-        `orbmeet.config=${configHash}`,
-        // Host networking lets its webhook reach the Vite dev server on
-        // loopback; the config keeps every listener off media-node ports.
-        "--network",
-        "host",
-        "-v",
-        `${configPath}:/etc/livekit.yaml:ro`,
-        IMAGE,
-        "--config",
-        "/etc/livekit.yaml",
-      ],
+      [command, "-d", "--label", `orbmeet.config=${configHash}`, ...rest],
       { stdio: "pipe", encoding: "utf8" },
     );
 
-    if (run.status !== 0) {
-      console.warn(`[livekit] Failed to start LiveKit container: ${run.stderr}`);
+    if (started.status !== 0) {
+      console.warn(`[livekit] Failed to start LiveKit container: ${started.stderr}`);
     } else {
       let ready = false;
       for (let attempt = 0; attempt < 10 && !ready; attempt++) {
@@ -88,13 +74,13 @@ if (!hasDocker()) {
       }
       console[ready ? "log" : "warn"](
         ready
-          ? `[livekit] Development LiveKit ready on 127.0.0.1:${port}.`
-          : `[livekit] Container started but port ${port} did not become ready in time.`,
+          ? `[livekit] Development LiveKit ready on 127.0.0.1:${PORT}.`
+          : `[livekit] Container started but port ${PORT} did not become ready in time; see \`docker logs ${CONTAINER}\`.`,
       );
     }
   }
 }
 
 if (!existsSync(resolve(root, "apps/web/.dev.vars"))) {
-  console.warn(`[livekit] apps/web/.dev.vars is missing; its NODES should name ws://localhost:${port}.`);
+  console.warn(`[livekit] apps/web/.dev.vars is missing; its NODES should name ws://localhost:${PORT}.`);
 }

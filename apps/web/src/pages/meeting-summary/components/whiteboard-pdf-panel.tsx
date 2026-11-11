@@ -284,7 +284,6 @@ function useWhiteboardPdfActions(
   const prefetchOverrideRef = useRef<Map<TLAssetId, string> | null>(null);
   const assetScopeRef = useRef<RevisionAssetScope | null>(null);
   const exportJobPageIdsRef = useRef<string[]>([]);
-  const openAfterGenerateRef = useRef(true);
   const operationInFlightRef = useRef(false);
   const rendererReadyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -332,9 +331,9 @@ function useWhiteboardPdfActions(
 
   const isBusy = phase !== "idle";
 
-  const openExistingPdf = useCallback(async (withinGeneration = false) => {
-    if (operationInFlightRef.current && !withinGeneration) return;
-    if (!withinGeneration) operationInFlightRef.current = true;
+  const openExistingPdf = useCallback(async () => {
+    if (operationInFlightRef.current) return;
+    operationInFlightRef.current = true;
     setError(null);
     setPhase("opening");
     try {
@@ -344,17 +343,19 @@ function useWhiteboardPdfActions(
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not open PDF.");
     } finally {
-      if (!withinGeneration) operationInFlightRef.current = false;
+      operationInFlightRef.current = false;
       setPhase("idle");
     }
   }, [hasCapturedWhiteboards, meetingId]);
 
-  const startGenerate = useCallback(async (openAfterGenerate = true) => {
+  // Generating never opens the PDF itself: by the time it is saved, the click
+  // that asked for it is long past what any browser lets open a tab, and the
+  // button it leaves behind, "Download PDF", opens it on a click of its own.
+  const startGenerate = useCallback(async () => {
     if (operationInFlightRef.current) return;
     operationInFlightRef.current = true;
     setError(null);
     setPhase("loading");
-    openAfterGenerateRef.current = openAfterGenerate;
     try {
       if (!hasCapturedWhiteboards) throw new Error("This Meeting has no saved Whiteboard.");
       const result = await getMeetingWhiteboardSnapshots({ data: { meetingId } });
@@ -468,7 +469,6 @@ function useWhiteboardPdfActions(
 
           setExportJob((current) => (current?.id === jobId ? null : current));
           onGenerated?.();
-          if (openAfterGenerateRef.current) await openExistingPdf(true);
         } catch (err) {
           setError(
             err instanceof Error
@@ -488,7 +488,7 @@ function useWhiteboardPdfActions(
         }
       })();
     },
-    [meetingId, onGenerated, openExistingPdf],
+    [meetingId, onGenerated],
   );
 
   const hiddenRenderer = useMemo(() => {
@@ -663,7 +663,7 @@ export function MeetingWhiteboardPanel({
       autoGenerateMeetingIdRef.current === meeting.meetingId
     ) return;
     autoGenerateMeetingIdRef.current = meeting.meetingId;
-    void actions.startGenerate(false);
+    void actions.startGenerate();
   }, [
     actions,
     hasCapturedWhiteboards,

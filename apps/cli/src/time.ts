@@ -1,3 +1,5 @@
+import { currentTimeZoneName, isValidTimeZone } from "@orbmeet/public-api-contract/time-zone";
+
 const OFFSET_OR_UTC = /Z$|[+-]\d{2}:?\d{2}$/;
 const ISO_INSTANT =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(?:Z|[+-](\d{2}):?(\d{2}))$/i;
@@ -102,8 +104,30 @@ export function minutesBetween(startsAt: string, endsAt: string): number {
   return Math.round((Date.parse(endsAt) - Date.parse(startsAt)) / 60_000);
 }
 
-export function localTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+/**
+ * The machine's IANA zone, or null when the runtime cannot name it. Node
+ * cannot when TZ is empty (`TZ=`, which POSIX reads as UTC, comes back as
+ * `Etc/Unknown`) or is a path or a POSIX rule (`TZ=:/etc/localtime`,
+ * `TZ=UTC0`), while `Date` still keeps the machine's clock. A nameless clock
+ * that never leaves UTC is UTC; for any other, answering UTC would move every
+ * time by the machine's offset.
+ */
+export function localTimeZone(): string | null {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (zone && isValidTimeZone(zone)) return currentTimeZoneName(zone);
+  const year = new Date().getFullYear();
+  const alwaysUtc = [0, 6].every((month) => new Date(year, month, 1).getTimezoneOffset() === 0);
+  return alwaysUtc ? "UTC" : null;
+}
+
+/** The machine's IANA zone, or an error that says how to give one instead. */
+export function requireLocalTimeZone(): string {
+  const zone = localTimeZone();
+  if (zone) return zone;
+  throw new Error(
+    `This machine's time zone has no IANA name (TZ=${JSON.stringify(process.env.TZ ?? "")}). `
+      + "Pass --timezone, set ORBMEET_TIMEZONE, or set TZ to a zone such as Asia/Dhaka.",
+  );
 }
 
 export function assertTimeZone(value: string, source: string): string {

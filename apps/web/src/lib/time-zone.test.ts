@@ -60,9 +60,14 @@ describe("deviceTimeZone", () => {
     });
   }
 
-  it("is the device's zone, aliases included", () => {
+  it("is the device's zone", () => {
+    deviceReports("Asia/Dhaka");
+    expect(deviceTimeZone()).toBe("Asia/Dhaka");
+  });
+
+  it("names the zone as IANA does now when Chromium reports an old name", () => {
     deviceReports("Asia/Calcutta");
-    expect(deviceTimeZone()).toBe("Asia/Calcutta");
+    expect(deviceTimeZone()).toBe("Asia/Kolkata");
   });
 
   it("is UTC when Chromium cannot name the system's zone", () => {

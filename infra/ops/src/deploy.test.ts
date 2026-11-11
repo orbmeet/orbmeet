@@ -45,6 +45,7 @@ function fleet() {
       return "";
     }
     if (args[0] === "rsync") {
+      if (args[1] === "--version") return "rsync  version 3.4.1  protocol version 32\n";
       if (args.includes("--relative")) state.steps.push(`${nodeOf(args.at(-1)!.split(":")[0])} sync`);
       return "";
     }
