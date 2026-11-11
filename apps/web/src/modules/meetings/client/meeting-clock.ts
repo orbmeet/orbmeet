@@ -14,6 +14,11 @@ export interface MeetingClockSync {
   meetingStartedAtMs: number;
   /** Server time minus this browser's time, taken when the join response arrived. */
   serverClockOffsetMs: number;
+  /**
+   * This browser's time when the join response arrived. Whatever else came in
+   * that response and ages, such as the whiteboard token, ages from here.
+   */
+  receivedAtMs: number;
 }
 
 /** The clock a join response gives, received at `receivedAtMs` on this browser's clock. */
@@ -25,6 +30,7 @@ export function meetingClockFrom(
   return {
     meetingStartedAtMs: response.meetingStartedAtMs,
     serverClockOffsetMs: Number.isFinite(offset) ? offset : 0,
+    receivedAtMs,
   };
 }
 

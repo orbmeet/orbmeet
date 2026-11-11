@@ -156,6 +156,7 @@ export function useMeetingWhiteboard({
   const addToast = meeting.addToast;
   const { session, state: whiteboardState } = useWhiteboardSession(
     joinResult,
+    meetingClock.receivedAtMs,
     meeting.roomInstance,
     meeting.canModerate,
   );

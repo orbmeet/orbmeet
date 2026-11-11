@@ -491,6 +491,7 @@ function LiveMeetingRoute() {
       // settled, so LiveKit owns the microphone before the warmup stops.
       onInitialMediaSettled={stopWarmupAudio}
       onDisconnected={(reason) => session.linkDisconnected(link.id, reason)}
+      onPageUnload={() => session.beginLeave()}
       onError={(error) => session.linkError(link.id, error)}
       onMediaDeviceFailure={(failure, kind) => reportMeetingMediaDeviceFailure(code, failure, kind)}
     >

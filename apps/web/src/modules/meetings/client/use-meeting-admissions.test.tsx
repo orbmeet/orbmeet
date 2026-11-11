@@ -107,4 +107,33 @@ describe("useMeetingAdmissions", () => {
       expect(host.waiting()).toEqual(["Bob"]);
     });
   });
+
+  it("keeps someone off the list when the room reports the change before the reply", async () => {
+    const { room, bump } = roomAt(1);
+    const host = mount(room);
+    await act(async () => {});
+    answers[0]({ pending: [alice, bob] });
+    await vi.waitFor(async () => {
+      await settle();
+      expect(host.waiting()).toEqual(["Alice", "Bob"]);
+    });
+
+    let reply!: () => void;
+    decideAdmission.mockImplementationOnce(() => new Promise((resolve) => { reply = () => resolve({ success: true }); }));
+    let admitted!: Promise<void>;
+    act(() => { admitted = host.admit(alice.id); });
+    act(() => bump(2)); // Alice's admission bumps the version first
+    await act(async () => {});
+    await act(async () => { reply(); await admitted; });
+    await settle();
+    // Version 2's list has not landed; version 1's is still up, without Alice.
+    expect(answers).toHaveLength(2);
+    expect(host.waiting()).toEqual(["Bob"]);
+
+    answers[1]({ pending: [bob] });
+    await vi.waitFor(async () => {
+      await settle();
+      expect(host.waiting()).toEqual(["Bob"]);
+    });
+  });
 });

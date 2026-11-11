@@ -204,10 +204,10 @@ function RecorderMeetingContent({
   const egressMode = useRecorderEgressMode(room, initialEgressMode);
   const startedRef = React.useRef(false);
   // The recording's own clock: it starts at mount, on this machine's time.
-  const [recorderClock] = React.useState<MeetingClockSync>(() => ({
-    meetingStartedAtMs: Date.now(),
-    serverClockOffsetMs: 0,
-  }));
+  const [recorderClock] = React.useState<MeetingClockSync>(() => {
+    const now = Date.now();
+    return { meetingStartedAtMs: now, serverClockOffsetMs: 0, receivedAtMs: now };
+  });
   const meetingStartTimeMs = recorderClock.meetingStartedAtMs;
 
   const hasWhiteboard = Boolean(whiteboardUrl && recorderToken);

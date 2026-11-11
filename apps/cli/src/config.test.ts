@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, stat, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { PassThrough } from "node:stream";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -123,4 +124,43 @@ describe("orbmeet configure", () => {
     const stored = JSON.parse(await readFile(join(configDir, "orbmeet", "config.json"), "utf8")) as { token: string };
     expect(stored.token).toBe("orbmeet_pat.fromenv");
   }, 15_000);
+});
+
+describe("readPiped", () => {
+  it("reads a pipe to its end", async () => {
+    const { readPiped } = await loadConfig();
+    const input = new PassThrough();
+    const read = readPiped(input, 500);
+    input.end("pat_piped\n");
+    expect(new TextDecoder().decode((await read)!)).toBe("pat_piped\n");
+  });
+
+  it("keeps reading a pipe that has spoken, however slow its end", async () => {
+    vi.useFakeTimers();
+    try {
+      const { readPiped } = await loadConfig();
+      const input = new PassThrough();
+      const read = readPiped(input, 500);
+      input.write("pat_");
+      await vi.advanceTimersByTimeAsync(5_000);
+      input.end("slow");
+      expect(new TextDecoder().decode((await read)!)).toBe("pat_slow");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives up on, and closes, a pipe that stays silent", async () => {
+    vi.useFakeTimers();
+    try {
+      const { readPiped } = await loadConfig();
+      const input = new PassThrough();
+      const read = readPiped(input, 500);
+      await vi.advanceTimersByTimeAsync(500);
+      await expect(read).resolves.toBeNull();
+      expect(input.destroyed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

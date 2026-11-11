@@ -1,5 +1,5 @@
 import * as React from "react";
-import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { Room } from "livekit-client";
 import { getErrorMessage } from "@/lib/error-inspection";
 import { logError } from "@/lib/logger";
@@ -11,8 +11,6 @@ import type { HostPermissionRequest } from "./types";
 
 /** After a failed fetch of the waiting list, the next try. */
 const ADMISSION_FETCH_RETRY_MS = 5_000;
-
-type PendingAdmissions = Awaited<ReturnType<typeof listPendingAdmissions>>;
 
 /**
  * Who is waiting to be let in, for a moderator.
@@ -36,13 +34,12 @@ export function useMeetingAdmissions({
   room: Room | undefined;
   addToast: ReturnType<typeof useToast>["add"];
 }) {
-  const queryClient = useQueryClient();
   const admissionsVersion = useMeetingRoomState(room)?.admissionsVersion;
   const queryKey = React.useMemo(
     () => queryKeys.meetings.pendingAdmissions(meetingId, managerConnectionId, admissionsVersion),
     [admissionsVersion, managerConnectionId, meetingId],
   );
-  const { data, refetch } = useQuery({
+  const { data, isPlaceholderData, refetch } = useQuery({
     queryKey,
     queryFn: () => listPendingAdmissions({ data: { meetingId, connectionId: managerConnectionId } }),
     enabled: canModerate,
@@ -52,6 +49,19 @@ export function useMeetingAdmissions({
     retryDelay: ADMISSION_FETCH_RETRY_MS,
   });
   const [pendingDecisionIds, setPendingDecisionIds] = React.useState<ReadonlySet<string>>(() => new Set());
+  // Decided here, so off the list at once, until a list fetched for the room
+  // confirms it. Not a cache edit: the version bump a decision causes can
+  // arrive before its reply, and the list shown meanwhile is the previous
+  // version's placeholder, which no cache entry backs.
+  const [decidedIds, setDecidedIds] = React.useState<ReadonlySet<string>>(() => new Set());
+  React.useEffect(() => {
+    if (!data || isPlaceholderData) return;
+    const listed = new Set(data.pending.map((request) => request.id));
+    setDecidedIds((current) => {
+      const stillListed = [...current].filter((id) => listed.has(id));
+      return stillListed.length === current.size ? current : new Set(stillListed);
+    });
+  }, [data, isPlaceholderData]);
 
   const decide = React.useCallback(
     async (admissionId: string, approve: boolean) => {
@@ -59,10 +69,7 @@ export function useMeetingAdmissions({
       setPendingDecisionIds((current) => new Set(current).add(admissionId));
       try {
         await decideAdmission({ data: { meetingId, admissionId, approve, connectionId: managerConnectionId } });
-        // Gone from the list now; the version bump that follows confirms it.
-        queryClient.setQueryData<PendingAdmissions>(queryKey, (current) =>
-          current && { ...current, pending: current.pending.filter((request) => request.id !== admissionId) },
-        );
+        setDecidedIds((current) => new Set(current).add(admissionId));
       } catch (err) {
         logError(`[Meeting] Failed to ${approve ? "admit" : "deny"} participant:`, err);
         addToast({
@@ -79,13 +86,13 @@ export function useMeetingAdmissions({
         });
       }
     },
-    [addToast, managerConnectionId, meetingId, pendingDecisionIds, queryClient, queryKey, refetch],
+    [addToast, managerConnectionId, meetingId, pendingDecisionIds, refetch],
   );
 
   const hostPermissionRequests = React.useMemo<HostPermissionRequest[]>(
     () =>
       canModerate
-        ? (data?.pending ?? []).map((request) => ({
+        ? (data?.pending ?? []).filter((request) => !decidedIds.has(request.id)).map((request) => ({
             kind: "meeting-admission" as const,
             id: `admission-${request.id}`,
             admissionId: request.id,
@@ -95,7 +102,7 @@ export function useMeetingAdmissions({
             decisionPending: pendingDecisionIds.has(request.id),
           }))
         : [],
-    [canModerate, data, pendingDecisionIds],
+    [canModerate, data, decidedIds, pendingDecisionIds],
   );
 
   return {

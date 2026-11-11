@@ -51,6 +51,8 @@ export interface WhiteboardSessionApi {
 export interface WhiteboardSessionOptions {
   connectionId: string;
   surface: MeetingSurfaceAccess | undefined;
+  /** When the join response carrying `surface` arrived, on `now`'s clock. */
+  surfaceReceivedAt: number;
   canModerate: boolean;
   api: WhiteboardSessionApi;
   /**
@@ -135,6 +137,7 @@ export class WhiteboardSession {
         url: surface?.url ?? null,
         documentId: surface?.documentId ?? null,
         documentTitle: surface?.documentTitle ?? null,
+        receivedAt: options.surfaceReceivedAt,
       },
       mint: () => options.api.mintAccess(),
       onChange: () => this.changed(),

@@ -50,9 +50,3 @@ export async function stopAllLocalTracks(room: Room): Promise<void> {
   stopPublishedTracks(room);
   await new Promise((resolve) => setTimeout(resolve, 100));
 }
-
-/** {@link stopAllLocalTracks} for teardown paths that cannot wait for it. */
-export function stopAllLocalTracksSync(room: Room) {
-  void disableLocalMedia(room);
-  stopPublishedTracks(room);
-}

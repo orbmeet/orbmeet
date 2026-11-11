@@ -163,7 +163,11 @@ describe("joining", () => {
     // Connecting, a compatibility retry, a "Reload view": none of it is the offset's business.
     await vi.advanceTimersByTimeAsync(25_000);
     h.connect();
-    expect(h.snapshot().clock).toEqual({ meetingStartedAtMs: 1_000_000, serverClockOffsetMs: 30_000 });
+    expect(h.snapshot().clock).toEqual({
+      meetingStartedAtMs: 1_000_000,
+      serverClockOffsetMs: 30_000,
+      receivedAtMs: 1_000_000,
+    });
   });
 
   it("refuses to start in a browser that cannot place calls", () => {
@@ -513,6 +517,22 @@ describe("recovery after losing an established connection", () => {
     expect(h.snapshot()).toMatchObject({ phase: "failed", failure: { code: "MEETING_OPEN_ELSEWHERE" } });
   });
 
+  it("names the rejoin's own connection when that one fails before connecting", async () => {
+    const h = createHarness();
+    const link = await joinAndConnect(h);
+    const lost = h.snapshot().access?.connectionId;
+    h.session.linkDisconnected(link.id, undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    await h.answer(joined());
+    const rejoin = h.snapshot().access?.connectionId;
+    expect(rejoin).not.toBe(lost);
+    // It reached the room, which ended `lost` as superseded by it, then broke.
+    h.session.linkError(h.snapshot().link!.id, new Error("could not establish pc connection"));
+    await vi.advanceTimersByTimeAsync(AUTO_REJOIN_DELAYS_MS[1]);
+    expect(h.requests).toHaveLength(1);
+    expect(h.requests[0].request.replacesConnectionId).toBe(rejoin);
+  });
+
   it("keeps the conversation through the rejoin, and starts a new stay without it", async () => {
     const h = createHarness();
     const link = await joinAndConnect(h);
@@ -534,7 +554,8 @@ describe("recovery after losing an established connection", () => {
   it("rejoins when LiveKit disconnected a frozen page itself, without blaming the node", async () => {
     const h = createHarness();
     const link = await joinAndConnect(h);
-    // LiveKit's own `freeze`/`pagehide` handler: the app asked for nothing.
+    // LiveKit's own `freeze` handler, or a page entering the back/forward
+    // cache: the participant asked for nothing.
     h.session.linkDisconnected(link.id, DisconnectReason.CLIENT_INITIATED);
     expect(h.snapshot()).toMatchObject({ phase: "recovering", link: null });
     await vi.advanceTimersByTimeAsync(0);

@@ -15,11 +15,12 @@ import {
   setWhiteboardSurfaceState,
 } from "@/modules/whiteboards/server/meeting-actions.functions";
 
-function createSession(joinResult: JoinResult, canModerate: boolean): WhiteboardSession {
+function createSession(joinResult: JoinResult, receivedAt: number, canModerate: boolean): WhiteboardSession {
   const { meetingId, connectionId } = joinResult;
   return new WhiteboardSession({
     connectionId,
     surface: joinResult.surface,
+    surfaceReceivedAt: receivedAt,
     canModerate,
     // A Space meeting is about the work the Space keeps, so it opens on the
     // board. A personal-link call opens on faces, with the board one tap away.
@@ -48,9 +49,14 @@ function createSession(joinResult: JoinResult, canModerate: boolean): Whiteboard
 /**
  * The meeting's whiteboard session: one per meeting connection. A new
  * connection gets a new session instead of resetting the old one.
+ *
+ * `receivedAt` is when `joinResult` arrived (the entry session's clock records
+ * it). A session can be built long after, when the view remounts, and the
+ * join's whiteboard token has been ageing since then.
  */
 export function useWhiteboardSession(
   joinResult: JoinResult,
+  receivedAt: number,
   room: Room | undefined,
   canModerate = joinResult.canModerate,
 ): { session: WhiteboardSession; state: WhiteboardSessionSnapshot } {
@@ -58,10 +64,10 @@ export function useWhiteboardSession(
   // setters below. A new connection replaces it during render, React's
   // pattern for state derived from a changed prop.
   const key = `${joinResult.meetingId}:${joinResult.connectionId}`;
-  const [current, setCurrent] = React.useState(() => ({ key, session: createSession(joinResult, canModerate) }));
+  const [current, setCurrent] = React.useState(() => ({ key, session: createSession(joinResult, receivedAt, canModerate) }));
   let session = current.session;
   if (current.key !== key) {
-    session = createSession(joinResult, canModerate);
+    session = createSession(joinResult, receivedAt, canModerate);
     setCurrent({ key, session });
   }
 

@@ -58,6 +58,26 @@ export async function publishInitialMeetingMedia(
   };
 }
 
+/**
+ * Leave the room when the page is hidden for good or put in the back/forward
+ * cache. Only `pagehide` is trusted to mean that: `beforeunload` fires on
+ * navigations that are then cancelled, or that leave this page running while
+ * the next one loads. A page that is going for good tells the session first,
+ * so the disconnect that follows reads as leaving rather than as a lost
+ * connection to rejoin; a cached page may come back, and rejoins when it does.
+ */
+export function leaveRoomOnPageHide(
+  room: Pick<Room, "disconnect">,
+  onPageUnload: () => void,
+): () => void {
+  const handlePageHide = (event: PageTransitionEvent) => {
+    if (!event.persisted) onPageUnload();
+    void room.disconnect().catch(() => undefined);
+  };
+  window.addEventListener("pagehide", handlePageHide);
+  return () => window.removeEventListener("pagehide", handlePageHide);
+}
+
 interface MeetingConnectionProps {
   serverUrl: string;
   token: string;
@@ -80,6 +100,8 @@ interface MeetingConnectionProps {
    */
   onInitialMediaSettled: (result: InitialMeetingMediaResult) => void;
   onDisconnected: (reason?: DisconnectReason) => void;
+  /** The page is going away for good; the room is left right after. */
+  onPageUnload: () => void;
   onError: (error: unknown) => void;
   onMediaDeviceFailure: (
     failure?: MediaDeviceFailure,
@@ -110,6 +132,7 @@ export function MeetingConnection({
   onConnected,
   onInitialMediaSettled,
   onDisconnected,
+  onPageUnload,
   onError,
   onMediaDeviceFailure,
 }: MeetingConnectionProps) {
@@ -134,6 +157,7 @@ export function MeetingConnection({
     onConnected,
     onInitialMediaSettled,
     onDisconnected,
+    onPageUnload,
     onError,
     onMediaDeviceFailure,
   });
@@ -214,6 +238,11 @@ export function MeetingConnection({
         .off(RoomEvent.MediaDevicesError, handleMediaDeviceError);
     };
   }, [callbacksRef, initialMedia, room]);
+
+  React.useEffect(
+    () => leaveRoomOnPageHide(room, () => callbacksRef.current.onPageUnload()),
+    [callbacksRef, room],
+  );
 
   // A phone that locks or backgrounds the browser can suspend the page, and
   // with it everything the connection would report; record that it happened.

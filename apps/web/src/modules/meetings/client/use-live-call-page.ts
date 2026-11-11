@@ -14,7 +14,8 @@ export const LIVE_CALL_PAGE_CLASS = "meet-route";
  *   never did.
  * - **Drops that navigate.** A file or link dropped anywhere nothing handles it
  *   opens in this tab. Surfaces that take drops (the board) handle them first
- *   and call `preventDefault`; everything else refuses the drop.
+ *   and call `preventDefault`, and text or a link dropped into a text field is
+ *   typed into it; everything else refuses the drop.
  * - **A screen that sleeps.** Browsers hold the screen awake only while video
  *   plays, so an audio-only call on a phone dims, locks, and the page is
  *   frozen out of the call. A screen wake lock is held while the page shows;
@@ -27,7 +28,7 @@ export function useLiveCallPage(active: boolean): void {
     root.classList.add(LIVE_CALL_PAGE_CLASS);
 
     const refuseUnhandledDrag = (event: DragEvent) => {
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented || takesTextDrop(event)) return;
       event.preventDefault();
       if (event.type === "dragover" && event.dataTransfer) event.dataTransfer.dropEffect = "none";
     };
@@ -43,6 +44,28 @@ export function useLiveCallPage(active: boolean): void {
       releaseWakeLock();
     };
   }, [active]);
+}
+
+const TEXT_FIELD = [
+  "textarea",
+  "input:not([type])",
+  ...["text", "search", "url", "email", "tel", "password"].map((type) => `input[type="${type}"]`),
+  '[contenteditable]:not([contenteditable="false"])',
+].join(", ");
+
+/**
+ * A drop the browser types into the field under it: text or a link over an
+ * enabled, writable text field. A file is never typed in; dropped on a text
+ * field it would still open in the tab.
+ */
+function takesTextDrop(event: DragEvent): boolean {
+  if (event.dataTransfer?.types?.includes("Files")) return false;
+  const field = event.target instanceof Element ? event.target.closest(TEXT_FIELD) : null;
+  if (!field) return false;
+  if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) {
+    return !field.disabled && !field.readOnly;
+  }
+  return true;
 }
 
 /** Keeps the screen on while the page is visible. Returns a release function. */

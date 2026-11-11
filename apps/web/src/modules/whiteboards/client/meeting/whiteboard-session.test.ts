@@ -99,6 +99,7 @@ async function createSession(options: {
   const session = new WhiteboardSession({
     connectionId: CONNECTION,
     surface: options.surface ?? joinSurface(),
+    surfaceReceivedAt: Date.now(),
     canModerate: options.canModerate ?? true,
     openOnStart: options.openOnStart,
     api: options.api,

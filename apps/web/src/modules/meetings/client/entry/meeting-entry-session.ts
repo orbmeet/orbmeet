@@ -542,8 +542,16 @@ export class MeetingEntrySession {
     this.phase = "recovering";
     if (episode && (episode.kind === "recover" || episode.kind === "removal")) {
       // A fresh episode id, so no answer to an earlier request can be adopted
-      // in place of the one that just failed; the schedule carries on.
-      this.startEpisode(episode.kind, episode.step, episode.replacesConnectionId);
+      // in place of the one that just failed; the schedule carries on. The
+      // next request names the connection that just failed, not the one the
+      // episode began by replacing: if the failed one reached the room before
+      // it broke, the server ended the original as superseded by it, and
+      // naming the original would read as this meeting open elsewhere.
+      this.startEpisode(
+        episode.kind,
+        episode.step,
+        this.access?.connectionId ?? episode.replacesConnectionId,
+      );
     } else {
       this.startEpisode("recover");
     }

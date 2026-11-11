@@ -147,7 +147,11 @@ export function useMeetingEntry({
 
 const BASE_ROOM_OPTIONS: RoomOptions = {
   ...getInteractiveRoomMediaOptions(),
-  disconnectOnPageLeave: true,
+  // LiveKit's page-leave handler also fires on `beforeunload`, which a page
+  // survives whenever the navigation is cancelled or still loading (a reload
+  // keeps this page running until the next one arrives). `MeetingConnection`
+  // leaves on `pagehide` instead, which only a page really going fires.
+  disconnectOnPageLeave: false,
   reconnectPolicy: new MeetingReconnectPolicy(),
 };
 

@@ -58,8 +58,18 @@ export interface WhiteboardCredential {
 
 export interface WhiteboardCredentialsOptions {
   connectionId: string;
-  /** The document credential the join handed over, if the surface was open. */
-  initial: { token: string | null; url: string | null; documentId: string | null; documentTitle: string | null };
+  /**
+   * The document credential the join handed over, if the surface was open,
+   * and when the join response arrived: the token has been ageing since then,
+   * however much later this is built.
+   */
+  initial: {
+    token: string | null;
+    url: string | null;
+    documentId: string | null;
+    documentTitle: string | null;
+    receivedAt: number;
+  };
   mint: () => Promise<MintedWhiteboardAccess>;
   onChange: () => void;
   now?: () => number;
@@ -84,9 +94,9 @@ export class WhiteboardCredentials {
 
   constructor(private readonly options: WhiteboardCredentialsOptions) {
     this.now = options.now ?? Date.now;
-    const { token, url, documentId, documentTitle } = options.initial;
+    const { token, url, documentId, documentTitle, receivedAt } = options.initial;
     this.currentValue = token && url && documentId
-      ? { access: accessFromToken(token, url, this.now()), documentId, documentTitle, revision: -1, mintedAt: this.now() }
+      ? { access: accessFromToken(token, url, receivedAt), documentId, documentTitle, revision: -1, mintedAt: receivedAt }
       : null;
   }
 

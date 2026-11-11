@@ -52,7 +52,7 @@ export const COMMAND_HELP = {
     notes: [
       "The token is written with 0600 permissions.",
       "Token values are never accepted in argv, where shell history and process listings expose them.",
-      "With no --token-file, a set ORBMEET_TOKEN is stored before stdin is read.",
+      "With no --token-file, a token piped on stdin is stored; with none, a set ORBMEET_TOKEN is.",
       "The ORBMEET_TOKEN environment variable overrides the stored token.",
       "Run `orbmeet whoami` afterwards to verify it.",
     ],

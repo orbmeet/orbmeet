@@ -58,6 +58,46 @@ export function decodeTokenText(bytes: Uint8Array): string {
   return new TextDecoder(encoding).decode(bytes);
 }
 
+/**
+ * Everything piped in, or null when `silentAfterMs` is given and nothing has
+ * arrived by then. A pipe cannot say whether anything is coming: Git Bash's
+ * terminal on Windows (mintty) hands programs one that never ends, so a reader
+ * with somewhere else to turn must give up on a silent one. It is closed then,
+ * so it holds nothing open.
+ */
+export function readPiped(
+  input: NodeJS.ReadableStream & { destroy(): void },
+  silentAfterMs?: number,
+): Promise<Uint8Array | null> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const silence = silentAfterMs === undefined
+      ? null
+      : setTimeout(() => {
+          stop();
+          input.destroy();
+          resolve(null);
+        }, silentAfterMs);
+    const onData = (chunk: string | Buffer) => {
+      if (silence) clearTimeout(silence);
+      chunks.push(Buffer.from(chunk));
+    };
+    const onEnd = () => {
+      stop();
+      resolve(Buffer.concat(chunks));
+    };
+    const onError = (error: unknown) => {
+      stop();
+      reject(error);
+    };
+    function stop() {
+      if (silence) clearTimeout(silence);
+      input.off("data", onData).off("end", onEnd).off("error", onError);
+    }
+    input.on("data", onData).on("end", onEnd).on("error", onError);
+  });
+}
+
 /** An API token travels in an HTTP header, so it is visible ASCII with no spaces. */
 const TOKEN_SHAPE = /^[\x21-\x7e]+$/;
 

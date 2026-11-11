@@ -25,7 +25,7 @@ import {
   requiredOption,
   type ParsedArgs,
 } from "./args.ts";
-import { CLOUD_API_URL, CONFIG_PATH, decodeTokenText, readConfig, saveToken } from "./config.ts";
+import { CLOUD_API_URL, CONFIG_PATH, decodeTokenText, readConfig, readPiped, saveToken } from "./config.ts";
 import { CliError, errorCode, errorMessage } from "./errors.ts";
 import { commandHelp, globalHelp } from "./help.ts";
 import { publicRetrievedMeeting, publicSchedule, publicSearchResults } from "./output.ts";
@@ -264,23 +264,29 @@ async function version(): Promise<void> {
 }
 
 /**
- * The token to store: from `--token-file`, else ORBMEET_TOKEN, else stdin.
+ * With ORBMEET_TOKEN set, how long a silent stdin is waited on before the
+ * environment's token is taken. A token piped in arrives at once.
+ */
+const SILENT_STDIN_MS = 500;
+
+/**
+ * The token to store: from `--token-file`, else stdin, else ORBMEET_TOKEN.
  *
- * The environment comes before stdin because stdin cannot always say whether
- * anything is coming. Git Bash's terminal on Windows (mintty) hands programs a
- * pipe, not a TTY, so reading it waits for an end that never comes, and a
- * token already in the environment would never be reached.
+ * A token piped in is the one asked for, even with another in the
+ * environment. But Git Bash's terminal on Windows (mintty) hands programs a
+ * pipe, not a TTY, that never ends; with a token in the environment to fall
+ * back on, a stdin that stays silent is given up on.
  */
 async function readConfigureToken(args: ParsedArgs): Promise<string> {
   const tokenFile = option(args, "token-file");
   if (tokenFile) return decodeTokenText(await readFile(tokenFile));
-  if (process.env.ORBMEET_TOKEN) return process.env.ORBMEET_TOKEN;
+  const environmentToken = process.env.ORBMEET_TOKEN;
   if (!process.stdin.isTTY) {
-    const chunks: Buffer[] = [];
-    for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
-    const piped = decodeTokenText(Buffer.concat(chunks));
+    const bytes = await readPiped(process.stdin, environmentToken ? SILENT_STDIN_MS : undefined);
+    const piped = bytes ? decodeTokenText(bytes) : "";
     if (piped.trim()) return piped;
   }
+  if (environmentToken) return environmentToken;
   throw new Error(
     "Provide the token on stdin, through ORBMEET_TOKEN, or with --token-file. Tokens are not accepted on the command line.",
   );

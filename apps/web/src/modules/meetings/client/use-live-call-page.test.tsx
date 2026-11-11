@@ -43,12 +43,23 @@ function fakeWakeLock() {
   return { request, sentinels };
 }
 
-function drag(type: "dragover" | "drop", handledFirst = false) {
+function drag(
+  type: "dragover" | "drop",
+  handledFirst = false,
+  { target = window, types = ["text/plain"] }: { target?: EventTarget; types?: string[] } = {},
+) {
   const event = new Event(type, { bubbles: true, cancelable: true }) as DragEvent;
-  Object.defineProperty(event, "dataTransfer", { value: { dropEffect: "copy" } });
+  Object.defineProperty(event, "dataTransfer", { value: { dropEffect: "copy", types } });
   if (handledFirst) event.preventDefault();
-  window.dispatchEvent(event);
+  target.dispatchEvent(event);
   return event;
+}
+
+function field(html: string) {
+  const host = document.createElement("div");
+  host.innerHTML = html;
+  document.body.appendChild(host);
+  return { element: host.firstElementChild!, remove: () => host.remove() };
 }
 
 describe("useLiveCallPage", () => {
@@ -67,6 +78,37 @@ describe("useLiveCallPage", () => {
     expect(over.dataTransfer?.dropEffect).toBe("none");
     expect(drag("drop").defaultPrevented).toBe(true);
   });
+
+  it.each(["<input>", '<input type="url">', "<textarea></textarea>", '<div contenteditable="true"><p>x</p></div>'])(
+    "lets text or a link dropped into %s be typed into it",
+    (html) => {
+      mount(true);
+      const { element, remove } = field(html);
+      const target = element.firstElementChild ?? element;
+      const over = drag("dragover", false, { target, types: ["text/uri-list", "text/plain"] });
+      expect(over.defaultPrevented).toBe(false);
+      expect(over.dataTransfer?.dropEffect).toBe("copy");
+      expect(drag("drop", false, { target }).defaultPrevented).toBe(false);
+      remove();
+    },
+  );
+
+  it("still refuses a file dropped on a text field", () => {
+    mount(true);
+    const input = field("<input>");
+    expect(drag("drop", false, { target: input.element, types: ["Files"] }).defaultPrevented).toBe(true);
+    input.remove();
+  });
+
+  it.each(["<input disabled>", "<textarea readonly></textarea>", '<input type="checkbox">'])(
+    "refuses a drop on %s, which cannot take it",
+    (html) => {
+      mount(true);
+      const { element, remove } = field(html);
+      expect(drag("drop", false, { target: element }).defaultPrevented).toBe(true);
+      remove();
+    },
+  );
 
   it("leaves a drop the board handled to the board", () => {
     mount(true);
