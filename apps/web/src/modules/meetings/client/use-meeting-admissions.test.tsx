@@ -15,6 +15,7 @@ const decideAdmission = vi.fn(async () => ({ success: true }));
 vi.mock("@/modules/meetings/server/runtime/live.functions", () => ({ listPendingAdmissions, decideAdmission }));
 
 const { useMeetingAdmissions } = await import("./use-meeting-admissions");
+const { queryKeys } = await import("@/app/query-client/query-keys");
 
 let root: Root | null = null;
 beforeAll(() => {
@@ -55,6 +56,7 @@ function mount(room: Room) {
   root = createRoot(document.createElement("div"));
   act(() => root!.render(<QueryClientProvider client={client}><Probe /></QueryClientProvider>));
   return {
+    client,
     waiting: () => latest!.hostPermissionRequests.map((request) => request.userName),
     admit: (admissionId: string) => latest!.handleApproveAdmission(admissionId),
   };
@@ -70,11 +72,18 @@ describe("useMeetingAdmissions", () => {
     expect(listPendingAdmissions).toHaveBeenCalledTimes(2);
 
     answers[1]({ pending: [alice, bob] });
-    await settle();
-    expect(host.waiting()).toEqual(["Alice", "Bob"]);
-    answers[0]({ pending: [alice] });
-    await settle();
+    await vi.waitFor(async () => {
+      await settle();
+      expect(host.waiting()).toEqual(["Alice", "Bob"]);
+    });
 
+    // The older answer lands, and is kept as what version 1 said …
+    answers[0]({ pending: [alice] });
+    await vi.waitFor(() => {
+      expect(host.client.getQueryData(queryKeys.meetings.pendingAdmissions("m", "c", 1))).toEqual({ pending: [alice] });
+    });
+    await settle();
+    // … without standing in for version 2.
     expect(host.waiting()).toEqual(["Alice", "Bob"]);
   });
 
@@ -83,14 +92,19 @@ describe("useMeetingAdmissions", () => {
     const host = mount(room);
     await act(async () => {});
     answers[0]({ pending: [alice, bob] });
-    await settle();
+    await vi.waitFor(async () => {
+      await settle();
+      expect(host.waiting()).toEqual(["Alice", "Bob"]);
+    });
 
     await act(async () => host.admit(alice.id));
-    await settle();
 
     expect(decideAdmission).toHaveBeenCalledWith({
       data: { meetingId: "m", admissionId: alice.id, approve: true, connectionId: "c" },
     });
-    expect(host.waiting()).toEqual(["Bob"]);
+    await vi.waitFor(async () => {
+      await settle();
+      expect(host.waiting()).toEqual(["Bob"]);
+    });
   });
 });
