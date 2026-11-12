@@ -1,6 +1,6 @@
 import "@tanstack/react-start/server-only";
 
-import { getResponseHeaders } from "@tanstack/react-start/server";
+import { appendResponseHeader } from "@tanstack/react-start/server";
 import { type CookieOptions, storedCookieName } from "./cookie-names";
 import { isLocalDevelopment } from "./deployment";
 
@@ -28,14 +28,13 @@ export function createCookieString(
  * Do not rebuild this list through Headers.get("Set-Cookie"). Once more than
  * one cookie exists, Headers.get() comma-folds them into a single string. A
  * later append would then write that folded string back as one malformed
- * cookie, causing browsers to reject the first cookies in the response.
+ * cookie, causing browsers to reject the first cookies in the response. Nor
+ * through getResponseHeaders(): it is a detached snapshot, and a cookie
+ * appended to it never reaches the response.
  */
 export function appendCookies(cookies: string[]): void {
   if (cookies.length === 0) return;
-  const headers = getResponseHeaders();
-  for (const cookie of cookies) {
-    headers.append("Set-Cookie", cookie);
-  }
+  appendResponseHeader("Set-Cookie", cookies);
 }
 
 export function getSessionIdsFromCookie(cookie: string | null, options?: CookieOptions): string[] {

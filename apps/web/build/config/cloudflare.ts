@@ -53,8 +53,10 @@ export function localDevBindingOverrides(
 
   return {
     remoteBindings: bucketName ? true : undefined,
-    config(workerConfig) {
-      const env: Record<string, unknown> = { ...workerConfig.env };
+    // The loaded configuration is the whole project's; the entry Worker's
+    // bindings are under `worker`, and everything else is carried over.
+    config(loaded) {
+      const env: Record<string, unknown> = { ...loaded.worker.env };
       for (const [name, value] of Object.entries(devVars)) {
         const binding = env[name] as { type?: string } | undefined;
         // Declared secrets are resolved from .dev.vars by the plugin itself.
@@ -69,7 +71,7 @@ export function localDevBindingOverrides(
         }
       }
 
-      return { env: env as ParsedInputWorkerConfig["env"] };
+      return { ...loaded, worker: { ...loaded.worker, env: env as ParsedInputWorkerConfig["env"] } };
     },
   };
 }

@@ -21,13 +21,13 @@
   },
   "devDependencies": {
     "@stylexjs/eslint-plugin": "0.19.1",
-    "@tanstack/eslint-plugin-query": "5.104.1",
+    "@tanstack/eslint-plugin-query": "5.107.1",
     "@tanstack/eslint-plugin-router": "1.162.0",
     "@typescript/native": "npm:typescript@7.0.2",
     "eslint-plugin-drizzle": "^0.2.3",
-    "knip": "^6.39.0",
-    "oxlint": "^1.86.0",
-    "oxlint-tsgolint": "^7.0.2003",
+    "knip": "^6.44.2",
+    "oxlint": "^1.93.0",
+    "oxlint-tsgolint": "^7.0.2006",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vitest": "catalog:"
   }

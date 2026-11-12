@@ -9,8 +9,8 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "1.1.0",
-    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-agent-core": "1.5.2",
+    "@earendil-works/pi-ai": "1.5.2",
     "@orbmeet/primitives": "workspace:*",
     "@orbmeet/whiteboard-core": "workspace:*",
     "@tldraw/sync-core": "catalog:",
@@ -19,7 +19,7 @@
     "@valibot/to-json-schema": "catalog:",
     "aws4fetch": "catalog:",
     "valibot": "catalog:",
-    "ws": "^8.22.0"
+    "ws": "^8.22.2"
   },
   "devDependencies": {
     "@types/node": "catalog:",

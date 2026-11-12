@@ -3,7 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const responseHeaders = vi.hoisted(() => new Headers());
 
 vi.mock("@tanstack/react-start/server", () => ({
-  getResponseHeaders: () => responseHeaders,
+  appendResponseHeader: (name: string, value: string | string[]) => {
+    for (const item of Array.isArray(value) ? value : [value]) {
+      responseHeaders.append(name, item);
+    }
+  },
+  // A detached snapshot, as Start returns: writing to it changes nothing.
+  getResponseHeaders: () => new Headers(responseHeaders),
   // Model the old read/rewrite APIs too, so this test fails if appendCookies
   // regresses to comma-folding Set-Cookie through Headers.get().
   getResponseHeader: (name: string) => responseHeaders.get(name) ?? undefined,

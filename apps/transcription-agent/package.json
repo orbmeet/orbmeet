@@ -10,10 +10,10 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@deepgram/sdk": "5.14.0",
-    "@livekit/agents": "1.9.1",
-    "@livekit/protocol": "1.52.1",
-    "@livekit/rtc-node": "1.1.0",
+    "@deepgram/sdk": "5.18.0",
+    "@livekit/agents": "1.9.5",
+    "@livekit/protocol": "1.53.4",
+    "@livekit/rtc-node": "1.2.2",
     "@orbmeet/caption-protocol": "workspace:*",
     "@orbmeet/primitives": "workspace:*",
     "livekit-server-sdk": "catalog:",
