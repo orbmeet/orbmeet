@@ -28,6 +28,7 @@ import {
   InitialMeetingMediaContext,
   type InitialMeetingMediaResult,
 } from "@/modules/meetings/client/initial-meeting-media";
+import { isPageVisible, whenPageVisible } from "@/modules/meetings/client/page-visibility";
 
 interface UseMeetingMicrophoneParams {
   roomInstance: Room | undefined;
@@ -66,10 +67,6 @@ function getAudioSession(): AudioSessionLike | null {
 function readAudioSessionState(): AudioSessionState | null {
   const state = getAudioSession()?.state;
   return state === "active" || state === "inactive" || state === "interrupted" ? state : null;
-}
-
-function isPageVisible(): boolean {
-  return typeof document === "undefined" || document.visibilityState === "visible";
 }
 
 const FAILURE_TOASTS: Record<
@@ -118,21 +115,10 @@ function reportInitialMicrophoneFailure(
   // when the page shows; a refusal that stands then surfaces as the
   // controller's own unmute failure.
   if (failure === MediaDeviceFailure.PermissionDenied) {
-    const retry = () => {
+    return whenPageVisible(() => {
       emitMeetingEntryDiagnostic("initial_microphone_retry", { code: callbacks.code });
       controller.setIntent("on");
-    };
-    if (isPageVisible()) {
-      retry();
-      return () => {};
-    }
-    const handleVisible = () => {
-      if (!isPageVisible()) return;
-      document.removeEventListener("visibilitychange", handleVisible);
-      retry();
-    };
-    document.addEventListener("visibilitychange", handleVisible);
-    return () => document.removeEventListener("visibilitychange", handleVisible);
+    });
   }
 
   callbacks.addToast({

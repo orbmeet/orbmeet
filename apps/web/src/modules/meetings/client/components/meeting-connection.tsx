@@ -24,32 +24,18 @@ type InitialMediaParticipant = Pick<
   "setCameraEnabled" | "setMicrophoneEnabled"
 >;
 
+/**
+ * Starts the microphone and camera the participant joined with. Which device
+ * each opens is the room's capture defaults (`buildMeetingRoomOptions`), the
+ * same ones every later unmute uses.
+ */
 export async function publishInitialMeetingMedia(
   participant: InitialMediaParticipant,
-  settings: {
-    audioEnabled: boolean;
-    audioDeviceId?: string;
-    videoEnabled: boolean;
-    videoDeviceId?: string;
-  },
+  settings: { audioEnabled: boolean; videoEnabled: boolean },
 ): Promise<InitialMeetingMediaResult> {
-  // Capture constraints only belong on a track we are actually starting: a
-  // muted / camera-off join must not pin a device onto a publish that never
-  // happens. The pre-join choice still reaches RoomOptions capture defaults, so
-  // the first in-meeting unmute uses the device the user picked.
   const [audio, video] = await Promise.allSettled([
-    participant.setMicrophoneEnabled(
-      settings.audioEnabled,
-      settings.audioEnabled && settings.audioDeviceId
-        ? { deviceId: settings.audioDeviceId }
-        : undefined,
-    ),
-    participant.setCameraEnabled(
-      settings.videoEnabled,
-      settings.videoEnabled && settings.videoDeviceId
-        ? { deviceId: settings.videoDeviceId }
-        : undefined,
-    ),
+    participant.setMicrophoneEnabled(settings.audioEnabled),
+    participant.setCameraEnabled(settings.videoEnabled),
   ]);
 
   return {
@@ -84,9 +70,7 @@ interface MeetingConnectionProps {
   connectOptions?: RoomConnectOptions;
   options: RoomOptions;
   audioEnabled: boolean;
-  audioDeviceId?: string;
   videoEnabled: boolean;
-  videoDeviceId?: string;
   fallback: React.ReactNode;
   children: React.ReactNode;
   onConnected: () => void;
@@ -124,9 +108,7 @@ export function MeetingConnection({
   connectOptions,
   options,
   audioEnabled,
-  audioDeviceId,
   videoEnabled,
-  videoDeviceId,
   fallback,
   children,
   onConnected,
@@ -144,9 +126,7 @@ export function MeetingConnection({
   }));
   const [initialMedia] = React.useState(() => ({
     audioEnabled,
-    audioDeviceId,
     videoEnabled,
-    videoDeviceId,
   }));
   const [connected, setConnected] = React.useState(false);
   const [initialMediaSettled, setInitialMediaSettled] =

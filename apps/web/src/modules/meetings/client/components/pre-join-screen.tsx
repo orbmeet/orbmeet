@@ -627,8 +627,7 @@ export function PreJoinScreen({
       // The device choice travels independently of the on/off decision: it
       // seeds RoomOptions capture defaults and the in-meeting device pickers,
       // so someone who picks a microphone and then joins muted still unmutes
-      // onto that microphone. publishInitialMeetingMedia drops the constraints
-      // for whichever track starts disabled.
+      // onto that microphone.
       videoDeviceId: devices.effectiveVideoDeviceId,
       audioDeviceId: devices.effectiveAudioDeviceId,
       audioOutputDeviceId: devices.selectedAudioOutputDevice,

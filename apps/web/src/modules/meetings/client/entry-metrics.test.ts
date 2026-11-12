@@ -96,4 +96,16 @@ describe("meeting entry metrics", () => {
       vi.useRealTimers();
     }
   });
+
+  it("never throws where the browser blocks site storage", () => {
+    const blocked = vi.spyOn(window, "sessionStorage", "get").mockImplementation(() => {
+      throw new DOMException("Access is denied for this document.", "SecurityError");
+    });
+    try {
+      expect(() => markMeetingEntryMetric("routeMountedAt", { code: "abc-defg-hij" })).not.toThrow();
+      expect(() => markMeetingEntryMetric("liveKitConnectedAt")).not.toThrow();
+    } finally {
+      blocked.mockRestore();
+    }
+  });
 });

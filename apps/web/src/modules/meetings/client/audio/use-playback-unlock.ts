@@ -1,5 +1,5 @@
 import * as React from "react";
-import { RoomEvent } from "livekit-client";
+import { RoomEvent, type Room } from "livekit-client";
 import { useRoomContext } from "@livekit/components-react";
 import { PlaybackUnlock, type PlaybackUnlockPort } from "./playback-unlock";
 import { onNextUserGesture } from "./user-gesture";
@@ -8,14 +8,24 @@ import { getActiveAudioPolicy } from "./audio-policy-context";
 import { getPlatformEnvironment } from "@/lib/browser-capabilities";
 import { emitMeetingEntryDiagnostic } from "@/modules/meetings/client/entry/diagnostics";
 
-export interface AudioPlaybackUnlockState {
-  /** True when the browser is refusing to play meeting audio. */
-  blocked: boolean;
+/** What the browser is refusing to play, audio first: it is what a call cannot do without. */
+type BlockedPlayback = "audio" | "video" | null;
+
+export interface PlaybackUnlockState {
+  blocked: BlockedPlayback;
   /** Retry from inside a click handler. */
   unlock: () => void;
 }
 
-export function useAudioPlaybackUnlock(): AudioPlaybackUnlockState {
+function blockedPlayback(room: Room): BlockedPlayback {
+  if (!room.canPlaybackAudio) return "audio";
+  if (!room.canPlaybackVideo) return "video";
+  return null;
+}
+
+const PLAYBACK_EVENTS = [RoomEvent.AudioPlaybackStatusChanged, RoomEvent.VideoPlaybackStatusChanged] as const;
+
+export function usePlaybackUnlock(): PlaybackUnlockState {
   const room = useRoomContext();
   const controllerRef = React.useRef<PlaybackUnlock | null>(null);
   const snapshotListenersRef = React.useRef(new Set<() => void>());
@@ -27,19 +37,16 @@ export function useAudioPlaybackUnlock(): AudioPlaybackUnlockState {
   const subscribe = React.useCallback(
     (listener: () => void) => {
       snapshotListenersRef.current.add(listener);
-      room?.on(RoomEvent.AudioPlaybackStatusChanged, listener);
+      for (const event of PLAYBACK_EVENTS) room?.on(event, listener);
       return () => {
         snapshotListenersRef.current.delete(listener);
-        room?.off(RoomEvent.AudioPlaybackStatusChanged, listener);
+        for (const event of PLAYBACK_EVENTS) room?.off(event, listener);
       };
     },
     [room],
   );
-  const getSnapshot = React.useCallback(
-    () => room ? !room.canPlaybackAudio : false,
-    [room],
-  );
-  const blocked = React.useSyncExternalStore(subscribe, getSnapshot, () => false);
+  const getSnapshot = React.useCallback(() => (room ? blockedPlayback(room) : null), [room]);
+  const blocked = React.useSyncExternalStore(subscribe, getSnapshot, () => null);
 
   // Routing and playback permission are the same OS-level concern, so the
   // session type is declared here rather than in a hook of its own. Recording
@@ -59,8 +66,12 @@ export function useAudioPlaybackUnlock(): AudioPlaybackUnlockState {
     if (!room) return;
 
     const port: PlaybackUnlockPort = {
-      canPlayAudio: () => room.canPlaybackAudio,
-      startAudio: () => room.startAudio(),
+      canPlay: () => blockedPlayback(room) === null,
+      // Both `play()`s are issued now, inside the gesture; neither may cut the
+      // other's wait short.
+      play: async () => {
+        await Promise.allSettled([room.startAudio(), room.startVideo()]);
+      },
       onNextUserGesture,
     };
 
@@ -68,9 +79,10 @@ export function useAudioPlaybackUnlock(): AudioPlaybackUnlockState {
       onStateChange: notifySnapshotChanged,
       onDiagnostic: (event, data) => {
         emitMeetingEntryDiagnostic(
-          event === "unlocked" ? "audio_playback_unlocked" : "audio_playback_blocked",
+          event === "unlocked" ? "playback_unlocked" : "playback_blocked",
           {
             trigger: data.trigger,
+            blocked: blockedPlayback(room) ?? undefined,
             attempts: data.attempts,
             errorName: data.error instanceof Error ? data.error.name : undefined,
           },
@@ -81,15 +93,15 @@ export function useAudioPlaybackUnlock(): AudioPlaybackUnlockState {
     // LiveKit can revoke playback later — a new remote track whose `play()` is
     // refused flips the room back to blocked long after join.
     const handlePlaybackChanged = () => {
-      if (!room.canPlaybackAudio) unlock.start();
+      if (blockedPlayback(room)) unlock.start();
     };
-    room.on(RoomEvent.AudioPlaybackStatusChanged, handlePlaybackChanged);
+    for (const event of PLAYBACK_EVENTS) room.on(event, handlePlaybackChanged);
 
     controllerRef.current = unlock;
     unlock.start();
 
     return () => {
-      room.off(RoomEvent.AudioPlaybackStatusChanged, handlePlaybackChanged);
+      for (const event of PLAYBACK_EVENTS) room.off(event, handlePlaybackChanged);
       unlock.dispose();
       if (controllerRef.current === unlock) controllerRef.current = null;
     };

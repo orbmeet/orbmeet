@@ -6,8 +6,8 @@ function createPort({ unlockedFrom }: { unlockedFrom: "start" | "gesture" | "nev
   let pendingGesture: (() => void) | null = null;
 
   const port: PlaybackUnlockPort = {
-    canPlayAudio: () => canPlay,
-    startAudio: vi.fn(async () => {
+    canPlay: () => canPlay,
+    play: vi.fn(async () => {
       // Autoplay policy: without a gesture in hand the browser refuses.
       if (unlockedFrom === "never") throw new Error("NotAllowedError");
       if (unlockedFrom === "gesture" && !insideGesture) throw new Error("NotAllowedError");
@@ -44,14 +44,14 @@ function createPort({ unlockedFrom }: { unlockedFrom: "start" | "gesture" | "nev
 }
 
 describe("PlaybackUnlock", () => {
-  it("does nothing when audio is already playable", async () => {
+  it("does nothing when media is already playable", async () => {
     const harness = createPort({ unlockedFrom: "start" });
     const unlock = new PlaybackUnlock(harness.port);
 
     unlock.start();
     await vi.waitFor(() => expect(unlock.blocked).toBe(false));
 
-    expect(harness.port.startAudio).not.toHaveBeenCalled();
+    expect(harness.port.play).not.toHaveBeenCalled();
     expect(harness.armed).toBe(false);
   });
 
@@ -107,6 +107,17 @@ describe("PlaybackUnlock", () => {
       expect.objectContaining({ trigger: "explicit" }),
     );
     expect(harness.armed).toBe(false);
+  });
+
+  it("stays armed when an attempt settles but playback is still refused", async () => {
+    // LiveKit's startVideo resolves whether or not the browser played.
+    const harness = createPort({ unlockedFrom: "never" });
+    harness.port.play = vi.fn(async () => {});
+    const unlock = new PlaybackUnlock(harness.port);
+
+    unlock.start();
+    await vi.waitFor(() => expect(harness.armed).toBe(true));
+    expect(unlock.blocked).toBe(true);
   });
 
   it("stops listening once disposed", async () => {

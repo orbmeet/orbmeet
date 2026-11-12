@@ -9,7 +9,7 @@ import {
 } from "@/modules/meetings/client/device-selection";
 import { markMeetingEntryMetric } from "@/modules/meetings/client/entry-metrics";
 import { emitMeetingEntryDiagnostic } from "@/modules/meetings/client/entry/diagnostics";
-import { acquirePreJoinMedia, withProbeTimeout } from "@/modules/meetings/client/pre-join-media-probe";
+import { acquirePreJoinMedia, queryMediaPermission, withProbeTimeout } from "@/modules/meetings/client/pre-join-media-probe";
 import {
   type DeviceNotice,
   type MediaKindStatus,
@@ -98,7 +98,7 @@ export function usePreJoinDevices(): PreJoinDevicesResult {
     };
   }, []);
 
-  const probeDevices = React.useCallback(async () => {
+  const probeDevices = React.useCallback(async function probeDevices(): Promise<void> {
     dispatch({ type: "probe-started" });
     probeRef.current?.abort();
     const probe = new AbortController();
@@ -125,8 +125,9 @@ export function usePreJoinDevices(): PreJoinDevicesResult {
 
       // The common path uses one combined request, producing one permission
       // prompt and one browser capture transaction. If hardware acquisition
-      // fails for a non-permission reason, retry the kinds independently so a
-      // busy/missing camera does not prevent an otherwise healthy microphone.
+      // fails for a non-permission reason, or a refusal is about one kind only
+      // (see `kindsWorthRetrying`), retry the kinds independently so a busy,
+      // missing or blocked camera does not take a healthy microphone with it.
       const acquisition = await acquirePreJoinMedia(
         (constraints, kind) =>
           withProbeTimeout(
@@ -137,8 +138,14 @@ export function usePreJoinDevices(): PreJoinDevicesResult {
               if (kind === "audio" || kind === "audio_video") audioProbeTimedOut = true;
               emitMeetingEntryDiagnostic("device_probe_timeout", { kind, timeoutMs: MEDIA_PROBE_TIMEOUT_MS });
             },
-            stopStream,
+            (late) => {
+              if (late.status === "fulfilled" && late.value) stopStream(late.value);
+              // The person answered the prompt after the probe stopped
+              // waiting: ask again, which now settles at once either way.
+              if (!signal.aborted) void probeDevices();
+            },
           ),
+        queryMediaPermission,
       );
       probeStreams.push(...acquisition.streams);
 
@@ -168,8 +175,10 @@ export function usePreJoinDevices(): PreJoinDevicesResult {
           enumerateTimedOut = true;
           emitMeetingEntryDiagnostic("device_probe_timeout", { kind: "enumerate", timeoutMs: MEDIA_PROBE_TIMEOUT_MS });
         },
-        (lateDevices) => {
-          if (!signal.aborted) dispatch({ type: "late-enumeration", video, audio, devices: lateDevices });
+        (late) => {
+          if (late.status === "fulfilled" && !signal.aborted) {
+            dispatch({ type: "late-enumeration", video, audio, devices: late.value });
+          }
         },
       );
       stopProbeStreams();

@@ -5,6 +5,7 @@ import {
   getMicrophoneCaptureFailureMessage,
   isMediaPermissionFailure,
   shouldRetryMediaKindsSeparately,
+  withProbeTimeout,
 } from "./pre-join-media-probe";
 
 function mediaError(name: string): Error {
@@ -71,6 +72,58 @@ describe("pre-join media probe policy", () => {
     expect(result.videoError).toBe(denied);
   });
 
+  it("opens the microphone when the operating system blocks only the camera", async () => {
+    // macOS or Windows privacy settings: camera off, microphone on. Chromium
+    // refuses the combined request without saying which kind.
+    const systemDenied = Object.assign(new Error("Permission denied by system"), { name: "NotAllowedError" });
+    const microphone = {} as MediaStream;
+    const request = vi.fn(async (constraints: MediaStreamConstraints) => {
+      if (constraints.video) throw systemDenied;
+      return microphone;
+    });
+
+    const result = await acquirePreJoinMedia(request);
+
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(result.audioStream).toBe(microphone);
+    expect(result.audioError).toBeNull();
+    expect(result.videoError).toBe(systemDenied);
+  });
+
+  it("asks for the microphone alone when only the camera is blocked for the site", async () => {
+    const denied = mediaError("NotAllowedError");
+    const microphone = {} as MediaStream;
+    const request = vi.fn(async (constraints: MediaStreamConstraints) => {
+      if (constraints.video) throw denied;
+      return microphone;
+    });
+    const queryPermission = vi.fn(async (name: "camera" | "microphone") =>
+      name === "camera" ? "denied" as const : "prompt" as const);
+
+    const result = await acquirePreJoinMedia(request, queryPermission);
+
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenLastCalledWith({ audio: true }, "audio");
+    expect(result.audioStream).toBe(microphone);
+    expect(result.videoError).toBe(denied);
+  });
+
+  it.each([
+    ["both blocked", "denied", "denied"],
+    ["nothing stored", "prompt", "prompt"],
+    ["unknown", null, null],
+  ] as const)("does not ask again when the stored permissions are %s", async (_label, camera, microphone) => {
+    const denied = mediaError("NotAllowedError");
+    const request = vi.fn(async () => {
+      throw denied;
+    });
+
+    const result = await acquirePreJoinMedia(request, async (name) => (name === "camera" ? camera : microphone));
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(result.audioError).toBe(denied);
+  });
+
   it("salvages audio when combined capture and camera fallback fail", async () => {
     const microphone = {} as MediaStream;
     const request = vi.fn(
@@ -96,5 +149,31 @@ describe("pre-join media probe policy", () => {
 
     expect(request).toHaveBeenCalledTimes(1);
     expect(result.streams).toEqual([]);
+  });
+});
+
+describe("withProbeTimeout", () => {
+  const blocked = new Error("NotAllowedError");
+  it.each([
+    ["an Allow", true, { status: "fulfilled", value: "stream" }],
+    ["a Block", false, { status: "rejected", reason: blocked }],
+  ] as const)("hands over %s that arrives after it stopped waiting", async (_label, allowed, expected) => {
+    vi.useFakeTimers();
+    try {
+      let answer!: () => void;
+      const prompt = new Promise<string>((resolve, reject) => {
+        answer = () => (allowed ? resolve("stream") : reject(blocked));
+      });
+      const onLate = vi.fn();
+
+      const result = withProbeTimeout(prompt, 8_000, () => {}, onLate);
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(await result).toBeNull();
+
+      answer();
+      await vi.waitFor(() => expect(onLate).toHaveBeenCalledWith(expected));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

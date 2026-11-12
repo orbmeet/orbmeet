@@ -90,12 +90,56 @@ export interface PreJoinMediaAcquisition {
   usedSeparateProbes: boolean;
 }
 
+/** What the browser has stored for a kind; null where it cannot say. */
+export type MediaPermissionQuery = (name: "camera" | "microphone") => Promise<PermissionState | null>;
+
+/** `navigator.permissions` for the camera or microphone; null where unsupported (Firefox before 131). */
+export async function queryMediaPermission(name: "camera" | "microphone"): Promise<PermissionState | null> {
+  try {
+    const status = await navigator.permissions?.query({ name });
+    return status?.state ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Which kinds may still open after the combined request was refused.
+ *
+ * `getUserMedia` is all or nothing: a camera the browser may not use refuses
+ * the microphone asked for with it. Two refusals are about one kind only, and
+ * neither puts up another prompt when the other kind is asked for alone:
+ *
+ * - The operating system blocks one kind for the browser (macOS or Windows
+ *   privacy settings with the camera off and the microphone on — a managed
+ *   Mac often ships that way). Chromium says so, not which kind.
+ * - The site has one kind blocked and the other not: the camera set to Block
+ *   in an earlier visit. That is what a stored `denied` on only one says.
+ *
+ * Any other refusal — the person answering this prompt with Block, or a
+ * browser that cannot say what is stored — is left alone, so nobody is
+ * prompted twice.
+ */
+async function kindsWorthRetrying(
+  error: unknown,
+  queryPermission: MediaPermissionQuery | undefined,
+): Promise<{ video: boolean; audio: boolean }> {
+  if (isSystemPermissionDenial(error)) return { video: true, audio: true };
+  if (!queryPermission) return { video: false, audio: false };
+  const [camera, microphone] = await Promise.all([queryPermission("camera"), queryPermission("microphone")]);
+  if ((camera === "denied") === (microphone === "denied")) return { video: false, audio: false };
+  return { video: camera !== "denied", audio: microphone !== "denied" };
+}
+
 export async function acquirePreJoinMedia(
   request: (
     constraints: MediaStreamConstraints,
     kind: PreJoinMediaProbeKind,
   ) => Promise<MediaStream | null>,
+  queryPermission?: MediaPermissionQuery,
 ): Promise<PreJoinMediaAcquisition> {
+  let retry = { video: true, audio: true };
+  let refusal: unknown = null;
   try {
     const combined = await request(
       { audio: true, video: true },
@@ -121,20 +165,24 @@ export async function acquirePreJoinMedia(
     };
   } catch (error) {
     if (!shouldRetryMediaKindsSeparately(error)) {
-      return {
-        streams: [],
-        audioStream: null,
-        videoStream: null,
-        audioError: error,
-        videoError: error,
-        usedSeparateProbes: false,
-      };
+      retry = await kindsWorthRetrying(error, queryPermission);
+      refusal = error;
+      if (!retry.video && !retry.audio) {
+        return {
+          streams: [],
+          audioStream: null,
+          videoStream: null,
+          audioError: error,
+          videoError: error,
+          usedSeparateProbes: false,
+        };
+      }
     }
   }
 
   const [video, audio] = await Promise.allSettled([
-    request({ video: true }, "video"),
-    request({ audio: true }, "audio"),
+    retry.video ? request({ video: true }, "video") : Promise.reject(refusal),
+    retry.audio ? request({ audio: true }, "audio") : Promise.reject(refusal),
   ]);
   const videoStream = video.status === "fulfilled" ? video.value : null;
   const audioStream = audio.status === "fulfilled" ? audio.value : null;
@@ -153,15 +201,16 @@ export async function acquirePreJoinMedia(
  * Wait at most `timeoutMs` for a browser media call; null once it gives up.
  *
  * Not `withTimeout`: `getUserMedia` and `enumerateDevices` cannot be
- * cancelled, so the call still settles after the deadline. `onLateValue`
- * receives what it then produces — a stream to stop, or a device list to
- * reconcile — instead of leaking a capture that keeps the camera light on.
+ * cancelled, so the call still settles after the deadline — often because a
+ * person took their time over the permission prompt. `onLate` receives how it
+ * settled: a stream to stop rather than leak with the camera light on, a
+ * device list to reconcile, or an answer to the prompt that should count.
  */
 export function withProbeTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
   onTimeout: () => void,
-  onLateValue?: (value: T) => void,
+  onLate?: (result: PromiseSettledResult<T>) => void,
 ): Promise<T | null> {
   let timedOut = false;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -174,9 +223,14 @@ export function withProbeTimeout<T>(
     }, timeoutMs);
   });
 
-  promise.then((value) => {
-    if (timedOut) onLateValue?.(value);
-  }).catch(() => undefined);
+  promise.then(
+    (value) => {
+      if (timedOut) onLate?.({ status: "fulfilled", value });
+    },
+    (reason: unknown) => {
+      if (timedOut) onLate?.({ status: "rejected", reason });
+    },
+  );
 
   return Promise.race([promise, timeout]).finally(() => {
     if (timeoutId !== null) clearTimeout(timeoutId);

@@ -63,6 +63,7 @@ function createHarness(options: { unsupported?: string } = {}) {
     }),
   };
   const diagnostic = vi.fn();
+  let online = true;
   const session = new MeetingEntrySession({
     joinMeeting: (request) =>
       new Promise<JoinMeetingResult>((resolve, reject) => {
@@ -72,6 +73,7 @@ function createHarness(options: { unsupported?: string } = {}) {
     admissionIds,
     defaultDisplayName: () => "Guest",
     unsupportedBrowserReason: () => options.unsupported ?? null,
+    isOnline: () => online,
     random: () => 0.5,
     diagnostic,
   });
@@ -100,6 +102,9 @@ function createHarness(options: { unsupported?: string } = {}) {
     diagnostic,
     setStoredAdmissionId: (id: string | undefined) => {
       storedAdmissionId = id;
+    },
+    setOnline: (value: boolean) => {
+      online = value;
     },
     answer,
     connect,
@@ -641,6 +646,25 @@ describe("recovery after losing an established connection", () => {
     h.session.pageShown();
     await vi.advanceTimersByTimeAsync(0);
     expect(h.requests).toHaveLength(1);
+  });
+
+  it("spends no rejoin attempt while offline, and carries on when the network returns", async () => {
+    const h = createHarness();
+    const link = await joinAndConnect(h);
+    h.setOnline(false);
+    h.session.linkDisconnected(link.id, undefined);
+
+    // Longer than the whole schedule: nothing is sent, nothing gives up.
+    await vi.advanceTimersByTimeAsync(AUTO_REJOIN_DELAYS_MS.reduce<number>((sum, delay) => sum + delay, 0) * 2);
+    expect(h.requests).toHaveLength(0);
+    expect(h.snapshot().phase).toBe("recovering");
+
+    h.setOnline(true);
+    h.session.networkRestored();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.requests).toHaveLength(1);
+    await h.answer(joined());
+    expect(h.snapshot().phase).toBe("connecting");
   });
 
   it("gives up after the whole schedule and releases the unused access", async () => {

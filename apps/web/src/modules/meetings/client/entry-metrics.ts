@@ -20,17 +20,14 @@ type EntryMetricsState = Partial<Record<EntryMetricKey, number>> & {
   loggedStages?: string[];
 };
 
-function canUseStorage() {
-  return typeof window !== "undefined" && typeof window.sessionStorage !== "undefined";
-}
-
 function now() {
   return Date.now();
 }
 
+// Storage is touched only inside `try`: where a browser blocks site data,
+// reading `window.sessionStorage` itself throws, and timing a join must never
+// be what stops one.
 function readState(): EntryMetricsState | null {
-  if (!canUseStorage()) return null;
-
   try {
     const raw = window.sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
@@ -59,8 +56,6 @@ function readState(): EntryMetricsState | null {
 }
 
 function writeState(state: EntryMetricsState) {
-  if (!canUseStorage()) return;
-
   try {
     window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {

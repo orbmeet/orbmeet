@@ -9,7 +9,7 @@ import { useDocumentTitle } from "@/app/shell/use-document-title";
 import { MeetingConnection } from "@/modules/meetings/client/components/meeting-connection";
 import { MeetingViewBoundary } from "@/modules/meetings/client/components/meeting-view-boundary";
 import { useLiveCallPage } from "@/modules/meetings/client/use-live-call-page";
-import { AudioPlaybackBlockedBanner } from "@/modules/meetings/client/components/audio-playback-blocked-banner";
+import { PlaybackBlockedBanner } from "@/modules/meetings/client/components/playback-blocked-banner";
 import { PreJoinScreen, stopWarmupAudio } from "@/modules/meetings/client/components/pre-join-screen";
 import { MeetingStatusScreen } from "@/modules/meetings/client/components/meeting-status-screen";
 import { selectJoinErrorPresentation } from "@/modules/meetings/client/join-error-presentation";
@@ -353,7 +353,7 @@ function LiveMeetingRoute() {
   }, [code, viewerAdmissions]);
 
   // From the first connect through every reconnect the page belongs to the call.
-  useLiveCallPage(phase === "connecting" || phase === "connected" || phase === "recovering");
+  useLiveCallPage(phase === "connecting" || phase === "connected" || phase === "recovering", router.history);
 
   // The macOS microphone warmup deliberately survives the pre-join component
   // while LiveKit takes ownership of the device. A terminal join failure has
@@ -481,9 +481,7 @@ function LiveMeetingRoute() {
       connectOptions={MEETING_ROOM_CONNECT_OPTIONS}
       options={buildMeetingRoomOptions(intent, link.peer)}
       videoEnabled={intent.videoEnabled}
-      videoDeviceId={intent.videoDeviceId}
       audioEnabled={intent.audioEnabled}
-      audioDeviceId={intent.audioDeviceId}
       fallback={<ConnectingCard message={waitingMessage} />}
       onConnected={() => session.linkConnected(link.id)}
       // The meeting is mounted on RTC connect, but the pre-join warmup audio
@@ -496,7 +494,7 @@ function LiveMeetingRoute() {
       onMediaDeviceFailure={(failure, kind) => reportMeetingMediaDeviceFailure(code, failure, kind)}
     >
       <RoomAudioRenderer />
-      <AudioPlaybackBlockedBanner />
+      <PlaybackBlockedBanner />
       {/* The board keeps its pager and zoom along the bottom edge. */}
       <MeetingViewBoundary>
         <ToastProvider liftAboveBottomControls>

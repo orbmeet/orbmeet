@@ -86,6 +86,9 @@ function createSession(
     defaultDisplayName: () =>
       loadStoredMeetingDisplayName() ?? authenticatedUserName.current ?? "Guest",
     unsupportedBrowserReason: getUnsupportedBrowserBlockReason,
+    // Only `false` is trustworthy: `true` means an interface is up, not that
+    // anything is reachable.
+    isOnline: () => navigator.onLine !== false,
     diagnostic: (event, detail) => emitMeetingEntryDiagnostic(event, { code, ...detail }),
     metric: (metric) => markMeetingEntryMetric(metric, { code }),
     logError,
@@ -124,8 +127,13 @@ export function useMeetingEntry({
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") session.pageShown();
     };
+    const handleOnline = () => session.networkRestored();
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("online", handleOnline);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("online", handleOnline);
+    };
   }, [session]);
 
   const entry = React.useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);

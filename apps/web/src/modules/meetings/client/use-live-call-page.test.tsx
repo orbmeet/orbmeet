@@ -1,8 +1,13 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { createBrowserHistory } from "@tanstack/react-router";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { LIVE_CALL_PAGE_CLASS, useLiveCallPage } from "./use-live-call-page";
+
+const history = createBrowserHistory();
+/** A history traversal lands, and the router's answer to it, a task or two later. */
+const traversed = () => act(() => new Promise<void>((resolve) => setTimeout(resolve, 20)));
 
 let root: Root | null = null;
 let visibility: DocumentVisibilityState = "visible";
@@ -19,7 +24,7 @@ afterEach(() => {
 
 function mount(active: boolean) {
   function Probe({ on }: { on: boolean }) {
-    useLiveCallPage(on);
+    useLiveCallPage(on, history);
     return null;
   }
   root = createRoot(document.createElement("div"));
@@ -69,6 +74,29 @@ describe("useLiveCallPage", () => {
     expect(document.body.classList.contains(LIVE_CALL_PAGE_CLASS)).toBe(false);
     rerender(false);
     expect(document.documentElement.classList.contains(LIVE_CALL_PAGE_CLASS)).toBe(false);
+  });
+
+  it("holds Back inside the call, on one entry of its own, and lets it go afterwards", async () => {
+    const entries = window.history.length;
+    const rerender = mount(true);
+    await traversed();
+    expect(window.history.length).toBe(entries + 1);
+    const inCall = window.history.state.__TSR_index;
+
+    window.history.back();
+    await traversed();
+    expect(window.history.state.__TSR_index).toBe(inCall);
+
+    // Reconnecting and rejoining add no second entry.
+    rerender(false);
+    rerender(true);
+    await traversed();
+    expect(window.history.length).toBe(entries + 1);
+
+    rerender(false);
+    window.history.back();
+    await traversed();
+    expect(window.history.state.__TSR_index).toBe(inCall - 1);
   });
 
   it("refuses a drop nothing on the page took, so the tab does not navigate", () => {

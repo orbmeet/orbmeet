@@ -3,6 +3,7 @@ import { useCommittedRef } from "@orbmeet/ui/react";
 import {
   Track,
   RoomEvent,
+  TrackEvent,
   type LocalTrackPublication,
   type LocalVideoTrack,
   type Participant,
@@ -16,6 +17,35 @@ import { MEDIAPIPE_FILESET_PATH, SELFIE_SEGMENTER_MODEL_PATH } from "./mediapipe
 /** A camera capturing right now: on, with a live capture behind it. */
 function isCapturing(track: LocalVideoTrack): boolean {
   return !track.isMuted && track.mediaStreamTrack.readyState === "live";
+}
+
+/**
+ * Calls `onLost` when the effect loses its GPU context: a driver reset, the
+ * GPU process restarting, a laptop waking from sleep. Neither the processor
+ * nor LiveKit notices, and the camera goes on sending black frames that read
+ * as live, so the effect has to be rebuilt.
+ *
+ * The processor draws on a canvas it replaces each time LiveKit restarts it
+ * (a camera switch, a camera turned back on), so the listener moves to each
+ * new canvas. Returns a function that stops listening.
+ */
+function onContextLost(
+  track: LocalVideoTrack,
+  processor: BackgroundProcessorWrapper,
+  onLost: () => void,
+): () => void {
+  let canvas: OffscreenCanvas | HTMLCanvasElement | undefined;
+  const follow = () => {
+    canvas?.removeEventListener("webglcontextlost", onLost);
+    canvas = processor.canvas;
+    canvas?.addEventListener("webglcontextlost", onLost);
+  };
+  follow();
+  track.on(TrackEvent.Restarted, follow);
+  return () => {
+    track.off(TrackEvent.Restarted, follow);
+    canvas?.removeEventListener("webglcontextlost", onLost);
+  };
 }
 
 export type BackgroundMode = "none" | "blur" | "image";
@@ -160,6 +190,15 @@ export function useBackgroundEffect(
 
   // Keep a stable ref to the processor instance
   const processorRef = useRef<BackgroundProcessorWrapper | null>(null);
+  const stopWatchingContextRef = useRef<(() => void) | null>(null);
+  /** Lets go of the processor, returning it for whoever disposes of it. */
+  const dropProcessor = useCallback(() => {
+    stopWatchingContextRef.current?.();
+    stopWatchingContextRef.current = null;
+    const processor = processorRef.current;
+    processorRef.current = null;
+    return processor;
+  }, []);
   // Store the timer ID so it can be cleared on unmount or track churn
   const reapplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmountedRef = useRef(false);
@@ -188,7 +227,7 @@ export function useBackgroundEffect(
 
   // Core apply function — stable across mode/imagePath changes thanks to refs.
   const applyEffect = useCallback(
-    async (newMode: BackgroundMode, newImagePath: string | null) => {
+    async function applyEffect(newMode: BackgroundMode, newImagePath: string | null): Promise<void> {
       if (!room) {
         logInfo("[BackgroundEffect] No room, saving preference only");
         setMode(newMode);
@@ -238,7 +277,7 @@ export function useBackgroundEffect(
           if (processorRef.current) {
             logInfo("[BackgroundEffect] Removing processor");
             await cameraTrack.stopProcessor();
-            processorRef.current = null;
+            dropProcessor();
           }
         } else {
           const mod = await getTrackProcessors();
@@ -274,9 +313,7 @@ export function useBackgroundEffect(
             processorRef.current = processor;
             await cameraTrack.setProcessor(processor);
             if (callId !== applyIdRef.current || unmountedRef.current) {
-              if (processorRef.current === processor) {
-                processorRef.current = null;
-              }
+              if (processorRef.current === processor) dropProcessor();
               if (cameraTrack.getProcessor() === processor) {
                 await cameraTrack.stopProcessor().catch(() => undefined);
               } else {
@@ -284,6 +321,14 @@ export function useBackgroundEffect(
               }
               return;
             }
+            stopWatchingContextRef.current = onContextLost(cameraTrack, processor, () => {
+              if (processorRef.current !== processor) return;
+              logInfo("[BackgroundEffect] GPU context lost, rebuilding the effect");
+              // The new processor takes the dead one's place on the track;
+              // LiveKit stops the old one as it does.
+              dropProcessor();
+              void applyEffect(modeRef.current, imagePathRef.current);
+            });
           }
         }
 
@@ -292,9 +337,7 @@ export function useBackgroundEffect(
         logInfo(`[BackgroundEffect] Applied: ${newMode}`);
       } catch (err) {
         if (createdProcessor) {
-          if (processorRef.current === createdProcessor) {
-            processorRef.current = null;
-          }
+          if (processorRef.current === createdProcessor) dropProcessor();
           if (cameraTrack.getProcessor() === createdProcessor) {
             await cameraTrack.stopProcessor().catch(() => undefined);
           } else {
@@ -316,7 +359,7 @@ export function useBackgroundEffect(
         }
       }
     },
-    [room, getCameraTrack, setMode, setImagePath, recordPreference],
+    [room, getCameraTrack, setMode, setImagePath, recordPreference, dropProcessor],
   );
 
   // When camera is toggled on, re-apply the saved background effect.
@@ -328,9 +371,7 @@ export function useBackgroundEffect(
     const scheduleReapply = () => {
       // The old processor is tied to the old track; release its worker/WASM
       // resources before constructing one for the replacement capture.
-      const oldProcessor = processorRef.current;
-      processorRef.current = null;
-      void destroyBackgroundProcessor(oldProcessor);
+      void destroyBackgroundProcessor(dropProcessor());
       // Clear any pending re-apply timer before scheduling a new one
       if (reapplyTimerRef.current !== null) {
         clearTimeout(reapplyTimerRef.current);
@@ -390,7 +431,7 @@ export function useBackgroundEffect(
         reapplyTimerRef.current = null;
       }
     };
-  }, [room, applyEffect]);
+  }, [room, applyEffect, dropProcessor]);
 
   const invalidateApplyWork = useCallback(() => {
     applyIdRef.current++;
@@ -404,15 +445,13 @@ export function useBackgroundEffect(
       // Bump the live generation counter to invalidate in-flight apply work;
       // reading the current ref at teardown is intentional, not a stale capture.
       invalidateApplyWork();
-      const processor = processorRef.current;
-      processorRef.current = null;
-      void destroyBackgroundProcessor(processor);
+      void destroyBackgroundProcessor(dropProcessor());
       if (reapplyTimerRef.current !== null) {
         clearTimeout(reapplyTimerRef.current);
         reapplyTimerRef.current = null;
       }
     };
-  }, [invalidateApplyWork]);
+  }, [invalidateApplyWork, dropProcessor]);
 
   const setBlur = useCallback(() => applyEffect("blur", imagePathRef.current), [applyEffect]);
   const setImage = useCallback(

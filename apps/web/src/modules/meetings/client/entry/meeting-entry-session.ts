@@ -30,8 +30,9 @@ const JOIN_ATTEMPT_DELAYS_MS = [0, 1_000, 3_000, 7_000] as const;
 /**
  * Runs once LiveKit's own reconnect gives up (MAX_MEETING_RECONNECT_ELAPSED_MS).
  * Each attempt names the node it lost; the Worker probes that node and moves
- * the Meeting at once if it does not answer. About 80 seconds in all, so a
- * client that is itself offline for a minute still recovers.
+ * the Meeting at once if it does not answer. About 80 seconds of attempts, and
+ * none is spent while the browser knows it is offline (a lift, a tunnel): the
+ * schedule waits for the network and carries on from where it stood.
  */
 export const AUTO_REJOIN_DELAYS_MS = [0, 1_500, 5_000, 10_000, 15_000, 20_000, 30_000] as const;
 
@@ -143,6 +144,8 @@ export interface MeetingEntryDeps {
   defaultDisplayName: () => string;
   /** Why this browser cannot join, or null when it can. */
   unsupportedBrowserReason: () => string | null;
+  /** False only when the browser knows it has no network. */
+  isOnline?: () => boolean;
   now?: () => number;
   random?: () => number;
   newAttemptId?: () => string;
@@ -177,6 +180,8 @@ interface Episode {
   unreachableMediaUrl?: string;
   /** For a recovery or removal recheck: the connection that was lost. */
   replacesConnectionId?: string;
+  /** A recovery request came due while offline and waits for the network. */
+  heldOffline: boolean;
 }
 
 interface LinkState extends MeetingEntryLink {
@@ -258,9 +263,11 @@ export class MeetingEntrySession {
     if (!episode || episode.won) return;
     if (episode.awaitingAnswer) {
       episode.step -= 1;
-      this.sendAttempt(episode);
+      this.sendOrHold(episode);
     } else if (episode.nextStepAt !== null) {
       this.scheduleStep(episode, Math.max(0, episode.nextStepAt - this.now()));
+    } else if (episode.heldOffline) {
+      this.sendOrHold(episode);
     }
   }
 
@@ -290,6 +297,13 @@ export class MeetingEntrySession {
     if (episode.awaitingAnswer || episode.nextStepAt === null) return;
     if (episode.nextStepAt <= this.now()) return;
     this.scheduleStep(episode, 0);
+  }
+
+  /** The browser has a network again: send a recovery request held for it. */
+  networkRestored(): void {
+    if (!this.active) return;
+    const episode = this.episode;
+    if (episode?.heldOffline && !episode.won) this.sendOrHold(episode);
   }
 
   // ── Commands ──────────────────────────────────────────────────────────────
@@ -484,6 +498,7 @@ export class MeetingEntrySession {
       nextStepAt: null,
       won: false,
       lobbyDelayMs: LOBBY_POLL.baseMs,
+      heldOffline: false,
       // A rejoin after the link failed names the node it lost, so the Worker
       // can move the meeting off a node that is down for everyone.
       unreachableMediaUrl:
@@ -531,8 +546,14 @@ export class MeetingEntrySession {
     this.stepTimer = this.setTimer(() => {
       this.stepTimer = null;
       episode.nextStepAt = null;
-      if (this.episode === episode) this.sendAttempt(episode);
+      if (this.episode === episode) this.sendOrHold(episode);
     }, delayMs);
+  }
+
+  /** Sends the episode's next request, unless it is a recovery that would spend it on no network. */
+  private sendOrHold(episode: Episode): void {
+    episode.heldOffline = episode.kind === "recover" && this.deps.isOnline?.() === false;
+    if (!episode.heldOffline) this.sendAttempt(episode);
   }
 
   /** A link that never connected: continue the recovery it belongs to, or start one. */

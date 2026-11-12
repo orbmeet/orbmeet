@@ -1,5 +1,6 @@
 import * as React from "react";
 import {
+  MediaDeviceFailure,
   RoomEvent,
   Track,
   type LocalVideoTrack,
@@ -24,6 +25,11 @@ import { MediaOperationQueue } from "./media-operation-queue";
 import { watchLocalDeviceLoss } from "./local-device-loss";
 import { emitMeetingEntryDiagnostic } from "./entry/diagnostics";
 import { getPlatformEnvironment, needsForegroundCameraReacquire } from "@/lib/browser-capabilities";
+import { InitialMeetingMediaContext, type InitialMeetingMediaResult } from "./initial-meeting-media";
+import { whenPageVisible } from "./page-visibility";
+
+/** Each join's initial publish is answered once, even when the view that answers it is rebuilt. */
+const answeredInitialMedia = new WeakSet<Promise<InitialMeetingMediaResult>>();
 
 // iOS rotates an active camera capture lazily — and some WebKit versions not
 // at all — so after a device rotation the published frames can stay in the old
@@ -72,6 +78,7 @@ export function useMeetingCamera({
   const onChoiceRef = useCommittedRef(onChoice);
   /** Off only because its device went away; nobody chose it. */
   const cameraLostRef = React.useRef(false);
+  const initialMedia = React.useContext(InitialMeetingMediaContext);
 
   // Device capture mutations are serialized. A second click or selection is
   // intent, not noise: queueing it means rapid toggle/toggle and switch/toggle
@@ -206,16 +213,43 @@ export function useMeetingCamera({
       });
     };
 
-    const initialError = roomInstance.localParticipant.lastCameraError;
-    if (initialError && !roomInstance.localParticipant.isCameraEnabled) {
-      reportCameraFailure(initialError);
-    }
+    // The join's own publish usually settles after this view mounted. Until
+    // it has, a camera error is that publish's, and is answered from its
+    // result: a camera refused to a page in the background (a rejoin while
+    // the phone was locked) is asked for again when the page shows, as the
+    // microphone is.
+    let initialSettled = !initialMedia;
+    let disposed = false;
+    let cancelRetry = () => {};
+    void initialMedia?.then(({ videoError }) => {
+      if (disposed) return;
+      initialSettled = true;
+      if (answeredInitialMedia.has(initialMedia)) return;
+      answeredInitialMedia.add(initialMedia);
+      const participant = roomInstance.localParticipant;
+      if (!(videoError instanceof Error) || participant.isCameraEnabled) return;
+      if (MediaDeviceFailure.getFailure(videoError) !== MediaDeviceFailure.PermissionDenied) {
+        reportCameraFailure(videoError);
+        return;
+      }
+      cancelRetry = whenPageVisible(() => void enqueueUserAction(async () => {
+        if (participant.isCameraEnabled) return;
+        emitMeetingEntryDiagnostic("initial_camera_retry");
+        try {
+          await participant.setCameraEnabled(
+            true,
+            getCameraCaptureOptions(currentVideoDeviceIdRef.current),
+            getCameraPublishOptions(),
+          );
+        } catch (err) {
+          reportCameraFailure(err instanceof Error ? err : videoError);
+        }
+      }));
+    });
 
     const handleMediaDevicesError = (error: Error, kind?: MediaDeviceKind) => {
-      if (
-        kind === "videoinput" ||
-        roomInstance.localParticipant.lastCameraError === error
-      ) {
+      if (!initialSettled) return;
+      if (kind === "videoinput" || roomInstance.localParticipant.lastCameraError === error) {
         reportCameraFailure(error);
       }
     };
@@ -230,10 +264,12 @@ export function useMeetingCamera({
     roomInstance.on(RoomEvent.MediaDevicesError, handleMediaDevicesError);
     roomInstance.on(RoomEvent.ActiveDeviceChanged, handleActiveDeviceChanged);
     return () => {
+      disposed = true;
+      cancelRetry();
       roomInstance.off(RoomEvent.MediaDevicesError, handleMediaDevicesError);
       roomInstance.off(RoomEvent.ActiveDeviceChanged, handleActiveDeviceChanged);
     };
-  }, [addToast, roomInstance]);
+  }, [addToast, enqueueUserAction, initialMedia, roomInstance]);
 
   React.useEffect(() => {
     void refreshVideoDevices();

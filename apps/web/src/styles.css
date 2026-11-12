@@ -47,7 +47,8 @@ body {
  *
  * On the root element, not `body`: the viewport reads `overscroll-behavior`
  * from the root only (Chrome since 140; Firefox and Safari always), and it is
- * what keeps pull-to-refresh and swipe-back from leaving a live call.
+ * what keeps pull-to-refresh from reloading a live call. Going back is held
+ * by the call's own history entry (use-live-call-page.ts).
  */
 html.meet-route {
   overflow: hidden;

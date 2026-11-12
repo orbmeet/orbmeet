@@ -20,8 +20,8 @@ export type MeetingEntryDiagnosticEvent =
   | "livekit_reconnected"
   | "livekit_disconnected"
   | "livekit_error"
-  | "audio_playback_blocked"
-  | "audio_playback_unlocked"
+  | "playback_blocked"
+  | "playback_unlocked"
   | "audio_policy_resolved"
   | "active_audio_device_changed"
   | "media_device_failure"
@@ -51,6 +51,7 @@ export type MeetingEntryDiagnosticEvent =
   | "local_camera_restart_failed"
   // A first microphone the browser refused (a hidden page), asked for again.
   | "initial_microphone_retry"
+  | "initial_camera_retry"
   | "remote_track_subscription_failed"
   // The page leaving and returning to view while connected: a phone locking,
   // or the browser sent to the background, which can suspend the page.

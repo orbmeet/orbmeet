@@ -3,64 +3,18 @@ import { describe, expect, it, vi } from "vitest";
 import { leaveRoomOnPageHide, publishInitialMeetingMedia } from "./meeting-connection";
 
 describe("publishInitialMeetingMedia", () => {
-  it("starts the selected microphone and camera after signaling connects", async () => {
-    const setMicrophoneEnabled = vi.fn(async () => undefined);
-    const setCameraEnabled = vi.fn(async () => undefined);
-
-    const result = await publishInitialMeetingMedia(
-      { setMicrophoneEnabled, setCameraEnabled },
-      {
-        audioEnabled: true,
-        audioDeviceId: "mic-1",
-        videoEnabled: true,
-        videoDeviceId: "camera-1",
-      },
-    );
-
-    expect(setMicrophoneEnabled).toHaveBeenCalledWith(true, {
-      deviceId: "mic-1",
-    });
-    expect(setCameraEnabled).toHaveBeenCalledWith(true, {
-      deviceId: "camera-1",
-    });
-    expect(result).toEqual({ audioError: null, videoError: null });
-  });
-
-  it("does not pin a device onto a track that starts disabled", async () => {
-    // The pre-join device choice still reaches RoomOptions capture defaults, so
-    // the first in-meeting unmute lands on the chosen microphone; it just must
-    // not be attached to a publish that never happens.
+  it("turns on what the participant joined with, on the room's chosen devices", async () => {
+    // The device is the room's capture default, not a constraint of this call.
     const setMicrophoneEnabled = vi.fn(async () => undefined);
     const setCameraEnabled = vi.fn(async () => undefined);
 
     await publishInitialMeetingMedia(
       { setMicrophoneEnabled, setCameraEnabled },
-      {
-        audioEnabled: false,
-        audioDeviceId: "mic-1",
-        videoEnabled: false,
-        videoDeviceId: "camera-1",
-      },
+      { audioEnabled: true, videoEnabled: false },
     );
 
-    expect(setMicrophoneEnabled).toHaveBeenCalledWith(false, undefined);
-    expect(setCameraEnabled).toHaveBeenCalledWith(false, undefined);
-  });
-
-  it("does not invent device constraints when joining muted", async () => {
-    const setMicrophoneEnabled = vi.fn(async () => undefined);
-    const setCameraEnabled = vi.fn(async () => undefined);
-
-    await publishInitialMeetingMedia(
-      { setMicrophoneEnabled, setCameraEnabled },
-      {
-        audioEnabled: false,
-        videoEnabled: false,
-      },
-    );
-
-    expect(setMicrophoneEnabled).toHaveBeenCalledWith(false, undefined);
-    expect(setCameraEnabled).toHaveBeenCalledWith(false, undefined);
+    expect(setMicrophoneEnabled).toHaveBeenCalledWith(true);
+    expect(setCameraEnabled).toHaveBeenCalledWith(false);
   });
 
   it("settles microphone and camera independently so either device can recover in-room", async () => {

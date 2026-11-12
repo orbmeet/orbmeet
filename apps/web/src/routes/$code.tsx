@@ -57,6 +57,11 @@ export const Route = createFileRoute("/$code")({
   // makes Link force `preload: false`), but that is incidental; this is the
   // guarantee. `app/boundaries/route-loaders-boundary.test.ts` enforces the pairing.
   preload: false,
+  // Read once, on entry. A live call changes history without leaving the
+  // route (the Back guard in use-live-call-page.ts adds an entry), and a router
+  // load re-runs a stale loader in the background: a lookup that failed then
+  // would swap the call for an error page.
+  shouldReload: false,
   loader: async ({ context, params }) => {
     // Resolve the public Meeting lookup and prefill the session in parallel.
     // The session prefetch is awaited so selective SSR and client navigations
