@@ -18,7 +18,6 @@ import {
   canManage,
   canModerate,
   grantFor,
-  grantHash,
   holdsSeat,
   initialState,
   isCurrentPlacement,
@@ -652,7 +651,6 @@ function join(
   }
   if (!meta.nodeId) throw Errors.MEDIA_UNAVAILABLE();
 
-  const grant = grantFor(state, admission);
   const attempt: Attempt = {
     id: input.newAttemptId,
     identity: admission.userId ? `${admission.userId}_${input.newAttemptId}` : `guest_${input.newAttemptId}`,
@@ -668,9 +666,9 @@ function join(
     sidKnownSince: null,
     absentSince: null,
     captionLanguage: input.captionLanguage,
-    // The token carries this grant, so LiveKit starts out holding it.
-    appliedGrant: grantHash(grant),
-    tokenGrant: grantHash(grant),
+    // No session yet. Its join token is minted from the reply below, which
+    // states the grant as it is once this attempt holds its seat.
+    appliedGrant: null,
     removed: false,
   };
   state.attempts[attempt.id] = attempt;
@@ -792,9 +790,10 @@ function markJoined(
       ? sessionJoinedAt < current
       : report.requestedAt !== null && attempt.sidKnownSince !== null && report.requestedAt < attempt.sidKnownSince;
     if (stale) return;
-    // A new session is a full reconnect: LiveKit admitted it on the join
-    // token's grant, and whatever was applied to the previous session is gone.
-    if (attempt.sid !== null) attempt.appliedGrant = attempt.tokenGrant;
+    // A new session, first or after a full reconnect, was admitted on one of
+    // the attempt's join tokens: which one, and so which grant it holds, is
+    // not known here. Whatever was applied to an earlier session is gone.
+    attempt.appliedGrant = null;
     attempt.sid = sid;
     attempt.sessionJoinedAt = sessionJoinedAt;
     attempt.sidKnownSince = report.requestedAt ?? now;
@@ -971,8 +970,8 @@ function applyResult(state: MeetingState, input: EffectResult, now: number): voi
       if (state.meta.nodeId === input.from) place(state, input.nodeId, now);
       return;
     case "grantApplied": {
-      // Applied to the session it was planned for; a reconnect since then
-      // started from the token's grant instead.
+      // Applied to the session it was planned for. A session that has
+      // replaced it since holds an unknown grant, which is planned anew.
       const attempt = state.attempts[input.attemptId];
       if (attempt && attempt.sid === input.sid) attempt.appliedGrant = input.hash;
       return;

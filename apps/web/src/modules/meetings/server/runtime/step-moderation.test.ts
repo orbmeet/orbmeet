@@ -22,7 +22,7 @@ describe("moderation state is server-owned", () => {
     expect(m.state.admissions[a.admissionId].hand).toBeNull();
   });
 
-  it("re-applies the current grant after a full reconnect falls back to the token's", () => {
+  it("re-applies the current grant after a full reconnect", () => {
     const m = new Meeting();
     m.joined(m.admitted(host).identity);
     const a = m.admitted(ada);
@@ -31,9 +31,9 @@ describe("moderation state is server-owned", () => {
     const grant = m.plan().find((e) => e.kind === "livekit.grant" && e.identity === a.identity);
     if (grant?.kind !== "livekit.grant") throw new Error("expected a grant");
     m.apply({ kind: "grantApplied", placement: m.here(), attemptId: a.attemptId, sid: grant.sid, hash: grant.hash });
-    expect(m.plan()).not.toContainEqual(expect.objectContaining({ kind: "livekit.grant" }));
+    expect(m.plan()).not.toContainEqual(expect.objectContaining({ kind: "livekit.grant", identity: a.identity }));
 
-    // A new session was admitted on the join token, which holds the attendee grant.
+    // A new session was admitted on one of its join tokens, whose grant is not known.
     m.apply({ kind: "participantJoined", identity: a.identity, sid: "sid-reconnected", joinedAt: null, at: m.now });
     expect(m.state.attempts[a.attemptId].sid).toBe("sid-reconnected");
     const again = m.plan().find((e) => e.kind === "livekit.grant" && e.identity === a.identity);

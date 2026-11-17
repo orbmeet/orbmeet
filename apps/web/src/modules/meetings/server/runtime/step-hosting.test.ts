@@ -218,3 +218,65 @@ function joinOf(m: Meeting, subject: Subject) {
     guestNetworkKey: null,
   };
 }
+
+// A LiveKit session starts with the grant in the join token it connected
+// with. A stand-in's token is minted while they host, so a demotion that
+// lands before they join, or a reconnect after one, must still reach LiveKit.
+describe("the grant a demoted stand-in's session holds", () => {
+  const grantsFor = (m: Meeting, identity: string) =>
+    m.plan().flatMap((effect) => (effect.kind === "livekit.grant" && effect.identity === identity ? [effect] : []));
+
+  /** Executes the grant LiveKit is to receive for `identity` and reports it applied. */
+  function applyGrant(m: Meeting, identity: string) {
+    const [effect] = grantsFor(m, identity);
+    if (!effect) throw new Error(`no grant planned for ${identity}`);
+    m.apply({ kind: "grantApplied", placement: m.here(), attemptId: effect.attemptId, sid: effect.sid, hash: effect.hash });
+    return effect.grant;
+  }
+
+  it("is corrected when an admin arrives between the stand-in's token and their join", () => {
+    const m = sharedMeeting();
+    const c = m.admitted(chen);
+    expect(c.grant).toMatchObject({ role: "host", canScreenShare: true });
+
+    m.admitted(admin);
+    m.joined(c.identity);
+    expect(applyGrant(m, c.identity)).toMatchObject({ role: "attendee", canScreenShare: false });
+    expect(grantsFor(m, c.identity)).toEqual([]);
+  });
+
+  it("is corrected again when the demoted stand-in reconnects on their host token", () => {
+    const m = sharedMeeting();
+    const c = m.admitted(chen);
+    m.joined(c.identity);
+    expect(applyGrant(m, c.identity).role).toBe("host");
+    m.joined(m.admitted(admin).identity);
+    expect(applyGrant(m, c.identity).role).toBe("attendee");
+
+    m.apply({ kind: "participantJoined", identity: c.identity, sid: "sid-reconnected", joinedAt: m.now + 1, at: m.now + 1 });
+    const [correction] = grantsFor(m, c.identity);
+    expect(correction).toMatchObject({ sid: "sid-reconnected", grant: { role: "attendee", canScreenShare: false } });
+  });
+
+  it("is applied to a session joined on a token from a repeated join request", () => {
+    // The repeat mints a token from the grant as it is then: host. Which
+    // token the session used is not known, so its grant is applied either way.
+    const m = sharedMeeting();
+    const c = m.admitted(chen, { clientAttemptId: "c1" });
+    m.admitted(admin);
+    const again = m.admitted(chen, { admissionId: c.admissionId, clientAttemptId: "c1" });
+    expect(again.attemptId).toBe(c.attemptId);
+    m.joined(c.identity);
+    expect(applyGrant(m, c.identity).role).toBe("attendee");
+  });
+
+  it("ignores a grant applied to a session that has since been replaced", () => {
+    const m = sharedMeeting();
+    const c = m.admitted(chen);
+    m.joined(c.identity);
+    const [stale] = grantsFor(m, c.identity);
+    m.apply({ kind: "participantJoined", identity: c.identity, sid: "sid-reconnected", joinedAt: m.now + 1, at: m.now + 1 });
+    m.apply({ kind: "grantApplied", placement: m.here(), attemptId: stale.attemptId, sid: stale.sid, hash: stale.hash });
+    expect(grantsFor(m, c.identity)).toMatchObject([{ sid: "sid-reconnected" }]);
+  });
+});

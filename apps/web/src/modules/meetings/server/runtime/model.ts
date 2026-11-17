@@ -262,10 +262,15 @@ export interface Attempt {
   /** Set while a joined attempt is missing from the room. */
   absentSince: number | null;
   captionLanguage: string;
-  /** Hash of the attributes and permission LiveKit last accepted for it. */
-  appliedGrant: string;
-  /** Hash of the grant its join token carries, which LiveKit falls back to on a full reconnect. */
-  tokenGrant: string;
+  /**
+   * Hash of the attributes and permission LiveKit last accepted for its
+   * current session, or null while that is not known. A session starts from
+   * whichever of the attempt's join tokens it connected with, and a repeated
+   * join request mints another one from the grant as it is then, so a new
+   * session's grant is never assumed: it is null, and the planner applies the
+   * meeting's grant to it.
+   */
+  appliedGrant: string | null;
   /**
    * Whether the attempt is known to be out of the room. Set only by what
    * shows it: a removal or room deletion that succeeded, a presence check
