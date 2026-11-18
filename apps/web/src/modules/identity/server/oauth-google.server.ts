@@ -100,6 +100,7 @@ async function initPkceFlow(
       value: encryptedVerifier,
       data: verificationData ?? null,
       expiresAt,
+      createdAt: now,
       updatedAt: now,
     })
     .onConflictDoUpdate({

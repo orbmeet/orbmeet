@@ -33,6 +33,7 @@ async function insertFlow(input?: { code?: string }) {
   const code = input?.code ?? "123456";
   const secretHash = await hashSessionToken(secret);
   const value = await hashOtp(code, `otp_login:${id}`, env.AUTH_SECRET);
+  const now = new Date();
   await db.insert(verifications).values({
     id,
     type: "otp_login",
@@ -46,8 +47,11 @@ async function insertFlow(input?: { code?: string }) {
       userId: "user_1",
       failedAttempts: 0,
     }),
-    expiresAt: new Date(Date.now() + 600_000),
-    updatedAt: new Date(),
+    expiresAt: new Date(now.getTime() + 600_000),
+    // One clock reading for both, as the app does: a second ticking over
+    // between them would fail the table's updated >= created check.
+    createdAt: now,
+    updatedAt: now,
   });
   return { id, value, code, flowToken: `${id}.${secret}` };
 }

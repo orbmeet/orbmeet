@@ -73,6 +73,7 @@ async function withinDailyDeliveryCap(
       value: "1",
       data: null,
       expiresAt,
+      createdAt: now,
       updatedAt: now,
     })
     .onConflictDoUpdate({
@@ -163,6 +164,7 @@ async function claimDeliveryLease(
       value: claimId,
       data: null,
       expiresAt: new Date(now.getTime() + EMAIL_DELIVERY_COOLDOWN_MS),
+      createdAt: now,
       updatedAt: now,
     })
     .onConflictDoUpdate({
@@ -245,6 +247,7 @@ export async function createEmailAuthFlow(
       value: codeHash,
       data: JSON.stringify(flowData),
       expiresAt: new Date(now.getTime() + OTP_EXPIRY_MS),
+      createdAt: now,
       updatedAt: now,
     });
 

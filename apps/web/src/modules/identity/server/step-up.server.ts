@@ -109,6 +109,7 @@ async function claimStepUpDelivery(
         value: claimId,
         data: null,
         expiresAt: new Date(now.getTime() + STEP_UP_DELIVERY_COOLDOWN_MS),
+        createdAt: now,
         updatedAt: now,
       })
       .onConflictDoUpdate({
@@ -189,6 +190,7 @@ export async function requestStepUpImpl({
         value,
         data: JSON.stringify(flowData),
         expiresAt: new Date(now.getTime() + STEP_UP_TTL_MS),
+        createdAt: now,
         updatedAt: now,
     });
     const { subject, html, text } = buildOtpEmail(
