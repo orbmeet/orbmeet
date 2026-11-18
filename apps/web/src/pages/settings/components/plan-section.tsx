@@ -67,7 +67,10 @@ import {
   openBillingPortal,
   startSubscriptionCheckout,
 } from "@/modules/billing/client/billing-client";
+import { isPaymentFailing, PaymentFailedNotice } from "@/modules/billing/client/payment-failed-notice";
 import { storageUsageQueryOptions } from "@/app/query-client/queries/settings";
+import { planPricesQueryOptions } from "@/app/query-client/queries/plan-prices";
+import { DEFAULT_PLAN_PRICES, formatPlanPrice } from "@/modules/billing/contract/plan-prices";
 
 function formatBytes(bytes: number | null): string {
   if (bytes === null) return "Unlimited";
@@ -77,7 +80,7 @@ function formatBytes(bytes: number | null): string {
 }
 
 interface PlanSectionProps {
-  plan?: SubscriptionTier;
+  plan?: Extract<SubscriptionTier, "free" | "pro">;
   subscriptionStatus?: SubscriptionStatus;
   hasManagedSubscription?: boolean;
 }
@@ -89,13 +92,14 @@ export function PlanSection({
 }: PlanSectionProps) {
   const limits = getPlanLimits(plan);
   const storageQuery = useQuery(storageUsageQueryOptions());
-  const [loading, setLoading] = React.useState<"pro" | "organization" | "portal" | null>(null);
+  const { data: prices = DEFAULT_PLAN_PRICES } = useQuery(planPricesQueryOptions());
+  const [loading, setLoading] = React.useState<"pro" | "portal" | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  async function startCheckout(targetPlan: "pro" | "organization") {
-    setLoading(targetPlan);
+  async function startCheckout() {
+    setLoading("pro");
     setError(null);
     try {
-      await startSubscriptionCheckout(targetPlan);
+      await startSubscriptionCheckout({ plan: "pro" });
     } catch (err) {
       console.error("Checkout failed:", err);
       setError("Something went wrong. Please try again or contact support.");
@@ -121,7 +125,7 @@ export function PlanSection({
     <SettingsSection title="Plan & Billing">
       <div {...stylex.props(row.x3)}>
         <Badge variant="primary" size="md">
-          {plan === "free" ? "Free Plan" : plan === "pro" ? "Pro Plan" : "Organization Plan"}
+          {plan === "pro" ? "Pro Plan" : "Free Plan"}
         </Badge>
         {subscriptionStatus && subscriptionStatus !== "active" && (
           <Badge variant="warning" size="md" sx={styles.statusBadge}>
@@ -129,12 +133,11 @@ export function PlanSection({
           </Badge>
         )}
       </div>
+      <PaymentFailedNotice status={subscriptionStatus} customer="pro" canUpdate={hasManagedSubscription} />
       <p {...stylex.props(settings.blurb, styles.summary)}>
-        {plan === "free"
-          ? "You are on Free: one permanent personal meeting link and one Space."
-          : plan === "pro"
-            ? "You are on Pro: cloud recording, a custom meeting code, and higher limits."
-            : "You are on Organization: shared billing, licensed users, and Organization-funded Spaces."}
+        {plan === "pro"
+          ? "You are on Pro: cloud recording, a custom meeting code, and higher limits."
+          : "You are on Free: one permanent personal meeting link and one Space."}
       </p>
       <div {...stylex.props(settings.formPanel, styles.limits)}>
         <div {...stylex.props(styles.limitGrid)}>
@@ -215,11 +218,6 @@ sx={styles.retry}
         </div>
       </div>
 
-      {plan !== "free" && !hasManagedSubscription ? (
-        <p {...stylex.props(settings.blurb, styles.billingNote)}>
-          This plan has no subscription of its own to manage, so there are no invoices here.
-        </p>
-      ) : null}
       {hasManagedSubscription ? (
         <>
           <Button
@@ -231,7 +229,9 @@ sx={styles.retry}
             disabled={loading === "portal"}
           >
             <ExternalLink size={14} />
-            {loading === "portal" ? "Opening..." : "Manage billing"}
+            {loading === "portal"
+              ? "Opening..."
+              : isPaymentFailing(subscriptionStatus) ? "Update payment method" : "Manage billing"}
           </Button>
           <p {...stylex.props(settings.blurb, styles.billingNote)}>
             Invoices, your payment method and cancelling are all in the billing portal.
@@ -239,30 +239,20 @@ sx={styles.retry}
         </>
       ) : (
         <div {...stylex.props(row.x3, styles.actions)}>
-          {plan !== "pro" && plan !== "organization" && (
-            <Button
-              variant="secondary"
-              onClick={() => {
-                void startCheckout("pro");
-              }}
-              disabled={loading !== null}
-            >
-              {loading === "pro" ? "Loading..." : "Upgrade to Pro — $5/mo"}
-            </Button>
-          )}
-          {plan !== "organization" && (
-            <Button
-              variant="secondary"
-              onClick={() => {
-                void startCheckout("organization");
-              }}
-              disabled={loading !== null}
-            >
-              {loading === "organization" ? "Loading..." : "Upgrade to Organization — $10/user/mo"}
-            </Button>
-          )}
+          <Button
+            variant="secondary"
+            onClick={() => {
+              void startCheckout();
+            }}
+            disabled={loading !== null}
+          >
+            {loading === "pro" ? "Loading..." : `Upgrade to Pro — ${formatPlanPrice(prices.pro)}/mo${prices.taxAddedAtCheckout ? " + tax" : ""}`}
+          </Button>
         </div>
       )}
+      <p {...stylex.props(settings.blurb, styles.billingNote)}>
+        The Organization plan is bought for an Organization, in its section below.
+      </p>
       {error && <p {...stylex.props(settings.error)}>{error}</p>}
     </SettingsSection>
   );

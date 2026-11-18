@@ -8,9 +8,10 @@
  * (rendered `private, no-store`) instead of silently becoming publicly
  * cacheable with another user's dehydrated Query cache embedded in it.
  *
- * It is also what the build prerenders (vite.config.ts): these pages are
- * served as static Assets, and every other document is rendered per request.
- * Kept free of imports, since the Vite config loads it directly.
+ * It is also what the build prerenders (vite.config.ts), except the pages in
+ * PER_VISITOR_PUBLIC_PATHS: prerendered pages are served as static Assets, and
+ * every other document is rendered per request. Kept free of imports, since
+ * the Vite config loads it directly.
  */
 const PUBLIC_DOCUMENT_PATHS: ReadonlySet<string> = new Set([
   "/",
@@ -20,6 +21,15 @@ const PUBLIC_DOCUMENT_PATHS: ReadonlySet<string> = new Set([
   "/status",
   "/terms",
 ]);
+
+/**
+ * Public pages whose content depends on who is reading them, so no single
+ * static copy can serve everyone: the pricing page shows each visitor the
+ * prices their checkout will charge, in their own currency. They stay public
+ * and indexable, but are rendered per request (never shared-cached) instead
+ * of prerendered.
+ */
+const PER_VISITOR_PUBLIC_PATHS: ReadonlySet<string> = new Set(["/pricing"]);
 
 /** Trailing slashes are not significant: `/pricing/` is `/pricing`. */
 export function normalizeDocumentPath(pathname: string): string {
@@ -35,7 +45,12 @@ export function isPublicDocumentPath(pathname: string): boolean {
   return PUBLIC_DOCUMENT_PATHS.has(normalizeDocumentPath(pathname));
 }
 
-/** The public pages, which the build prerenders. */
+/** The public pages: indexable, served with public-page headers. */
 export function publicDocumentPaths(): readonly string[] {
   return [...PUBLIC_DOCUMENT_PATHS].sort();
+}
+
+/** The public pages the build prerenders into static Assets. */
+export function prerenderedDocumentPaths(): readonly string[] {
+  return publicDocumentPaths().filter((path) => !PER_VISITOR_PUBLIC_PATHS.has(path));
 }

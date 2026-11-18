@@ -32,6 +32,7 @@ import { getClientIP } from "@/platform/http/client-ip.server";
 import { enforceIpRateLimit, enforceRateLimit } from "@/platform/http/rate-limit.server";
 import { getEnv } from "@/platform/runtime/server-runtime.server";
 import { rememberDevice, sanitizeUser, enforceSessionCapStatement } from "./session";
+import { loadUserBilling } from "@/modules/billing/server/entitlements.server";
 import {
   generateSessionToken,
   hashSessionToken,
@@ -601,7 +602,7 @@ export async function finishPasskeyAuthenticationImpl({
     }),
   ]);
 
-  return { user: sanitizeUser(user), deletionPending };
+  return { user: sanitizeUser(user, await loadUserBilling(db, user.id)), deletionPending };
 }
 
 export async function listPasskeysImpl({ context: { user, db } }: { context: AuthFnContext }) {

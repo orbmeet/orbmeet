@@ -204,7 +204,6 @@ describe("durable object cleanup", () => {
       name: "Owner",
       email: "owner@example.com",
       normalizedEmail: "owner@example.com",
-      plan: "free",
       role: "user",
       createdAt: now,
       updatedAt: now,
@@ -268,7 +267,7 @@ describe("what the cleanup queue counts as a reference", () => {
     const key = "spaces/space_1/uploads/file_1.pdf";
     await db.insert(users).values({
       id: "owner", name: "Owner", email: "owner@example.com", normalizedEmail: "owner@example.com",
-      plan: "free", role: "user", createdAt: now, updatedAt: now,
+      role: "user", createdAt: now, updatedAt: now,
     });
     await db.insert(spaces).values({
       id: "space_1", slug: "space-1", name: "Space", kind: "shared", ownerUserId: "owner", createdAt: now, updatedAt: now,

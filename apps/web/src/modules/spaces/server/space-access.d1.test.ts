@@ -9,6 +9,7 @@ import {
 import { eq } from "drizzle-orm";
 import { createTestDb, type TestDb } from "@/test/db";
 import { assertSpaceCapability, getSpaceAccess, selectSpacesForUser } from "./helpers";
+import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
 const appDb = () => db;
@@ -25,7 +26,6 @@ async function insertUser(id: string) {
     email: `${id}@example.com`,
     normalizedEmail: `${id}@example.com`,
     image: null,
-    plan: "free",
     role: "user",
     createdAt: now,
     updatedAt: now,
@@ -58,10 +58,10 @@ async function insertOrganizationSpace() {
     id: "org_1",
     name: "Acme",
     ownerId: "organization_owner",
-    plan: "organization",
     createdAt: now,
     updatedAt: now,
   });
+  await seedSubscription(db, { organizationId: "org_1", seats: 25 });
   await db.insert(spaces).values({
     kind: "shared",
     id: "spc_org",

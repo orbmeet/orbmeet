@@ -5,6 +5,7 @@
 
 export * from "./schema/identity.ts";
 export * from "./schema/organizations.ts";
+export * from "./schema/billing.ts";
 export * from "./schema/spaces.ts";
 export * from "./schema/assets.ts";
 export * from "./schema/meeting-links.ts";

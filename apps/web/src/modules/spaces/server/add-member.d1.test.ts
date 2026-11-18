@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { createTestDb, type TestDb } from "@/test/db";
 import { PLAN_LIMITS } from "@/modules/billing/contract/plan-limits";
 import {insertSpaceMemberWithinCap} from "@/modules/spaces/server/membership.server";
+import { seedSubscription } from "@/test/billing";
 
 const FREE_CAP = PLAN_LIMITS.free.maxMembersPerSpace!;
 
@@ -22,11 +23,11 @@ async function insertUser(id: string, plan: "free" | "pro" = "free") {
     email: `${id}@example.com`,
     normalizedEmail: `${id}@example.com`,
     image: null,
-    plan,
     role: "user",
     createdAt: now,
     updatedAt: now,
   });
+  if (plan === "pro") await seedSubscription(db, { userId: id });
 }
 
 async function insertSpace(id: string, ownerUserId: string) {
@@ -227,11 +228,10 @@ describe("insertSpaceMemberWithinCap", () => {
       id: "org_admin_fence",
       name: "Admin Fence",
       ownerId: "new_owner",
-      plan: "organization",
-      licenseLimit: 3,
       createdAt: now,
       updatedAt: now,
     });
+    await seedSubscription(db, { organizationId: "org_admin_fence", seats: 3 });
     await db.insert(organizationMembers).values([
       { id: "omb_new_owner", organizationId: "org_admin_fence", userId: "new_owner", role: "admin", joinedAt: now },
       { id: "omb_former_owner", organizationId: "org_admin_fence", userId: "former_owner", role: "admin", joinedAt: now },
@@ -267,11 +267,10 @@ describe("insertSpaceMemberWithinCap", () => {
       id: "org_1",
       name: "Acme",
       ownerId: "owner",
-      plan: "organization",
-      licenseLimit: 25,
       createdAt: now,
       updatedAt: now,
     });
+    await seedSubscription(db, { organizationId: "org_1", seats: 25 });
     await db.insert(spaces).values({
       kind: "shared",
       id: "spc_org",

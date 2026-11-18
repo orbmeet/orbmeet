@@ -1,11 +1,7 @@
 import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
-import {
-  ORGANIZATION_MEMBER_ROLES as ORGANIZATION_ROLE_VALUES,
-  SUBSCRIPTION_STATUSES as SUBSCRIPTION_STATUS_VALUES,
-  SUBSCRIPTION_TIERS as SUBSCRIPTION_TIER_VALUES,
-} from "@orbmeet/domain-model";
-import { billingEventTimestamp, oneOf, requiredTrimmedTextLength } from "./columns.ts";
+import { ORGANIZATION_MEMBER_ROLES as ORGANIZATION_ROLE_VALUES } from "@orbmeet/domain-model";
+import { oneOf, requiredTrimmedTextLength } from "./columns.ts";
 import { users } from "./identity.ts";
 
 // ============================================================================
@@ -13,9 +9,9 @@ import { users } from "./identity.ts";
 // ============================================================================
 
 /**
- * A payer with seats. Its owner is the billing authority; a seat makes a
- * person eligible to join the Organization's Spaces but grants no access to
- * their content by itself.
+ * A customer of its own, billed per member (`billing_subscriptions`). Its
+ * owner manages that billing; a membership makes a person eligible to join the
+ * Organization's Spaces but grants no access to their content by itself.
  */
 export const organizations = sqliteTable(
   "organizations",
@@ -25,14 +21,6 @@ export const organizations = sqliteTable(
     ownerId: text("owner_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    plan: text("plan", { enum: SUBSCRIPTION_TIER_VALUES })
-      .default("organization")
-      .notNull(),
-    paddleCustomerId: text("paddle_customer_id"),
-    paddleSubscriptionId: text("paddle_subscription_id"),
-    subscriptionStatus: text("subscription_status", { enum: SUBSCRIPTION_STATUS_VALUES }),
-    subscriptionUpdatedAt: billingEventTimestamp("subscription_updated_at"),
-    licenseLimit: integer("license_limit").default(25).notNull(),
     archivedAt: integer("archived_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
@@ -44,15 +32,7 @@ export const organizations = sqliteTable(
   },
   (table) => [
     uniqueIndex("organizations_owner_id_idx").on(table.ownerId),
-    uniqueIndex("organizations_paddle_customer_id_idx").on(table.paddleCustomerId),
-    uniqueIndex("organizations_paddle_subscription_id_idx").on(table.paddleSubscriptionId),
     check("organizations_name_length_check", requiredTrimmedTextLength(table.name, 200)),
-    check("organizations_plan_check", oneOf(table.plan, SUBSCRIPTION_TIER_VALUES)),
-    check(
-      "organizations_subscription_status_check",
-      sql`${table.subscriptionStatus} IS NULL OR ${oneOf(table.subscriptionStatus, SUBSCRIPTION_STATUS_VALUES)}`,
-    ),
-    check("organizations_license_limit_positive_check", sql`${table.licenseLimit} > 0`),
     check("organizations_updated_after_created_check", sql`${table.updatedAt} >= ${table.createdAt}`),
     check(
       "organizations_archived_after_created_check",

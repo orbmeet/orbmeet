@@ -8,6 +8,8 @@ import {
   startSubscriptionCheckout,
 } from "@/modules/billing/client/billing-client";
 import { sessionQueryOptions } from "@/app/query-client/queries/session";
+import { planPricesQueryOptions } from "@/app/query-client/queries/plan-prices";
+import { DEFAULT_PLAN_PRICES, formatPlanPrice, type PlanPrices } from "@/modules/billing/contract/plan-prices";
 import { enter, stagger } from "@orbmeet/ui/styles/animations";
 import { focus, layout, motion, pressable } from "@orbmeet/ui/styles/atoms";
 import { accent, border, danger, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
@@ -54,7 +56,7 @@ const TIERS: PricingTier[] = [
     name: "Pro",
     description: "For professionals who need cloud recording, custom codes, and higher limits",
     price: "$5",
-    priceLabel: "per user / month",
+    priceLabel: "per month",
     icon: <Zap size={20} />,
     popular: true,
   },
@@ -63,12 +65,22 @@ const TIERS: PricingTier[] = [
     name: "Organization",
     description: "For teams that need shared billing, member roles, and centrally billed Spaces",
     price: "$10",
-    // "per member" contradicted the page's own FAQ and the Terms, both of
-    // which turn on a license *not* being Space membership.
-    priceLabel: "per licensed user / month",
+    // A member of the Organization, not of a Space: each one is a paid seat.
+    priceLabel: "per member / month",
     icon: <Building2 size={20} />,
   },
 ];
+
+/** A tier priced in the visitor's checkout currency; Free shows zero in it too. */
+function localizedTier(tier: PricingTier, prices: PlanPrices): PricingTier {
+  if (tier.id === "free") return { ...tier, price: formatPlanPrice({ currency: prices.pro.currency, amount: 0 }) };
+  const price = tier.id === "pro" ? prices.pro : prices.organizationSeat;
+  return {
+    ...tier,
+    price: formatPlanPrice(price),
+    priceLabel: prices.taxAddedAtCheckout ? `${tier.priceLabel} + tax` : tier.priceLabel,
+  };
+}
 
 function formatBytes(bytes: number | null): string {
   if (bytes === null) return "Unlimited";
@@ -172,8 +184,8 @@ const FEATURES: FeatureRow[] = [
     getValue: (plan) => getPlanLimits(plan).maxWhiteboardRestorePointsPerBoard,
   },
   {
-    label: "Organization licenses",
-    getValue: (plan) => plan === "organization" ? 25 : "—",
+    label: "Organization members",
+    getValue: (plan) => plan === "organization" ? "Unlimited" : "—",
   },
   {
     label: "Storage",
@@ -455,13 +467,15 @@ function PricingCard({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Pro is bought here. The Organization plan is bought for an Organization,
+  // from its page in Settings.
   async function handleBillingAction() {
-    if (tier.id === "free") return;
+    if (tier.id !== "pro") return;
     setLoading(true);
     setError(null);
     try {
       if (managesExistingSubscription) await openBillingPortal();
-      else await startSubscriptionCheckout(tier.id);
+      else await startSubscriptionCheckout({ plan: "pro" });
     } catch (err) {
       console.error("Checkout failed:", err);
       setError("Something went wrong. Please try again or contact support.");
@@ -555,7 +569,7 @@ function PricingCard({
         </ul>
 
         <div {...stylex.props(cardStyles.actions)}>
-          {managesExistingSubscription && tier.id !== "free" ? (
+          {managesExistingSubscription && tier.id === "pro" ? (
             <>
               <button
                 onClick={() => {
@@ -583,7 +597,15 @@ function PricingCard({
             >
               Open Orb Meet
             </Link>
-          ) : currentPlan && tier.id !== "free" ? (
+          ) : currentPlan && tier.id === "organization" ? (
+            <Link
+              to="/settings"
+              search={{ tab: "plan-&-billing" }}
+              {...stylex.props(pressable.base, focus.ring, cardStyles.cta, cardStyles.ctaSecondary, motion.move)}
+            >
+              Set up an Organization
+            </Link>
+          ) : currentPlan && tier.id === "pro" ? (
             <>
               <button
                 onClick={() => {
@@ -704,6 +726,14 @@ const styles = stylex.create({
     marginInline: "auto",
   },
 
+  currencyNote: {
+    marginTop: space.s4,
+    marginBottom: 0,
+    textAlign: "center",
+    fontSize: text.sm,
+    color: ink.muted,
+  },
+
   /** An open section, not a card: the questions are the bordered items. */
   faq: {
     marginTop: space.s16,
@@ -728,6 +758,9 @@ export function PricingPage() {
   const currentPlan = session?.user?.plan;
   const managesExistingSubscription = session?.user?.hasManagedSubscription ?? false;
 
+  const { data: prices = DEFAULT_PLAN_PRICES } = useQuery(planPricesQueryOptions());
+  const tiers = TIERS.map((tier) => localizedTier(tier, prices));
+
   const faqs = PRICING_FAQS.map(({ question, answer }) => ({ q: question, a: answer }));
 
   return (
@@ -748,7 +781,7 @@ export function PricingPage() {
 
         {/* Pricing cards */}
         <div {...stylex.props(styles.cardGrid)}>
-          {TIERS.map((tier, i) => (
+          {tiers.map((tier, i) => (
             <PricingCard
               key={tier.id}
               tier={tier}
@@ -758,6 +791,11 @@ export function PricingPage() {
             />
           ))}
         </div>
+        <p {...stylex.props(styles.currencyNote)}>
+          {prices.taxAddedAtCheckout
+            ? "Prices in your checkout currency. Tax is added at checkout."
+            : "Prices in your checkout currency, including any tax."}
+        </p>
 
         {/* FAQ */}
         <section aria-labelledby="pricing-faq" {...stylex.props(styles.faq)}>
@@ -765,7 +803,7 @@ export function PricingPage() {
             <h2 id="pricing-faq" {...stylex.props(styles.faqTitle)}>
               Questions
             </h2>
-            <p {...stylex.props(styles.faqLede)}>About plans, organizations and what a license covers.</p>
+            <p {...stylex.props(styles.faqLede)}>About plans, Organizations and what membership covers.</p>
           </div>
           <ClientOnly fallback={<PricingFaqFallback faqs={faqs} />}>
             <Suspense fallback={<PricingFaqFallback faqs={faqs} />}>

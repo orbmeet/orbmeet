@@ -6,6 +6,7 @@ import {ensureSpaceDefaultMeetingLink} from "@/modules/meetings/server/space-def
 import { acquireMeetingOccurrence, insertMeetingForLinkWithinLimit } from "./lifecycle/meeting-occurrence";
 import { spaceRoleFor } from "./runtime/client.server";
 import { finalizeMeetingEnd } from "./lifecycle/finalize";
+import { seedSubscription } from "@/test/billing";
 
 describe("Space meeting lifecycle", () => {
   afterEach(() => vi.useRealTimers());
@@ -22,7 +23,6 @@ describe("Space meeting lifecycle", () => {
         name: "Space owner",
         email: "owner@example.com",
         normalizedEmail: "owner@example.com",
-        plan: "pro",
         role: "user",
         createdAt: now,
         updatedAt: now,
@@ -32,7 +32,6 @@ describe("Space meeting lifecycle", () => {
         name: "Starter",
         email: "starter@example.com",
         normalizedEmail: "starter@example.com",
-        plan: "free",
         role: "user",
         createdAt: now,
         updatedAt: now,
@@ -42,12 +41,12 @@ describe("Space meeting lifecycle", () => {
         name: "Member",
         email: "member@example.com",
         normalizedEmail: "member@example.com",
-        plan: "free",
         role: "user",
         createdAt: now,
         updatedAt: now,
       },
     ]);
+    await seedSubscription(db, { userId: "space_owner" });
     await db.insert(spaces).values({
       kind: "shared",
       id: "space_1",
@@ -143,11 +142,11 @@ describe("Space meeting lifecycle", () => {
       name: "Owner",
       email: "guest-owner@example.com",
       normalizedEmail: "guest-owner@example.com",
-      plan: "pro",
       role: "user",
       createdAt: now,
       updatedAt: now,
     });
+    await seedSubscription(db, { userId: "guest_owner" });
     await db.insert(spaces).values({
       kind: "shared",
       id: "space_guests",

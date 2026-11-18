@@ -71,12 +71,11 @@ export function buildProductionCsp(config?: {
     // Private app documents receive a per-response nonce. Prerendered public
     // assets cannot be rewritten per request, so their static policy retains
     // unsafe-inline until build-time script hashes are emitted.
-    // cdn.paddle.com: Paddle.js billing overlay loaded dynamically on checkout.
     // The authenticated app is an SPA: a document opened on /meetings can
     // client-navigate into a Whiteboard without receiving a new response policy.
     // tldraw's validation/runtime dependencies compile hot paths with eval, so
     // every app shell that can navigate there must permit it.
-    `script-src 'self' ${config?.cspNonce ? `'nonce-${config.cspNonce}'` : "'unsafe-inline'"} 'unsafe-eval' https://cdn.paddle.com ${CLOUDFLARE_INSIGHTS_SCRIPT}`,
+    `script-src 'self' ${config?.cspNonce ? `'nonce-${config.cspNonce}'` : "'unsafe-inline'"} 'unsafe-eval' ${CLOUDFLARE_INSIGHTS_SCRIPT}`,
     // Block inline event handler attributes (onclick="", onerror="", etc.)
     "script-src-attr 'none'",
     // Base UI's injected <style> elements now carry the document nonce (see
@@ -94,22 +93,16 @@ export function buildProductionCsp(config?: {
     // blob: for media recorded/captured in browser; R2 hosts signed Meeting recordings.
     "media-src 'self' blob: https://*.r2.cloudflarestorage.com",
     // LiveKit/whiteboard WebSockets only needed on meet routes (see buildMeetRouteCsp).
-    // api.paddle.com: Paddle.js makes XHR calls to Paddle's API during checkout.
     [
       "connect-src 'self'",
       "https://*.r2.cloudflarestorage.com",
       // cdn.tldraw.com: tldraw license telemetry/watermark when no license key is configured.
       "https://cdn.tldraw.com",
       ...addonDomains.flatMap((d) => [`https://${d}`, `wss://${d}`]),
-      // sandbox-api: Paddle.js in sandbox mode calls the sandbox host instead.
-      // Both are listed rather than switched on the environment because this
-      // policy is also baked into prerendered public assets at build time.
-      "https://api.paddle.com",
-      "https://sandbox-api.paddle.com",
       CLOUDFLARE_INSIGHTS_CONNECT,
     ].filter(Boolean).join(" "),
-    // buy.paddle.com: Paddle checkout renders inside a sandboxed iframe.
-    "frame-src https://buy.paddle.com https://sandbox-buy.paddle.com",
+    // Nothing is framed: checkout is a full-page redirect to Polar.
+    "frame-src 'none'",
     // Whiteboard/PDF workers are created from same-origin or generated blob URLs.
     "worker-src 'self' blob:",
     "object-src 'none'",

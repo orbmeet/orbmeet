@@ -21,7 +21,6 @@ describe("remembered device lifetime", () => {
       name: "Person",
       email: "person@example.com",
       normalizedEmail: "person@example.com",
-      plan: "free",
       role: "user",
       createdAt: now,
       updatedAt: now,

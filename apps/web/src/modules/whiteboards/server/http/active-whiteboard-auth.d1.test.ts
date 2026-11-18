@@ -16,7 +16,6 @@ beforeEach(async () => {
     name: "Owner",
     email: "owner@example.com",
     normalizedEmail: "owner@example.com",
-    plan: "free",
     createdAt: now,
     updatedAt: now,
   });

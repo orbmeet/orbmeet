@@ -16,6 +16,7 @@ import { evictUserFromSpaceMeetings } from "./evict-space-meetings.server";
 import { refreshSpaceAuthorityInOpenMeetings } from "@/modules/meetings/server/runtime/revoke.server";
 import { TEST_MEDIA_NODE } from "@/test/nodes";
 import { fakeCoordinatorEnv } from "@/test/coordinator";
+import { seedSubscription } from "@/test/billing";
 
 vi.mock("@/modules/meetings/server/runtime/client.server", async (original) => ({
   ...(await original<object>()),
@@ -45,7 +46,6 @@ async function insertUser(id: string) {
     email: `${id}@example.com`,
     normalizedEmail: `${id}@example.com`,
     image: null,
-    plan: "free",
     role: "user",
     createdAt: now,
     updatedAt: now,
@@ -151,10 +151,10 @@ async function seedOrgSpace() {
     id: "org_1",
     name: "Org",
     ownerId: "admin_a",
-    plan: "organization",
     createdAt: now,
     updatedAt: now,
   });
+  await seedSubscription(db, { organizationId: "org_1", seats: 25 });
   await db.insert(spaces).values({
     kind: "shared",
     id: "spc_org",

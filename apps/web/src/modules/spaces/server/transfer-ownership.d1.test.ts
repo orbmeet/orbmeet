@@ -5,6 +5,7 @@ import { createTestDb, type TestDb } from "@/test/db";
 import {applyOwnershipTransfer} from "@/modules/spaces/server/membership.server";
 import { evictUserFromSpaceMeetings } from "./evict-space-meetings.server";
 import { findSpaceMembership } from "./helpers";
+import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
 const getAppDb = () => db;
@@ -38,7 +39,6 @@ async function insertUser(id: string) {
     email: `${id}@example.com`,
     normalizedEmail: `${id}@example.com`,
     image: null,
-    plan: "free",
     role: "user",
     createdAt: now,
     updatedAt: now,
@@ -246,7 +246,7 @@ describe("applyOwnershipTransfer", () => {
     await expect(transfer({ spaceId: "spc_1", fromUserId: "owner", toUserId: "target", now: new Date() }))
       .resolves.toBe(false);
 
-    await db.update(users).set({ plan: "pro" }).where(eq(users.id, "target"));
+    await seedSubscription(db, { userId: "target" });
     await expect(transfer({ spaceId: "spc_1", fromUserId: "owner", toUserId: "target", now: new Date() }))
       .resolves.toBe(true);
   });
@@ -277,10 +277,10 @@ describe("applyOwnershipTransfer", () => {
       id: "org_1",
       name: "Acme",
       ownerId: "target",
-      plan: "organization",
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+    await seedSubscription(db, { organizationId: "org_1", seats: 25 });
     await insertSpace("spc_org", "target");
     await db.update(spaces).set({ ownerUserId: null, organizationId: "org_1" }).where(eq(spaces.id, "spc_org"));
     await insertMember("mbr_org_owner", "spc_org", "target", "owner");

@@ -32,6 +32,7 @@ import {
   rememberDevice,
   sanitizeUser,
 } from "./session";
+import { loadUserBilling } from "@/modules/billing/server/entitlements.server";
 import {
   consumeEmailAuthFlowStatement,
   emailAuthFlowLiveSql,
@@ -120,7 +121,7 @@ export async function verifyLoginOtpImpl({ data }: { data: v.InferOutput<typeof 
     }),
   ]);
   return {
-    user: sanitizeUser(user),
+    user: sanitizeUser(user, await loadUserBilling(db, user.id)),
     deletionPending,
   };
 }

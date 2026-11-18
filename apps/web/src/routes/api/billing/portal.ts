@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { createDb } from "@orbmeet/db";
+import * as v from "valibot";
+import { billingCustomerFor, portalRequestSchema } from "@/modules/billing/contract/requests";
 import {
   enforceIpRateLimit,
   enforceRateLimit,
@@ -7,14 +8,18 @@ import {
 } from "@/platform/http/rate-limit.server";
 import { getOptionalEnv } from "@/platform/runtime/server-runtime.server";
 import { verifySessionFromRawRequest } from "@/modules/identity/server/session";
-import { createPortalSession } from "@/modules/billing/server/paddle";
+import { createDb } from "@orbmeet/db";
+import { openBillingPortal } from "@/modules/billing/server/checkout.server";
+import { RequestBodyTooLargeError, readRequestBodyText } from "@/platform/http/request-body";
+
+const MAX_PORTAL_BODY_BYTES = 1_024;
 
 export const Route = createFileRoute("/api/billing/portal")({
   server: {
     handlers: {
       POST: async ({ request }) => {
         const env = await getOptionalEnv();
-        if (!env?.PADDLE_API_KEY) return new Response("Service unavailable", { status: 503 });
+        if (!env?.POLAR_ACCESS_TOKEN) return new Response("Service unavailable", { status: 503 });
 
         try {
           await enforceIpRateLimit(env, "billing-portal");
@@ -29,20 +34,31 @@ export const Route = createFileRoute("/api/billing/portal")({
           return rateLimitErrorResponse(error, "billing-portal-user");
         }
 
-        const db = createDb(env.DB);
-        const user = await db.query.users.findFirst({
-          where: { id: session.userId },
-          columns: { paddleCustomerId: true },
-        });
-
-        if (!user?.paddleCustomerId) {
-          return new Response("No billing account found", { status: 404 });
+        let body: unknown;
+        try {
+          const text = await readRequestBodyText(request, MAX_PORTAL_BODY_BYTES);
+          body = text ? JSON.parse(text) : {};
+        } catch (error) {
+          if (error instanceof RequestBodyTooLargeError) {
+            return new Response("Request body too large", { status: 413 });
+          }
+          return new Response("Invalid JSON", { status: 400 });
         }
+        const parsed = v.safeParse(portalRequestSchema, body);
+        if (!parsed.success) return new Response("Invalid request", { status: 400 });
 
-        const returnUrl = `${env.APP_URL}/settings?tab=${encodeURIComponent("plan-&-billing")}`;
-        const portalUrl = await createPortalSession(env.PADDLE_API_KEY, user.paddleCustomerId, returnUrl);
-
-        return Response.json({ url: portalUrl });
+        const portal = await openBillingPortal(createDb(env.DB), env, {
+          customer: billingCustomerFor(parsed.output, session.userId),
+          actorUserId: session.userId,
+        });
+        switch (portal.kind) {
+          case "forbidden":
+            return new Response("Only the Organization's owner manages its billing", { status: 403 });
+          case "no_billing_account":
+            return new Response("No billing account found", { status: 404 });
+          case "portal":
+            return Response.json({ url: portal.url });
+        }
       },
     },
   },

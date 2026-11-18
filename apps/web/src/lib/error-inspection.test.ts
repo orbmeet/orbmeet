@@ -88,7 +88,7 @@ describe("getSafeRouteErrorMessage", () => {
       "Something went wrong",
     );
     expect(getSafeRouteErrorMessage(
-      Object.assign(new Error("Paddle API key abc123 failed"), { statusCode: 500 }),
+      Object.assign(new Error("Polar access token abc123 failed"), { statusCode: 500 }),
       "Unable to load this page",
     )).toBe("Unable to load this page");
   });

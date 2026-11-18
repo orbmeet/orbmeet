@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { PAID_SUBSCRIPTION_TIERS } from "@/modules/billing/contract/types";
 import * as v from "valibot";
+import { billingCustomerFor, checkoutRequestSchema } from "@/modules/billing/contract/requests";
 import {
   enforceIpRateLimit,
   enforceRateLimit,
@@ -8,22 +8,18 @@ import {
 } from "@/platform/http/rate-limit.server";
 import { getOptionalEnv } from "@/platform/runtime/server-runtime.server";
 import { verifySessionFromRawRequest } from "@/modules/identity/server/session";
-import { configuredPaddlePriceId } from "@/modules/billing/server/paddle-config";
+import { polarProductIdForPlan } from "@/modules/billing/server/polar-config";
 import { runSerially } from "@/app/serial/serial";
 import { RequestBodyTooLargeError, readRequestBodyText } from "@/platform/http/request-body";
 
 const MAX_CHECKOUT_BODY_BYTES = 1_024;
-
-const bodySchema = v.object({
-  plan: v.picklist(PAID_SUBSCRIPTION_TIERS),
-});
 
 export const Route = createFileRoute("/api/billing/checkout")({
   server: {
     handlers: {
       POST: async ({ request }) => {
         const env = await getOptionalEnv();
-        if (!env?.PADDLE_API_KEY) return new Response("Service unavailable", { status: 503 });
+        if (!env?.POLAR_ACCESS_TOKEN) return new Response("Service unavailable", { status: 503 });
 
         try {
           await enforceIpRateLimit(env, "billing-checkout");
@@ -48,31 +44,32 @@ export const Route = createFileRoute("/api/billing/checkout")({
           return new Response("Invalid JSON", { status: 400 });
         }
 
-        const parsed = v.safeParse(bodySchema, body);
+        const parsed = v.safeParse(checkoutRequestSchema, body);
         if (!parsed.success) return new Response("Invalid request", { status: 400 });
-
-        const priceId = configuredPaddlePriceId(
-          parsed.output.plan === "pro" ? env.PADDLE_PRICE_ID_PRO : env.PADDLE_PRICE_ID_ORG_SEAT,
-        );
-        if (!priceId) return new Response("Plan pricing not configured", { status: 503 });
+        if (!polarProductIdForPlan(env, parsed.output.plan)) {
+          return new Response("Plan pricing not configured", { status: 503 });
+        }
 
         const checkout = await runSerially(env, {
-          kind: "preparePaddleCheckout",
-          userId: session.userId,
-          plan: parsed.output.plan,
+          kind: "prepareCheckout",
+          customer: billingCustomerFor(parsed.output, session.userId),
+          actorUserId: session.userId,
+          customerIpAddress: request.headers.get("CF-Connecting-IP"),
         }, { callerWaits: true });
         switch (checkout.kind) {
           case "not_found":
             return new Response("Not found", { status: 404 });
+          case "forbidden":
+            return new Response("Only the Organization's owner manages its billing", { status: 403 });
           case "subscription_exists":
             return Response.json({ error: "SUBSCRIPTION_EXISTS" }, { status: 409 });
-          case "pending":
+          case "email_taken":
             return Response.json(
-              { error: "CHECKOUT_PENDING" },
-              { status: 409, headers: { "Retry-After": "5" } },
+              { error: "Your email is already attached to a different billing account. Contact support to have it linked." },
+              { status: 409 },
             );
-          case "transaction":
-            return Response.json({ transactionId: checkout.transactionId });
+          case "checkout":
+            return Response.json({ url: checkout.url });
         }
       },
     },

@@ -31,7 +31,6 @@ beforeEach(async () => {
       name: id,
       email: `${id}@example.com`,
       normalizedEmail: `${id}@example.com`,
-      plan: "free" as const,
       role: "user" as const,
       createdAt: now,
       updatedAt: now,

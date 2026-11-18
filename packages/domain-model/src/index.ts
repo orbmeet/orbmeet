@@ -5,12 +5,21 @@
 // so the Worker, the Node services, and the browser bundle can all take it.
 
 export const SUBSCRIPTION_TIERS = ["free", "pro", "organization"] as const;
+/** The plans someone can buy: Pro for a person, Organization for an Organization. */
+export const PAID_SUBSCRIPTION_TIERS = ["pro", "organization"] as const;
+/**
+ * A billing subscription's state, as billing stores it. `past_due` still
+ * grants entitlements while the card is retried; `unpaid` (retries exhausted)
+ * and `incomplete` (first payment unfinished) do not.
+ */
 export const SUBSCRIPTION_STATUSES = [
   "active",
-  "canceled",
-  "past_due",
   "trialing",
+  "past_due",
+  "unpaid",
+  "incomplete",
   "paused",
+  "canceled",
 ] as const;
 export const USER_ROLES = ["admin", "user"] as const;
 /** Light, dark, or whatever the device is set to. */

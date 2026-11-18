@@ -6,7 +6,7 @@ import { and, asc, eq, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import { boundedStatements } from "@/platform/database/db-batching";
 import { withD1Retry } from "@/platform/database/db-utils";
 import { logError, logInfo } from "@/lib/logger";
-import { cancelAccountSubscriptionBeforeDeletion } from "@/modules/billing/server/account-deletion-subscription.server";
+import { closeUserBilling } from "@/modules/billing/server/account-closure.server";
 import { revokeAccountAuthenticationExceptCurrent } from "@/modules/identity/server/account-deletion-auth.server";
 import { findPersonalSpaceId } from "@/modules/spaces/server/personal";
 import { callCoordinator } from "@/modules/meetings/server/runtime/client.server";
@@ -28,12 +28,12 @@ type AccountDeletion = Extract<Job, { kind: "deleteAccount" }>;
 
 /**
  * Erase an account whose deletion gate (`users.deletion_started_at`) is
- * closed: Paddle cancel → auth revocation → meeting eviction → archival →
+ * closed: billing cancel → auth revocation → meeting eviction → archival →
  * erasure, each a Workflow step retried on its own.
  *
  * Every step is idempotent, so a retry, a restart or a second start repeats
  * nothing harmful:
- * - the Paddle preflight reads remote state and skips cancelled subscriptions;
+ * - deleting the Polar customer treats one already gone as done;
  * - revocation, eviction and archival UPDATE/DELETE by predicate;
  * - erasure deletes by id and tolerates a missing row.
  * The gate is never cleared — clearing it would reopen the ownership races it
@@ -48,11 +48,11 @@ export async function deleteAccount(
   const { userId, exceptSessionId } = job;
   const deletionStartedAt = new Date(job.deletionStartedAt);
 
-  // This must precede every destructive local step. The subscription ID and
-  // customer ID are the only in-product handles for stopping future Paddle
-  // renewals; once the user row is gone, webhook reconciliation cannot find
-  // the customer and the user can no longer open the billing portal.
-  await step.do("cancel billing", () => cancelAccountSubscriptionBeforeDeletion(db, env, userId));
+  // This must precede every destructive local step. It deletes the Polar
+  // customer keyed by this user's id, which ends every subscription at once
+  // and anonymizes what Polar holds. Once the user row is gone, nothing
+  // in-product can reach that customer any more.
+  await step.do("cancel billing", () => closeUserBilling(db, env, userId));
 
   await step.do("revoke authentication", () =>
     revokeAccountAuthenticationExceptCurrent(db, userId, exceptSessionId));

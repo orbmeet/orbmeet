@@ -23,6 +23,7 @@ import {
   whiteboardRevisions,
   whiteboards,
 } from "@orbmeet/db/schema";
+import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
 
@@ -38,7 +39,6 @@ async function insertUser(id = "usr_schema") {
     email: `${id}@example.com`,
     normalizedEmail: `${id}@example.com`,
     image: null,
-    plan: "free",
     role: "user",
     createdAt: now,
     updatedAt: now,
@@ -434,7 +434,6 @@ describe("database schema integrity", () => {
         email: "padded@example.com",
         normalizedEmail: "padded@example.com",
         image: null,
-        plan: "free",
         role: "user",
         createdAt: now,
         updatedAt: now,
@@ -880,11 +879,10 @@ spaceKind: "personal" as const,
       id: "org_schema",
       name: "Schema Org",
       ownerId: "usr_org_owner",
-      plan: "organization",
-      licenseLimit: 25,
       createdAt: now,
       updatedAt: now,
     });
+    await seedSubscription(db, { organizationId: "org_schema", seats: 25 });
 
     await expect(
       db.insert(organizationMembers).values({
@@ -1079,19 +1077,16 @@ spaceKind: "personal" as const,
       id: "org_single_owner_one",
       name: "Owner Org One",
       ownerId: "usr_single_org_owner",
-      plan: "organization",
-      licenseLimit: 25,
       createdAt: now,
       updatedAt: now,
     });
+    await seedSubscription(db, { organizationId: "org_single_owner_one", seats: 25 });
 
     await expect(
       db.insert(organizations).values({
         id: "org_single_owner_two",
         name: "Owner Org Two",
         ownerId: "usr_single_org_owner",
-        plan: "organization",
-        licenseLimit: 25,
         createdAt: now,
         updatedAt: now,
       }),
@@ -1110,7 +1105,6 @@ describe("composite foreign keys and projection triggers", () => {
       name: "Alice",
       email: "alice@example.com",
       normalizedEmail: "alice@example.com",
-      plan: "free",
       role: "user",
       createdAt: NOW,
       updatedAt: NOW,

@@ -1,5 +1,4 @@
-import type { ParsedPaddleEvent } from "@/modules/billing/server/paddle-subscription";
-import type { PaidSubscriptionTier } from "@/modules/billing/contract/types";
+import type { BillingCustomer } from "@/modules/billing/contract/types";
 import type { Job } from "@/platform/jobs/jobs";
 import type { SyncCommandFailure } from "@orbmeet/whiteboard-core/sync-commands";
 import type { MeetingWhiteboardDocument } from "@/modules/whiteboards/server/documents";
@@ -27,26 +26,15 @@ export type SerialTask =
     }
   /** Release a member's Organization seat. */
   | { kind: "removeOrganizationMember"; organizationId: string; actorUserId: string; memberUserId: string }
-  /** Hand an Organization's billing to a new owner's subscription. */
+  /** Bring an Organization's paid seats to its member count. */
+  | { kind: "syncOrganizationSeats"; organizationId: string }
+  /** Open a hosted checkout for a customer's plan. */
   | {
-      kind: "transferOrganizationOwnership";
-      organizationId: string;
-      currentOwnerUserId: string;
-      newOwnerUserId: string;
-      acceptedAt: number;
+      kind: "prepareCheckout";
+      customer: BillingCustomer;
+      actorUserId: string;
+      customerIpAddress: string | null;
     }
-  /** A Paddle subscription event for a subscription an Organization holds. */
-  | { kind: "applyOrganizationPaddleEvent"; organizationId: string; event: ParsedPaddleEvent }
-  /** Re-read an Organization owner's subscription from Paddle. */
-  | {
-      kind: "reconcileOrganizationOwner";
-      organizationId: string;
-      userId: string;
-      subscriptionId: string;
-      now: number;
-    }
-  /** Open (or reuse) a user's Paddle checkout for a plan. */
-  | { kind: "preparePaddleCheckout"; userId: string; plan: PaidSubscriptionTier }
   /** Archive a Whiteboard: its room refuses writes first, then D1 records it. */
   | { kind: "archiveWhiteboard"; whiteboardId: string; actorUserId: string }
   /** Bring an archived Whiteboard back, within its Space's active-board limit. */
@@ -77,14 +65,13 @@ export type SerialTask =
 export interface SerialResults {
   addOrganizationMember: { success: true };
   removeOrganizationMember: { success: true; removed: boolean };
-  transferOrganizationOwnership: boolean;
-  applyOrganizationPaddleEvent: null;
-  reconcileOrganizationOwner: null;
-  preparePaddleCheckout:
+  syncOrganizationSeats: null;
+  prepareCheckout:
     | { kind: "not_found" }
+    | { kind: "forbidden" }
     | { kind: "subscription_exists" }
-    | { kind: "pending" }
-    | { kind: "transaction"; transactionId: string };
+    | { kind: "email_taken" }
+    | { kind: "checkout"; url: string };
   archiveWhiteboard: { archivedAt: string };
   restoreArchivedWhiteboard: { restoredAt: string };
   deleteArchivedWhiteboard: { success: true };
@@ -105,12 +92,12 @@ export function scopeOf(task: SerialTask): string {
   switch (task.kind) {
     case "addOrganizationMember":
     case "removeOrganizationMember":
-    case "transferOrganizationOwnership":
-    case "applyOrganizationPaddleEvent":
-    case "reconcileOrganizationOwner":
+    case "syncOrganizationSeats":
       return `organization:${task.organizationId}`;
-    case "preparePaddleCheckout":
-      return `user:${task.userId}`;
+    case "prepareCheckout":
+      return task.customer.kind === "user"
+        ? `user:${task.customer.userId}`
+        : `organization:${task.customer.organizationId}`;
     case "archiveWhiteboard":
     case "restoreArchivedWhiteboard":
     case "deleteArchivedWhiteboard":

@@ -9,6 +9,12 @@ import type { SpaceMembershipRole, SpaceRole } from "@/modules/spaces/contract/t
 import { compareCodeUnitStrings } from "@/lib/code-unit-order";
 import type { Database } from "@orbmeet/db";
 import { requireSpaceSlug } from "@/modules/spaces/contract/slug";
+import {
+  loadOrganizationPlan,
+  loadUserBilling,
+  organizationPlanSql,
+  userPlanSql,
+} from "@/modules/billing/server/entitlements.server";
 
 function effectiveOrganizationRole(
   organizationOwnerId: string | null,
@@ -408,11 +414,7 @@ export async function resolveUserPlanLimits(
   db: Database,
   userId: string,
 ): Promise<PlanLimits> {
-  const user = await db.query.users.findFirst({
-    where: { id: userId },
-    columns: { plan: true },
-  });
-  return getPlanLimits((user?.plan as SubscriptionTier) ?? "free");
+  return getPlanLimits((await loadUserBilling(db, userId)).plan);
 }
 
 /**
@@ -426,15 +428,10 @@ export async function resolveUserPlanLimits(
  */
 export function spaceHasMemberRoomSql(spaceId: string): SQL {
   const plan = sql`(
-    select coalesce(
-      case when funded_space.organization_id is not null
-        then (select funding_org.plan from organizations funding_org
-              where funding_org.id = funded_space.organization_id)
-        else (select funding_owner.plan from users funding_owner
-              where funding_owner.id = funded_space.owner_user_id)
-      end,
-      'free'
-    )
+    select case when funded_space.organization_id is not null
+      then ${organizationPlanSql(sql`funded_space.organization_id`)}
+      else ${userPlanSql(sql`funded_space.owner_user_id`)}
+    end
     from spaces funded_space
     where funded_space.id = ${spaceId}
   )`;
@@ -460,11 +457,7 @@ export async function resolveSpaceMemberCap(
   organizationId?: string | null,
 ): Promise<number | null> {
   if (organizationId) {
-    const organization = await db.query.organizations.findFirst({
-      where: { id: organizationId },
-      columns: { plan: true },
-    });
-    return getPlanLimits((organization?.plan as SubscriptionTier) ?? "free").maxMembersPerSpace;
+    return getPlanLimits(await loadOrganizationPlan(db, organizationId)).maxMembersPerSpace;
   }
   if (!ownerUserId) throw Errors.VALIDATION("Space is missing its owner");
   return (await resolveUserPlanLimits(db, ownerUserId)).maxMembersPerSpace;

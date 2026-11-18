@@ -22,8 +22,10 @@ declare global {
     GOOGLE_CLIENT_ID?: string;
     GOOGLE_CLIENT_SECRET?: string;
     UPTIMEROBOT_API_KEY?: string;
-    PADDLE_API_KEY?: string;
-    PADDLE_WEBHOOK_SECRET?: string;
+    /** Polar organization access token; billing is off without it. */
+    POLAR_ACCESS_TOKEN?: string;
+    /** The Polar webhook endpoint's `whsec_…` secret. */
+    POLAR_WEBHOOK_SECRET?: string;
     EMAIL_FROM_ADDRESS?: string;
     MATHINK_ORIGIN_SECRET?: string;
     /** Shared with the orbmeet-code-runner Worker; absent locally. */

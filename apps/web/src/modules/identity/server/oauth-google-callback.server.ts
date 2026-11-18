@@ -20,6 +20,7 @@ import {
   enforceSessionCapStatement,
   rememberDevice,
 } from "./session";
+import { loadUserBilling } from "@/modules/billing/server/entitlements.server";
 import { checkDisposableEmail } from "./disposable-email";
 import { Errors } from "@/lib/app-errors";
 import { getRunChanges } from "@/platform/database/db-utils";
@@ -165,7 +166,6 @@ export async function handleGoogleCallbackRequest(
               normalizedEmail: normalized,
               name: sanitizeDisplayName(payload.name ?? ""),
               image: payload.picture ?? null,
-              plan: "free",
               role: "user",
               createdAt: now,
               updatedAt: now,
@@ -260,13 +260,15 @@ export async function handleGoogleCallbackRequest(
   const user = await db.query.users.findFirst({
     where: { id: userId },
   });
+  if (!user) throw new Error("OAuth sign-in lost its user row");
+  const billing = await loadUserBilling(db, user.id);
 
   // The OAuth redirect allowlist governs app destinations; the recovery page
   // is deliberately not on it, so the gated case overrides the stored binding
   // and the callback route sends the browser straight to the recovery page.
   if (deletionPending) {
     return {
-      user: sanitizeUser(user!),
+      user: sanitizeUser(user, billing),
       redirectTo: ACCOUNT_DELETION_PENDING_PATH,
       deletionPending,
     };
@@ -283,5 +285,5 @@ export async function handleGoogleCallbackRequest(
   } catch {
     // Old or malformed flow metadata falls back to /home at the route boundary.
   }
-  return { user: sanitizeUser(user!), redirectTo };
+  return { user: sanitizeUser(user, billing), redirectTo };
 }

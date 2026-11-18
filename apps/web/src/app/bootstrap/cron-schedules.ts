@@ -6,5 +6,5 @@
 
 /** Every minute: media node health, cleanup, schedule notifications, quiet meetings. */
 export const MINUTELY_CRON = "* * * * *";
-/** Daily: authentication cleanup, stranded deletions, Paddle reconciliation, webhook receipts. */
+/** Daily: authentication cleanup, stranded deletions, billing reconciliation, webhook receipts. */
 export const DAILY_CRON = "0 3 * * *";

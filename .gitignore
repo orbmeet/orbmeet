@@ -29,7 +29,7 @@ infra/ops/secrets.age.next
 *.key
 credentials.json
 
-# ── Production config — contains real D1 IDs, Paddle tokens, domain routing ──
+# ── Production config — contains real D1 IDs, billing product ids, domain routing ──
 apps/web/cloudflare.deploy.json
 
 apps/web/worker-configuration.d.ts

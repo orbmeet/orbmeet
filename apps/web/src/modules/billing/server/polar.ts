@@ -1,421 +1,463 @@
-const PADDLE_LIVE_BASE = "https://api.paddle.com";
-const PADDLE_SANDBOX_BASE = "https://sandbox-api.paddle.com";
+import { logError } from "@/lib/logger";
+import {
+  parsePolarCustomer,
+  parsePolarMember,
+  parsePolarProduct,
+  parsePolarSubscription,
+  type PolarCustomer,
+  type PolarMember,
+  type PolarProduct,
+  type PolarSubscription,
+} from "./polar-schema";
 
 /**
- * Pick the API host the key actually belongs to.
- *
- * Sandbox API keys contain `_sdbx`, live keys `_live`. Deriving the host from
- * the key rather than from a separate environment setting makes the two
- * impossible to disagree: a sandbox key can never be sent to the live API (a
- * blanket 403 on every billing call), and a live key can never be sent to the
- * sandbox one. Paddle.js does the same on the client, from its own token.
+ * Polar's REST API, as thin as it can be: one function per call billing
+ * makes, each returning a validated object. Policy lives in the callers.
  */
-export function paddleApiBase(apiKey: string): string {
-  return apiKey.includes("_sdbx") ? PADDLE_SANDBOX_BASE : PADDLE_LIVE_BASE;
+
+/**
+ * Every request is pinned to one API version, and so is the webhook endpoint
+ * (set in the Polar dashboard). Polar ships a version each January, April,
+ * July and October; each is "Next" (unfrozen) for three months, then Current,
+ * then Deprecated, and is removed nine months after it appeared: 2026-10 is
+ * removed in the first week of April 2027. A removed version answers every
+ * request 404 `{"detail": "Not Found"}`, which `isPolarNotFound` refuses to
+ * read as a missing record.
+ *
+ * Next: 2027-01, once it is Current (first week of January 2027). Audited
+ * against Polar's source in November 2026, it changes nothing billing relies
+ * on: the checkout body keeps every field sent here, subscriptions only gain
+ * `pending_update.discount_id`/`discount_unset`, webhook payloads only gain
+ * `event_id` (the same value as the `webhook-id` header), and customers,
+ * members and customer sessions are untouched. Re-check its changelog when
+ * flipping, since Next can still change; then set this and the webhook
+ * endpoint's version (either order works: the two differ only additively).
+ */
+export const POLAR_API_VERSION = "2026-10";
+
+const POLAR_PRODUCTION_BASE = "https://api.polar.sh";
+const POLAR_SANDBOX_BASE = "https://sandbox-api.polar.sh";
+
+/**
+ * Where and as whom to call Polar. The sandbox is a separate server with its
+ * own tokens and products, and nothing in a token says which one it belongs
+ * to, so the server is configured next to it (`POLAR_SERVER`).
+ */
+export interface PolarClient {
+  accessToken: string;
+  baseUrl: string;
 }
 
-type PaddleCustomer = { id: string; email: string; name: string; status?: string };
-export type PaddleSubscription = {
-  id: string;
-  status: string;
-  items: Array<{ price: { id: string }; quantity?: number }>;
-  customer_id: string;
-  updated_at: string;
-  scheduled_change?: {
-    action: string;
-    effective_at: string;
-  } | null;
-};
+export function polarClientFromEnv(
+  env: { POLAR_ACCESS_TOKEN?: string; POLAR_SERVER?: string },
+): PolarClient | null {
+  const accessToken = env.POLAR_ACCESS_TOKEN?.trim();
+  if (!accessToken) return null;
+  const server = env.POLAR_SERVER?.trim().toLowerCase() || "production";
+  if (server !== "production" && server !== "sandbox") {
+    // A typo must not quietly send a sandbox token to production, or the
+    // reverse: billing stays off until the setting is one of the two.
+    logError("[polar] POLAR_SERVER must be \"production\" or \"sandbox\"; billing is off", { server });
+    return null;
+  }
+  return { accessToken, baseUrl: server === "sandbox" ? POLAR_SANDBOX_BASE : POLAR_PRODUCTION_BASE };
+}
 
 /**
- * A Paddle response that was received and refused, carrying the status.
- *
- * Callers have to tell "Paddle says this subscription does not exist" apart from
- * "Paddle could not be reached": the first is an answer to act on, the second is
- * a transient failure that must not be mistaken for one.
+ * A response Polar sent and refused. `code` is Polar's error class name from
+ * the body (`ResourceNotFound`, `PaymentFailed`, …), or null when the body has
+ * none — a removed API version, an unknown route, a proxy in between.
  */
-export class PaddleApiError extends Error {
-  constructor(readonly status: number, message: string) {
+export class PolarApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string | null,
+    message: string,
+  ) {
     super(message);
-    this.name = "PaddleApiError";
+    this.name = "PolarApiError";
   }
 }
 
-async function paddleRequest<T>(
-  apiKey: string,
+/**
+ * Whether Polar answered that the record does not exist. Only Polar's own
+ * `ResourceNotFound` counts: any other 404 means the request never reached
+ * the record, and acting on it as "gone" would skip real work.
+ */
+export function isPolarNotFound(error: unknown): boolean {
+  return error instanceof PolarApiError && error.status === 404 && error.code === "ResourceNotFound";
+}
+
+/**
+ * Polar refused a seat change and will keep refusing until somebody acts:
+ * - `payment_failed`: the prorated charge was declined or needs the customer.
+ * - `not_active`: the subscription is ending, has ended, or the Polar
+ *   organization cannot renew yet.
+ * - `above_maximum`: more seats than the product allows.
+ * - `below_floor`: fewer seats than the product's minimum, or than seats
+ *   already assigned in Polar's portal.
+ */
+export type SeatChangeRefusal = "payment_failed" | "not_active" | "above_maximum" | "below_floor";
+
+/** Polar's error class names (the `error` field of its error body). */
+const SEAT_CHANGE_REFUSALS: Record<string, SeatChangeRefusal> = {
+  PaymentFailed: "payment_failed",
+  PaymentActionRequired: "payment_failed",
+  AlreadyCanceledSubscription: "not_active",
+  InactiveSubscription: "not_active",
+  PaymentNotReady: "not_active",
+  AboveMaximumSeats: "above_maximum",
+  BelowMinimumSeats: "below_floor",
+  SeatsAlreadyAssigned: "below_floor",
+};
+
+export function seatChangeRefusal(error: unknown): SeatChangeRefusal | null {
+  if (!(error instanceof PolarApiError) || error.code === null) return null;
+  return Object.hasOwn(SEAT_CHANGE_REFUSALS, error.code) ? SEAT_CHANGE_REFUSALS[error.code] : null;
+}
+
+/** Polar answered that the subscription has already ended. */
+export function isAlreadyEnded(error: unknown): boolean {
+  return error instanceof PolarApiError && error.code === "AlreadyCanceledSubscription";
+}
+
+async function polarRequest(
+  client: PolarClient,
   method: string,
   path: string,
   body?: unknown,
-): Promise<T> {
-  const res = await fetch(`${paddleApiBase(apiKey)}${path}`, {
+  timeoutMs = 5_000,
+): Promise<unknown> {
+  const res = await fetch(`${client.baseUrl}${path}`, {
     method,
     headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+      Authorization: `Bearer ${client.accessToken}`,
+      "Polar-Version": POLAR_API_VERSION,
+      Accept: "application/json",
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(10_000),
+    // Polar gives a webhook delivery 10 seconds in all; a webhook may make one
+    // of these calls, so one slow read must not spend the whole budget.
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new PaddleApiError(res.status, `Paddle ${method} ${path} → ${res.status}: ${text}`);
-  }
-  return res.json() as Promise<T>;
-}
-
-/**
- * Find a customer by exact email, including archived ones.
- *
- * `email` is an exact-match filter; `search` is a fuzzy match over id, name and
- * email, so with a paginated cap the real match can fall outside the page we
- * look at and we would go on to create a duplicate. `status` defaults to active
- * only, but Paddle still refuses to create a customer whose email belongs to an
- * archived one, so archived rows have to be visible here too.
- */
-async function findPaddleCustomerByEmail(
-  apiKey: string,
-  email: string,
-): Promise<string | null> {
-  const res = await paddleRequest<{ data: PaddleCustomer[] }>(
-    apiKey,
-    "GET",
-    `/customers?email=${encodeURIComponent(email)}&status=active,archived&per_page=200`,
-  );
-  const normalizedEmail = email.toLowerCase();
-  const matches = res.data.filter((c) => c.email.toLowerCase() === normalizedEmail);
-  const active = matches.find((c) => c.status !== "archived");
-  return (active ?? matches[0])?.id ?? null;
-}
-
-export async function getOrCreatePaddleCustomer(
-  apiKey: string,
-  email: string,
-  name: string,
-): Promise<string> {
-  const existing = await findPaddleCustomerByEmail(apiKey, email);
-  if (existing) return existing;
-
-  try {
-    const created = await paddleRequest<{ data: PaddleCustomer }>(
-      apiKey,
-      "POST",
-      "/customers",
-      { email, name },
-    );
-    return created.data.id;
-  } catch (err) {
-    // Two concurrent checkouts, or a customer the lookup could not see. Paddle
-    // answers 409 `customer_already_exists`, and nothing is stored locally yet,
-    // so an uncaught throw here would fail this user's checkout identically on
-    // every retry. Re-read instead and use the customer that already exists.
-    if (err instanceof PaddleApiError && err.status === 409) {
-      const raced = await findPaddleCustomerByEmail(apiKey, email);
-      if (raced) return raced;
+    let code: string | null = null;
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      if (typeof parsed === "object" && parsed !== null && typeof (parsed as { error?: unknown }).error === "string") {
+        code = (parsed as { error: string }).error;
+      }
+    } catch {
+      // Not JSON: no code.
     }
-    throw err;
+    throw new PolarApiError(res.status, code, `Polar ${method} ${path} → ${res.status}: ${text.slice(0, 500)}`);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+function expect<T>(value: T | null, what: string): T {
+  if (value === null) throw new Error(`Polar returned a malformed ${what}`);
+  return value;
+}
+
+function expectUrl(value: unknown, field: string): string {
+  const url = typeof value === "object" && value !== null ? (value as Record<string, unknown>)[field] : undefined;
+  if (typeof url !== "string" || !url) throw new Error(`Polar response is missing \`${field}\``);
+  return url;
+}
+
+async function orNullWhenNotFound<T>(request: Promise<T>): Promise<T | null> {
+  try {
+    return await request;
+  } catch (error) {
+    if (isPolarNotFound(error)) return null;
+    throw error;
   }
 }
 
-export async function createPortalSession(
-  apiKey: string,
-  customerId: string,
-  returnUrl: string,
-): Promise<string> {
-  const res = await paddleRequest<{ data: { urls: { general: { overview: string } } } }>(
-    apiKey,
-    "POST",
-    `/customers/${customerId}/portal-sessions`,
-    { urls: [returnUrl] },
-  );
-  return res.data.urls.general.overview;
+const external = (externalId: string) => `/v1/customers/external/${encodeURIComponent(externalId)}`;
+
+// ─── Customers ──────────────────────────────────────────────────────────
+
+export async function getCustomerByExternalId(
+  client: PolarClient,
+  externalId: string,
+): Promise<PolarCustomer | null> {
+  const res = await orNullWhenNotFound(polarRequest(client, "GET", external(externalId)));
+  return res === null ? null : expect(parsePolarCustomer(res), "customer");
 }
 
-type PaddleTransaction = {
-  id: string;
-  status: string;
-  // Required fields on Paddle's transaction response; read defensively below.
-  origin: string;
-  created_at: string;
-  updated_at: string;
-  billed_at: string | null;
-  items: Array<{ price?: { id?: string } | null; quantity?: number }>;
-};
+/** Customer emails are unique within a Polar organization (case-insensitive). */
+export async function findCustomerByEmail(client: PolarClient, email: string): Promise<PolarCustomer | null> {
+  const query = new URLSearchParams({ email, limit: "1" });
+  const res = await polarRequest(client, "GET", `/v1/customers/?${query.toString()}`) as { items?: unknown } | null;
+  if (!res || !Array.isArray(res.items)) throw new Error("Polar returned a malformed customer list");
+  return res.items.length === 0 ? null : expect(parsePolarCustomer(res.items[0]), "customer");
+}
 
-// A terminal-status checkout transaction only proves a purchase is settling
-// while our subscription webhook could plausibly still be lagging it. After
-// this window the projection has either landed (the SUBSCRIPTION_EXISTS gate
-// covers it) or is lost — and an old purchase must never block a lapsed
-// subscriber from re-subscribing. Covers sandbox retries (15 min) twice over
-// and the first ~20 live retry attempts; no window covers a multi-day webhook
-// outage, which is a reconciliation problem, not a checkout one.
-const SETTLING_WINDOW_MS = 30 * 60_000;
+export async function createIndividualCustomer(
+  client: PolarClient,
+  input: { externalId: string; email: string; name: string },
+): Promise<PolarCustomer> {
+  const res = await polarRequest(client, "POST", "/v1/customers/", {
+    type: "individual",
+    external_id: input.externalId,
+    email: input.email,
+    name: input.name.slice(0, 256) || undefined,
+  });
+  return expect(parsePolarCustomer(res), "customer");
+}
 
 /**
- * The customer's existing unpaid checkout for exactly this plan and quantity.
- *
- * Paddle accepts no client-supplied idempotency key on `POST /transactions`, so
- * a repeated checkout request would otherwise mint a second payable
- * transaction. Reusing the open one makes the endpoint idempotent for real: a
- * double-click, a reload, or a user who closed the overlay and came back all
- * reopen the same checkout instead of being refused or billed twice.
- *
- * `draft` and `ready` are the statuses a transaction can still be completed
- * from, and they are reusable at any age. A billed/paid/completed checkout
- * blocks a new one only while it was paid recently enough to still be settling
- * — see SETTLING_WINDOW_MS. The query is scoped to checkout-origin transactions
- * (`api,web`), so renewal and seat-proration charges — which share the price
- * and quantity of a re-subscribe — can never match. The quantity has to match
- * too — an Organization whose seat count moved since the transaction was
- * created needs a fresh one.
+ * A team customer has no email of its own; its owner member carries one. That
+ * keeps it clear of Polar's one-customer-per-email rule, which the owner's
+ * personal customer may already hold.
  */
-export type MatchingCheckoutTransaction =
-  | { state: "open"; transactionId: string }
-  | { state: "settling"; transactionId: string };
-
-export async function findMatchingCheckoutTransaction(
-  apiKey: string,
-  input: { customerId: string; priceId: string; quantity: number },
-): Promise<MatchingCheckoutTransaction | null> {
-  const query = new URLSearchParams({
-    customer_id: input.customerId,
-    // Only checkout-intent purchases may block a new checkout. Renewal
-    // (`subscription_recurring`) and seat-proration (`subscription_update`)
-    // charges share the price and quantity of a re-subscribe; they are not
-    // someone else's in-flight purchase. The response-side check below mirrors
-    // this filter in case the API ever ignores or drops it.
-    origin: "api,web",
-    // billed/paid/completed can precede our subscription webhook. They are not
-    // reusable checkouts, but within the settling window they are proof that
-    // creating another payable transaction would duplicate a purchase already
-    // settling at Paddle. past_due is the dunning state of renewal payments —
-    // a checkout-intent transaction that fails payment stays completable
-    // (`ready`) — so it can only add noise.
-    status: "draft,ready,billed,paid,completed",
-    collection_mode: "automatic",
-    order_by: "created_at[DESC]",
-    per_page: "30",
+export async function createTeamCustomer(
+  client: PolarClient,
+  input: { externalId: string; name: string; owner: { externalId: string; email: string; name: string } },
+): Promise<PolarCustomer> {
+  const res = await polarRequest(client, "POST", "/v1/customers/", {
+    type: "team",
+    external_id: input.externalId,
+    name: input.name.slice(0, 256),
+    owner: {
+      external_id: input.owner.externalId,
+      email: input.owner.email,
+      name: input.owner.name.slice(0, 256) || undefined,
+    },
   });
-  const res = await paddleRequest<{ data: PaddleTransaction[] }>(
-    apiKey,
+  return expect(parsePolarCustomer(res), "customer");
+}
+
+/** Set a customer's external id. Polar refuses once one is set. */
+export async function setCustomerExternalId(
+  client: PolarClient,
+  customerId: string,
+  externalId: string,
+): Promise<void> {
+  await polarRequest(client, "PATCH", `/v1/customers/${encodeURIComponent(customerId)}`, {
+    external_id: externalId,
+  });
+}
+
+/**
+ * Delete a customer and anonymize what Polar holds about them. Polar cancels
+ * every subscription it has at once. Idempotent: one already gone is the
+ * outcome asked for.
+ */
+export async function deleteCustomer(client: PolarClient, externalId: string): Promise<void> {
+  await orNullWhenNotFound(polarRequest(client, "DELETE", `${external(externalId)}?anonymize=true`));
+}
+
+// ─── Team customer members ──────────────────────────────────────────────
+
+export async function getMember(
+  client: PolarClient,
+  customerExternalId: string,
+  memberExternalId: string,
+): Promise<PolarMember | null> {
+  const res = await orNullWhenNotFound(polarRequest(
+    client,
     "GET",
-    `/transactions?${query.toString()}`,
+    `${external(customerExternalId)}/members/${encodeURIComponent(memberExternalId)}`,
+  ));
+  return res === null ? null : expect(parsePolarMember(res), "member");
+}
+
+export async function createMember(
+  client: PolarClient,
+  customerExternalId: string,
+  member: { externalId: string; email: string; name: string },
+): Promise<void> {
+  await polarRequest(client, "POST", `${external(customerExternalId)}/members`, {
+    external_id: member.externalId,
+    email: member.email,
+    name: member.name.slice(0, 256) || undefined,
+  });
+}
+
+/** A team customer's members (it has one per person we added, at most a few). */
+export async function listMembers(client: PolarClient, customerExternalId: string): Promise<PolarMember[]> {
+  const res = await polarRequest(client, "GET", `${external(customerExternalId)}/members?limit=100`) as
+    | { items?: unknown }
+    | null;
+  if (!res || !Array.isArray(res.items)) throw new Error("Polar returned a malformed member list");
+  return res.items.map((item) => expect(parsePolarMember(item), "member"));
+}
+
+/** Remove a member; Polar revokes any seat assigned to them. Idempotent. */
+export async function deleteMember(
+  client: PolarClient,
+  customerExternalId: string,
+  memberExternalId: string,
+): Promise<void> {
+  await orNullWhenNotFound(polarRequest(
+    client,
+    "DELETE",
+    `${external(customerExternalId)}/members/${encodeURIComponent(memberExternalId)}`,
+  ));
+}
+
+/** Make a member the owner. Polar demotes the previous owner. */
+export async function makeMemberOwner(
+  client: PolarClient,
+  customerExternalId: string,
+  memberExternalId: string,
+): Promise<void> {
+  await polarRequest(
+    client,
+    "PATCH",
+    `${external(customerExternalId)}/members/${encodeURIComponent(memberExternalId)}`,
+    { role: "owner" },
   );
-  const match = res.data.find((transaction) =>
-    checkoutOrigin(transaction)
-    && transaction.items.length === 1
-    && transaction.items[0]?.price?.id === input.priceId
-    && (transaction.items[0]?.quantity ?? 1) === input.quantity
-    && (transaction.status === "draft"
-      || transaction.status === "ready"
-      || checkoutIsStillSettling(transaction)),
+}
+
+// ─── Products ───────────────────────────────────────────────────────────
+
+/** A product and its prices. Needs the token's `products:read` scope. */
+export async function getProduct(client: PolarClient, productId: string): Promise<PolarProduct | null> {
+  const res = await orNullWhenNotFound(polarRequest(client, "GET", `/v1/products/${encodeURIComponent(productId)}`));
+  return res === null ? null : expect(parsePolarProduct(res), "product");
+}
+
+// ─── Checkout and portal ────────────────────────────────────────────────
+
+/**
+ * A hosted checkout for one product, linked to an existing customer. Linking
+ * by customer id locks the email field on Polar's page: an unlinked checkout
+ * lets the buyer type any email, and Polar then attaches the payment to
+ * whichever customer holds it.
+ */
+export async function createCheckout(
+  client: PolarClient,
+  input: {
+    customerId: string;
+    productId: string;
+    seats?: number;
+    successUrl: string;
+    returnUrl: string;
+    customerIpAddress?: string;
+  },
+): Promise<string> {
+  if (input.seats !== undefined && (!Number.isSafeInteger(input.seats) || input.seats < 1)) {
+    throw new Error("Checkout seats must be a positive integer");
+  }
+  const res = await polarRequest(client, "POST", "/v1/checkouts/", {
+    products: [input.productId],
+    customer_id: input.customerId,
+    // Seats follow membership, which billing owns: the buyer pays for the
+    // members there are, no more and no fewer.
+    ...(input.seats !== undefined ? { seats: input.seats, min_seats: input.seats, max_seats: input.seats } : {}),
+    success_url: input.successUrl,
+    return_url: input.returnUrl,
+    // The Worker's own address would otherwise pick the currency and tax country.
+    ...(input.customerIpAddress ? { customer_ip_address: input.customerIpAddress } : {}),
+  });
+  return expectUrl(res, "url");
+}
+
+/**
+ * A pre-authenticated customer portal link. A team customer's portal is opened
+ * as one of its members.
+ */
+export async function createPortalSession(
+  client: PolarClient,
+  input: { customerExternalId: string; memberExternalId?: string; returnUrl: string },
+): Promise<string> {
+  const res = await polarRequest(client, "POST", "/v1/customer-sessions/", {
+    external_customer_id: input.customerExternalId,
+    ...(input.memberExternalId ? { external_member_id: input.memberExternalId } : {}),
+    return_url: input.returnUrl,
+  });
+  return expectUrl(res, "customer_portal_url");
+}
+
+// ─── Subscriptions ──────────────────────────────────────────────────────
+
+export async function getSubscription(
+  client: PolarClient,
+  subscriptionId: string,
+): Promise<PolarSubscription | null> {
+  const res = await orNullWhenNotFound(
+    polarRequest(client, "GET", `/v1/subscriptions/${encodeURIComponent(subscriptionId)}`),
   );
-  if (!match) return null;
+  return res === null ? null : expect(parsePolarSubscription(res), "subscription");
+}
+
+/**
+ * One page (1-based, up to 100) of the subscriptions in the given statuses.
+ * Filters by `status` rather than the deprecated `active`, which also leaves
+ * out `past_due` and `paused` subscriptions.
+ */
+export async function listSubscriptionsByStatus(
+  client: PolarClient,
+  statuses: readonly string[],
+  page: number,
+  limit = 100,
+): Promise<{ subscriptions: PolarSubscription[]; lastPage: boolean }> {
+  const query = new URLSearchParams({ page: String(page), limit: String(limit) });
+  for (const status of statuses) query.append("status", status);
+  const res = await polarRequest(client, "GET", `/v1/subscriptions/?${query.toString()}`) as
+    | { items?: unknown; pagination?: { max_page?: unknown } }
+    | null;
+  if (!res || !Array.isArray(res.items)) throw new Error("Polar returned a malformed subscription list");
+  const maxPage = typeof res.pagination?.max_page === "number" ? res.pagination.max_page : page;
   return {
-    state: match.status === "draft" || match.status === "ready" ? "open" : "settling",
-    transactionId: match.id,
+    subscriptions: res.items.map((item) => expect(parsePolarSubscription(item), "subscription")),
+    lastPage: page >= maxPage,
   };
 }
 
 /**
- * The customer's subscriptions that already carry paid entitlements (active or
- * trialing), read straight from Paddle.
- *
- * Our projection of Paddle lags Paddle itself: a completed checkout can have
- * created its subscription there while the webhook that would record it locally
- * is still in flight. Reading the live list before minting another payable
- * transaction closes that gap, so a saved payment method cannot be collected
- * from a second time. `past_due` and `paused` are excluded on purpose — neither
- * grants entitlements, and a lapsed subscriber has to be able to check out
- * again.
+ * Every subscription a customer has, in any status. A customer holds at most
+ * a few (Polar allows one live subscription per customer), so one page does.
  */
-async function listActiveCustomerSubscriptions(
-  apiKey: string,
-  customerId: string,
-): Promise<PaddleSubscription[]> {
-  const query = new URLSearchParams({
-    customer_id: customerId,
-    status: "active,trialing",
-    per_page: "200",
-  });
-  const res = await paddleRequest<{ data: PaddleSubscription[] }>(
-    apiKey,
-    "GET",
-    `/subscriptions?${query.toString()}`,
-  );
-  return res.data;
+export async function listCustomerSubscriptions(
+  client: PolarClient,
+  customerExternalId: string,
+): Promise<PolarSubscription[]> {
+  const query = new URLSearchParams({ external_customer_id: customerExternalId, limit: "100" });
+  const res = await polarRequest(client, "GET", `/v1/subscriptions/?${query.toString()}`) as
+    | { items?: unknown }
+    | null;
+  if (!res || !Array.isArray(res.items)) throw new Error("Polar returned a malformed subscription list");
+  return res.items.map((item) => expect(parsePolarSubscription(item), "subscription"));
 }
 
 /**
- * What a checkout request may be handed, decided before any payable
- * transaction is created:
- * - `open` — the customer's own reusable transaction, to complete;
- * - `pending` — a purchase of this plan is already settling at Paddle, or the
- *   customer already holds an entitled subscription there; retry shortly;
- * - `none` — nothing blocks creating a fresh transaction.
- *
- * The subscription check runs first on purpose: once a purchase has settled
- * into an active subscription at Paddle, even the customer's own older open
- * transaction must not be reopened — completing it would charge them twice.
+ * Set a seat-based subscription's seats. `invoice` applies now and charges
+ * the prorated difference before answering; `next_period` schedules the
+ * change as the subscription's `pending_update`.
  */
-export type CheckoutTransactionResolution =
-  | { state: "open"; transactionId: string }
-  | { state: "pending" }
-  | { state: "none" };
-
-export async function resolveCheckoutTransaction(
-  apiKey: string,
-  input: { customerId: string; priceId: string; quantity: number },
-): Promise<CheckoutTransactionResolution> {
-  if ((await listActiveCustomerSubscriptions(apiKey, input.customerId)).length > 0) {
-    return { state: "pending" };
-  }
-  const match = await findMatchingCheckoutTransaction(apiKey, input);
-  if (!match) return { state: "none" };
-  return match.state === "open"
-    ? { state: "open", transactionId: match.transactionId }
-    : { state: "pending" };
-}
-
-// Mirrors the query's `origin` filter: renewal and proration charges share the
-// price and quantity of a re-subscribe and must never match, even if the API
-// filter were ignored or dropped.
-function checkoutOrigin(transaction: PaddleTransaction): boolean {
-  return transaction.origin === "api" || transaction.origin === "web";
-}
-
-// An aged-out terminal-status checkout is skipped rather than treated as a
-// match, so the scan continues to an open transaction behind it. An
-// unparseable timestamp fails closed: block rather than risk a double
-// purchase.
-//
-// The age that matters is when the transaction was PAID, not when the checkout
-// was created: Paddle can collect on a saved payment method long after a draft
-// was minted, so a checkout created 45 minutes ago but paid moments ago is
-// exactly the duplicate our webhook could still be lagging behind.
-// `billed_at` carries the payment time for billed/completed transactions; a
-// `paid` one can still be without it (Paddle leaves it null there), so
-// `updated_at` — set on every status move — is the fallback.
-function checkoutIsStillSettling(transaction: PaddleTransaction): boolean {
-  const billedAt = Date.parse(transaction.billed_at ?? "");
-  const paidAt = Number.isNaN(billedAt) ? Date.parse(transaction.updated_at) : billedAt;
-  return Number.isNaN(paidAt) || Date.now() - paidAt <= SETTLING_WINDOW_MS;
-}
-
-export async function createCheckoutTransaction(
-  apiKey: string,
-  input: { customerId: string; priceId: string; quantity: number },
-): Promise<string> {
-  if (!Number.isSafeInteger(input.quantity) || input.quantity < 1) {
-    throw new Error("Checkout quantity must be a positive integer");
-  }
-  const res = await paddleRequest<{ data: { id: string } }>(
-    apiKey,
-    "POST",
-    "/transactions",
-    {
-      customer_id: input.customerId,
-      collection_mode: "automatic",
-      items: [{ price_id: input.priceId, quantity: input.quantity }],
-    },
-  );
-  return res.data.id;
-}
-
-export async function cancelSubscription(
-  apiKey: string,
+export async function updateSubscriptionSeats(
+  client: PolarClient,
   subscriptionId: string,
-  effectiveFrom: "next_billing_period" | "immediately" = "next_billing_period",
-): Promise<void> {
-  await paddleRequest(apiKey, "POST", `/subscriptions/${subscriptionId}/cancel`, {
-    effective_from: effectiveFrom,
-  });
+  seats: number,
+  prorationBehavior: "invoice" | "next_period",
+): Promise<PolarSubscription> {
+  if (!Number.isSafeInteger(seats) || seats < 1) {
+    throw new Error("Subscription seats must be a positive integer");
+  }
+  // The request charges the card before it answers; cutting it short could
+  // report a failure for a charge that went through.
+  const res = await polarRequest(
+    client,
+    "PATCH",
+    `/v1/subscriptions/${encodeURIComponent(subscriptionId)}`,
+    { seats, proration_behavior: prorationBehavior },
+    15_000,
+  );
+  return expect(parsePolarSubscription(res), "subscription");
 }
 
 /**
- * Drop a subscription's scheduled change (a cancellation or plan change due at
- * the period's end). Paddle refuses any other change while one is pending.
+ * End a subscription now, paused ones included. Irreversible. Polar refuses
+ * one that has already ended (`isAlreadyEnded`).
  */
-export async function removeScheduledChange(apiKey: string, subscriptionId: string): Promise<void> {
-  await paddleRequest(apiKey, "PATCH", `/subscriptions/${subscriptionId}`, { scheduled_change: null });
-}
-
-export async function getSubscription(
-  apiKey: string,
-  subscriptionId: string,
-): Promise<PaddleSubscription> {
-  const res = await paddleRequest<{ data: PaddleSubscription }>(
-    apiKey,
-    "GET",
-    `/subscriptions/${subscriptionId}`,
-  );
-  return res.data;
-}
-
-export async function updateSubscriptionQuantity(
-  apiKey: string,
-  subscriptionId: string,
-  priceId: string,
-  quantity: number,
-): Promise<void> {
-  if (!Number.isSafeInteger(quantity) || quantity < 1) {
-    throw new Error("Subscription quantity must be a positive integer");
-  }
-  // Paddle treats `items` as the complete list: "Send the complete list of
-  // items that you'd like to be on a subscription — including existing items.
-  // If you omit items, they're removed from the subscription." Sending only the
-  // seat price would therefore delete every other item — an add-on, a second
-  // catalog price, anything attached from the dashboard — as a side effect of a
-  // seat adjustment. Read the live list and change one quantity in it.
-  const current = await getSubscription(apiKey, subscriptionId);
-  const items = current.items.map(({ price, quantity: itemQuantity }) => ({
-    price_id: price.id,
-    quantity: price.id === priceId ? quantity : itemQuantity ?? 1,
-  }));
-  if (!items.some((item) => item.price_id === priceId)) {
-    items.push({ price_id: priceId, quantity });
-  }
-  await paddleRequest(apiKey, "PATCH", `/subscriptions/${subscriptionId}`, {
-    items,
-    proration_billing_mode: "prorated_immediately",
-  });
-}
-
-export async function verifyPaddleWebhookSignature(
-  rawBody: string,
-  signatureHeader: string,
-  secret: string,
-): Promise<boolean> {
-  const parts = Object.fromEntries(
-    signatureHeader.split(";").map((part) => {
-      const [key = "", value = ""] = part.split("=", 2);
-      return [key.trim(), value.trim()] as const;
-    }),
-  );
-  const ts = parts["ts"];
-  const h1 = parts["h1"];
-  if (!ts || !h1) return false;
-  const timestampSeconds = Number.parseInt(ts, 10);
-  if (!Number.isFinite(timestampSeconds)) return false;
-
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  const maxAgeSeconds = 5 * 60;
-  if (Math.abs(nowSeconds - timestampSeconds) > maxAgeSeconds) {
-    return false;
-  }
-
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["verify"],
-  );
-
-  const signedPayload = `${ts}:${rawBody}`;
-  if (!/^[\da-f]+$/i.test(h1) || h1.length % 2 !== 0) {
-    return false;
-  }
-  const sigBytes = h1.match(/.{2}/g)!.map((b) => Number.parseInt(b, 16));
-  return crypto.subtle.verify("HMAC", key, new Uint8Array(sigBytes), encoder.encode(signedPayload));
+export async function revokeSubscription(client: PolarClient, subscriptionId: string): Promise<void> {
+  await polarRequest(client, "DELETE", `/v1/subscriptions/${encodeURIComponent(subscriptionId)}`);
 }

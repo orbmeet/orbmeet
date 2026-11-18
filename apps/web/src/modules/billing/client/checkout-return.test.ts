@@ -1,87 +1,25 @@
-import { describe, expect, it, vi } from "vitest";
-import {
-  buildCheckoutOpenOptions,
-  initializePaddleClient,
-  subscribeToPaddleCheckoutCompletion,
-} from "./paddle-checkout";
+import { describe, expect, it } from "vitest";
+import { stripCheckoutReturn } from "./checkout-return";
 
-describe("buildCheckoutOpenOptions", () => {
-  it("opens only the server-created transaction", () => {
+describe("stripCheckoutReturn", () => {
+  it("removes the marker and keeps the rest of the URL", () => {
     expect(
-      buildCheckoutOpenOptions({
-        transactionId: "txn_123",
-      }),
-    ).toEqual({
-      settings: {
-        displayMode: "overlay",
-      },
-      transactionId: "txn_123",
-    });
-  });
-});
-
-describe("initializePaddleClient", () => {
-  it("selects the sandbox environment before initializing Paddle", () => {
-    const calls: string[] = [];
-    const paddle = {
-      Environment: { set: vi.fn(() => calls.push("environment")) },
-      Initialize: vi.fn(() => calls.push("initialize")),
-      Checkout: { open: vi.fn() },
-    };
-
-    initializePaddleClient(paddle, "test_token");
-
-    expect(calls).toEqual(["environment", "initialize"]);
-    expect(paddle.Environment.set).toHaveBeenCalledWith("sandbox");
-    expect(paddle.Initialize).toHaveBeenCalledWith(expect.objectContaining({
-      token: "test_token",
-    }));
+      stripCheckoutReturn("https://orbmeet.example/settings?tab=plan-%26-billing&checkout=c_123#plan"),
+    ).toEqual({ checkout: { organizationId: null }, strippedUrl: "/settings?tab=plan-%26-billing#plan" });
   });
 
-  // A live token must never quietly run against the sandbox checkout, so the
-  // sandbox switch is driven by the token rather than a separate setting.
-  it("leaves a live token on the production environment", () => {
-    const paddle = {
-      Environment: { set: vi.fn() },
-      Initialize: vi.fn(),
-      Checkout: { open: vi.fn() },
-    };
-
-    initializePaddleClient(paddle, "live_token");
-
-    expect(paddle.Environment.set).not.toHaveBeenCalled();
-    expect(paddle.Initialize).toHaveBeenCalledWith(expect.objectContaining({
-      token: "live_token",
-    }));
+  it("says which Organization bought, and removes that marker too", () => {
+    expect(
+      stripCheckoutReturn("https://orbmeet.example/settings?tab=plan-%26-billing&checkoutOrganization=org_1&checkout=c_123"),
+    ).toEqual({ checkout: { organizationId: "org_1" }, strippedUrl: "/settings?tab=plan-%26-billing" });
   });
 
-  it("fails before initialization if the loaded Paddle.js cannot select sandbox", () => {
-    const paddle = {
-      Initialize: vi.fn(),
-      Checkout: { open: vi.fn() },
-    };
-
-    expect(() => initializePaddleClient(paddle, "test_token"))
-      .toThrow("cannot select the sandbox environment");
-    expect(paddle.Initialize).not.toHaveBeenCalled();
+  it("returns null when the page is not a checkout return", () => {
+    expect(stripCheckoutReturn("https://orbmeet.example/settings?tab=plan-%26-billing")).toBeNull();
+    expect(stripCheckoutReturn("https://orbmeet.example/settings?checkoutOrganization=org_1")).toBeNull();
   });
 
-  it("publishes successful checkout completion to application subscribers", () => {
-    const listener = vi.fn();
-    const unsubscribe = subscribeToPaddleCheckoutCompletion(listener);
-    const paddle = {
-      Initialize: vi.fn(),
-      Checkout: { open: vi.fn() },
-    };
-    initializePaddleClient(paddle, "live_token");
-    const callback = paddle.Initialize.mock.calls[0]?.[0].eventCallback;
-
-    callback?.({
-      name: "checkout.completed",
-      data: { transaction_id: "txn_123" },
-    });
-
-    expect(listener).toHaveBeenCalledWith({ transactionId: "txn_123" });
-    unsubscribe();
+  it("ignores an empty marker", () => {
+    expect(stripCheckoutReturn("https://orbmeet.example/settings?checkout=")).toBeNull();
   });
 });

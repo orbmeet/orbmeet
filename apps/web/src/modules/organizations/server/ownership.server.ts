@@ -1,21 +1,21 @@
 /**
  * Moving an Organization to a new owner: a nomination the recipient accepts
- * or declines, with seat billing moved by the billing module.
+ * or declines. The Organization is its own billing customer, so its
+ * subscription stays where it is; only who manages it changes.
  */
 
-import { organizationOwnershipTransfers } from "@orbmeet/db/schema";
-import { and, eq, gt } from "drizzle-orm";
+import { organizationMembers, organizationOwnershipTransfers, organizations, users } from "@orbmeet/db/schema";
+import { and, eq, gt, sql } from "drizzle-orm";
 import {
   getOrganizationSchema,
   transferOrganizationOwnershipSchema,
 } from "@/modules/organizations/contract/schemas";
 import { Errors } from "@/lib/app-errors";
-import { hasSubscriptionEntitlements } from "@/modules/billing/contract/subscription";
-import { withD1Retry } from "@/platform/database/db-utils";
+import { syncOrganizationBillingOwner } from "@/modules/billing/server/customers.server";
+import { getRunChanges, withD1Retry } from "@/platform/database/db-utils";
 import { enforceRateLimit } from "@/platform/http/rate-limit.server";
 import type * as v from "valibot";
 import type { AuthFnContext } from "@/app/bootstrap/middleware";
-import { runSerially } from "@/app/serial/serial";
 import { assertOrganizationRole, findOrganizationMembership } from "./authority.server";
 
 const ORGANIZATION_TRANSFER_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -36,13 +36,7 @@ export async function transferOrganizationOwnershipImpl({
   const [newOwner, membership, otherOrganization] = await Promise.all([
     db.query.users.findFirst({
       where: { id: data.newOwnerUserId },
-      columns: {
-        plan: true,
-        paddleCustomerId: true,
-        paddleSubscriptionId: true,
-        subscriptionStatus: true,
-        deletionStartedAt: true,
-      },
+      columns: { deletionStartedAt: true },
     }),
     findOrganizationMembership(db, data.organizationId, data.newOwnerUserId),
     db.query.organizations.findFirst({
@@ -53,15 +47,11 @@ export async function transferOrganizationOwnershipImpl({
   if (
     !newOwner ||
     newOwner.deletionStartedAt !== null ||
-    newOwner.plan !== "organization" ||
-    !hasSubscriptionEntitlements(newOwner.subscriptionStatus) ||
-    !newOwner.paddleCustomerId ||
-    !newOwner.paddleSubscriptionId ||
     !membership ||
     otherOrganization
   ) {
     throw Errors.VALIDATION(
-      "Choose a licensed Organization user who has an active Organization plan and does not own another Organization.",
+      "Choose a member of this Organization who does not own another Organization.",
     );
   }
 
@@ -117,17 +107,44 @@ export async function acceptOrganizationOwnershipTransferImpl({
     throw Errors.VALIDATION("This ownership transfer is no longer available.");
   }
 
-  const transferred = await runSerially(env, {
-    kind: "transferOrganizationOwnership",
-    organizationId: data.organizationId,
-    currentOwnerUserId: pending.requestedByUserId,
-    newOwnerUserId: user.id,
-    acceptedAt: now.getTime(),
-  }, { callerWaits: true });
-  if (!transferred) {
-    throw Errors.VALIDATION(
-      "Ownership could not be transferred. Confirm both subscriptions are active and try again.",
-    );
+  // One guarded statement: the nomination is still live, the recipient is
+  // still a member and not being deleted, and owns no other Organization.
+  // A retry after a lost response finds the swap already made.
+  const nowSeconds = Math.floor(now.getTime() / 1000);
+  const transferred = await withD1Retry(() => db.run(sql`
+    update ${organizations}
+    set owner_id = ${user.id}, updated_at = ${nowSeconds}
+    where ${organizations.id} = ${data.organizationId}
+      and ${organizations.ownerId} = ${pending.requestedByUserId}
+      and exists (
+        select 1 from ${organizationMembers}
+        where ${organizationMembers.organizationId} = ${data.organizationId}
+          and ${organizationMembers.userId} = ${user.id}
+      )
+      and exists (
+        select 1 from ${users}
+        where ${users.id} = ${user.id} and ${users.deletionStartedAt} is null
+      )
+      and exists (
+        select 1 from ${organizationOwnershipTransfers}
+        where ${organizationOwnershipTransfers.organizationId} = ${data.organizationId}
+          and ${organizationOwnershipTransfers.requestedByUserId} = ${pending.requestedByUserId}
+          and ${organizationOwnershipTransfers.proposedOwnerUserId} = ${user.id}
+          and ${organizationOwnershipTransfers.expiresAt} > ${nowSeconds}
+      )
+      and not exists (
+        select 1 from ${organizations} other
+        where other.owner_id = ${user.id} and other.id <> ${data.organizationId}
+      )
+  `), { idempotent: true });
+  if (getRunChanges(transferred) === 0) {
+    const current = await db.query.organizations.findFirst({
+      where: { id: data.organizationId },
+      columns: { ownerId: true },
+    });
+    if (current?.ownerId !== user.id) {
+      throw Errors.VALIDATION("Ownership could not be transferred. Ask the owner to nominate you again.");
+    }
   }
 
   await withD1Retry(
@@ -142,6 +159,7 @@ export async function acceptOrganizationOwnershipTransferImpl({
         ),
     { idempotent: true },
   );
+  await syncOrganizationBillingOwner(db, env, data.organizationId);
   return { success: true };
 }
 

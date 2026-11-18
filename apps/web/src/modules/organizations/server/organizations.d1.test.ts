@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { organizationMembers, organizations, spaces, users } from "@orbmeet/db/schema";
+import { billingSubscriptions, organizationMembers, organizations, spaces, users } from "@orbmeet/db/schema";
 import { eq } from "drizzle-orm";
 import { createTestDb, type TestDb } from "@/test/db";
 import { assertOrganizationRole } from "./authority.server";
-import { insertOrganizationMemberByEmailWithinLimit, listOrganizationMembersImpl } from "./membership.server";
+import { insertOrganizationMemberByEmail, listOrganizationMembersImpl } from "./membership.server";
 import type { AuthFnContext } from "@/app/bootstrap/middleware";
 import { selectOrganizationSpaces, selectOrganizationsForUser } from "./organizations.server";
+import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
 const appDb = () => db;
@@ -22,26 +23,22 @@ async function insertUser(id: string) {
     email: `${id}@example.com`,
     normalizedEmail: `${id}@example.com`,
     image: null,
-    plan: "organization",
     role: "user",
     createdAt: now,
     updatedAt: now,
   });
 }
 
-async function insertOrganization() {
+async function insertOrganization(seats = 25) {
   const now = new Date();
   await db.insert(organizations).values({
     id: "org_1",
     name: "Acme",
     ownerId: "owner",
-    plan: "organization",
-    licenseLimit: 25,
-    subscriptionStatus: "active",
-    paddleSubscriptionId: "sub_org",
     createdAt: now,
     updatedAt: now,
   });
+  await seedSubscription(db, { organizationId: "org_1", seats });
 }
 
 describe("organization authority", () => {
@@ -102,19 +99,18 @@ describe("organization authority", () => {
   });
 });
 
-describe("insertOrganizationMemberByEmailWithinLimit", () => {
+describe("insertOrganizationMemberByEmail", () => {
   it("inserts a registered account without first disclosing its identity", async () => {
     await insertUser("owner");
     await insertUser("target");
     await insertOrganization();
 
-    await expect(insertOrganizationMemberByEmailWithinLimit(appDb(), {
+    await expect(insertOrganizationMemberByEmail(appDb(), {
       organizationId: "org_1",
       normalizedEmail: "target@example.com",
       membershipId: "omb_target",
       role: "member",
       joinedAt: new Date(),
-      licenseLimit: 25,
     })).resolves.toBe(true);
 
     await expect(
@@ -138,24 +134,23 @@ describe("insertOrganizationMemberByEmailWithinLimit", () => {
       organizationId: "org_1",
       role: "member" as const,
       joinedAt: new Date(),
-      licenseLimit: 25,
     };
-    await expect(insertOrganizationMemberByEmailWithinLimit(appDb(), {
+    await expect(insertOrganizationMemberByEmail(appDb(), {
       ...base,
       normalizedEmail: "missing@example.com",
       membershipId: "omb_missing",
     })).resolves.toBe(false);
-    await expect(insertOrganizationMemberByEmailWithinLimit(appDb(), {
+    await expect(insertOrganizationMemberByEmail(appDb(), {
       ...base,
       normalizedEmail: "target@example.com",
       membershipId: "omb_duplicate",
     })).resolves.toBe(false);
   });
 
-  it("enforces the license limit inside the insert", async () => {
+  it("admits no one beyond the paid seats, inside the insert", async () => {
     await insertUser("owner");
     await insertUser("target");
-    await insertOrganization();
+    await insertOrganization(1);
     await db.insert(organizationMembers).values({
       id: "omb_owner",
       organizationId: "org_1",
@@ -164,13 +159,12 @@ describe("insertOrganizationMemberByEmailWithinLimit", () => {
       joinedAt: new Date(),
     });
 
-    await expect(insertOrganizationMemberByEmailWithinLimit(appDb(), {
+    await expect(insertOrganizationMemberByEmail(appDb(), {
       organizationId: "org_1",
       normalizedEmail: "target@example.com",
       membershipId: "omb_target",
       role: "member",
       joinedAt: new Date(),
-      licenseLimit: 1,
     })).resolves.toBe(false);
     await expect(
       db.query.organizationMembers.findFirst({ where: { id: "omb_target" } }),
@@ -178,47 +172,52 @@ describe("insertOrganizationMemberByEmailWithinLimit", () => {
   });
 });
 
-it("holds the invitation boundary exactly at the stored license ceiling", async () => {
-  // An accepted transfer now stores the ceiling at the paid quantity, so with
-  // two members the limit reads 2 and inviting a third member must purchase a
-  // seat instead of riding stale headroom.
+it("holds the invitation boundary exactly at the paid seats", async () => {
   await insertUser("owner");
   await insertUser("member");
   await insertUser("outsider");
-  await insertOrganization();
-  await db.update(organizations).set({ licenseLimit: 2 }).where(eq(organizations.id, "org_1"));
+  await insertOrganization(2);
   await db.insert(organizationMembers).values([
     { id: "omb_owner", organizationId: "org_1", userId: "owner", role: "admin", joinedAt: new Date() },
     { id: "omb_member", organizationId: "org_1", userId: "member", role: "member", joinedAt: new Date() },
   ]);
-
-  expect(await insertOrganizationMemberByEmailWithinLimit(db, {
+  const invite = {
     organizationId: "org_1", normalizedEmail: "outsider@example.com", membershipId: "omb_outsider",
-    role: "member", joinedAt: new Date(), licenseLimit: 2, actorUserId: "owner",
-  })).toBe(false);
+    role: "member" as const, joinedAt: new Date(), actorUserId: "owner",
+  };
 
-  // Only once the purchased seat raises the stored limit does the invitation go
-  // through — and exactly one seat at a time.
-  await db.update(organizations).set({ licenseLimit: 3 }).where(eq(organizations.id, "org_1"));
-  expect(await insertOrganizationMemberByEmailWithinLimit(db, {
-    organizationId: "org_1", normalizedEmail: "outsider@example.com", membershipId: "omb_outsider",
-    role: "member", joinedAt: new Date(), licenseLimit: 3, actorUserId: "owner",
+  expect(await insertOrganizationMemberByEmail(db, invite)).toBe(false);
+  // Only once the third seat is bought does the invitation go through.
+  await db.update(billingSubscriptions).set({ seats: 3 }).where(eq(billingSubscriptions.organizationId, "org_1"));
+  expect(await insertOrganizationMemberByEmail(db, invite)).toBe(true);
+});
+
+it.each(["unpaid", "incomplete", "paused", "canceled"] as const)(
+  "admits no one while the subscription is %s, spare seats or not",
+  async (status) => {
+    await insertUser("owner"); await insertUser("target"); await insertOrganization();
+    await db.update(billingSubscriptions).set({ status }).where(eq(billingSubscriptions.organizationId, "org_1"));
+    expect(await insertOrganizationMemberByEmail(db, {
+      organizationId: "org_1", normalizedEmail: "target@example.com", membershipId: "target_member",
+      role: "member", joinedAt: new Date(), actorUserId: "owner",
+    })).toBe(false);
+  },
+);
+
+it("keeps admitting members while a renewal payment is retried (past_due)", async () => {
+  await insertUser("owner"); await insertUser("target"); await insertOrganization();
+  await db.update(billingSubscriptions).set({ status: "past_due" }).where(eq(billingSubscriptions.organizationId, "org_1"));
+  expect(await insertOrganizationMemberByEmail(db, {
+    organizationId: "org_1", normalizedEmail: "target@example.com", membershipId: "target_member",
+    role: "member", joinedAt: new Date(), actorUserId: "owner",
   })).toBe(true);
 });
 
-it.each(["canceled", "paused"] as const)("does not admit members with %s billing despite spare seats", async (subscriptionStatus) => {
-  await insertUser("owner"); await insertUser("target"); await insertOrganization();
-  await db.update(organizations).set({ subscriptionStatus }).where(eq(organizations.id, "org_1"));
-  expect(await insertOrganizationMemberByEmailWithinLimit(db, {
-    organizationId: "org_1", normalizedEmail: "target@example.com", membershipId: "target_member",
-    role: "member", joinedAt: new Date(), licenseLimit: 25, actorUserId: "owner",
-  })).toBe(false);
-});
 it("checks actor authority in the insertion statement", async () => {
   await insertUser("owner"); await insertUser("target"); await insertUser("former_admin"); await insertOrganization();
-  expect(await insertOrganizationMemberByEmailWithinLimit(db, {
+  expect(await insertOrganizationMemberByEmail(db, {
     organizationId: "org_1", normalizedEmail: "target@example.com", membershipId: "target_member",
-    role: "member", joinedAt: new Date(), licenseLimit: 25, actorUserId: "former_admin",
+    role: "member", joinedAt: new Date(), actorUserId: "former_admin",
   })).toBe(false);
 });
 

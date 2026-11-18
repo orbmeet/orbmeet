@@ -22,8 +22,7 @@ import { generateId } from "@/lib/ids";
 import { getRunChanges } from "@/platform/database/db-utils";
 import { enforceRateLimit } from "@/platform/http/rate-limit.server";
 import { requireSpaceSlug } from "@/modules/spaces/contract/slug";
-import { getSubscription } from "@/modules/billing/server/paddle";
-import { configuredPaddlePriceId } from "@/modules/billing/server/paddle-config";
+import { organizationBillingSelection } from "@/modules/billing/server/entitlements.server";
 import type * as v from "valibot";
 import type { AuthFnContext } from "@/app/bootstrap/middleware";
 import { assertOrganizationRole, effectiveOrganizationRole } from "./authority.server";
@@ -34,9 +33,7 @@ export async function selectOrganizationsForUser(db: Database, userId: string) {
       id: organizations.id,
       name: organizations.name,
       ownerId: organizations.ownerId,
-      plan: organizations.plan,
-      licenseLimit: organizations.licenseLimit,
-      subscriptionStatus: organizations.subscriptionStatus,
+      billing: organizationBillingSelection(organizations.id),
       createdAt: organizations.createdAt,
       updatedAt: organizations.updatedAt,
       delegatedRole: organizationMembers.role,
@@ -103,74 +100,27 @@ export async function createOrganizationImpl({
 }) {
   await enforceRateLimit(env, `organization:create:${user.id}`);
 
-  if (user.plan !== "organization") {
-    throw Errors.PLAN_LIMIT_REACHED("Creating an Organization requires the Organization plan.");
-  }
-
   const existing = await db.query.organizations.findFirst({
     where: { ownerId: user.id },
     columns: { id: true },
   });
   if (existing) return { organizationId: existing.id };
 
+  // An Organization starts unfunded: its owner, Free limits, no invitations.
+  // Its owner then subscribes on its behalf.
   const now = new Date();
   const orgId = generateId("ORGANIZATION");
   const memberId = generateId("ORGANIZATION_MEMBER");
-  const billingUser = await db.query.users.findFirst({
-    where: { id: user.id },
-    columns: {
-      paddleCustomerId: true,
-      paddleSubscriptionId: true,
-      subscriptionStatus: true,
-      subscriptionUpdatedAt: true,
-    },
-  });
-
-  // The license ceiling is the seat quantity the owner already pays for, not
-  // the schema default: creation requires the Organization plan, so an
-  // Organization founded after subscribing would otherwise invite against 25
-  // seats and the first member add would push Paddle down to memberCount + 1.
-  // Convergence is the webhook's and reconciliation's job, so a Paddle
-  // failure here must not block creation.
-  let licenseLimit = 1;
-  const ownerPriceId = billingUser?.paddleSubscriptionId
-    ? configuredPaddlePriceId(env.PADDLE_PRICE_ID_ORG_SEAT)
-    : null;
-  if (billingUser?.paddleSubscriptionId && env.PADDLE_API_KEY && ownerPriceId) {
-    try {
-      const subscription = await getSubscription(
-        env.PADDLE_API_KEY,
-        billingUser.paddleSubscriptionId,
-      );
-      const paidQuantity = subscription.items.find(
-        ({ price }) => price.id === ownerPriceId,
-      )?.quantity;
-      if (Number.isSafeInteger(paidQuantity) && (paidQuantity ?? 0) >= 1) {
-        licenseLimit = paidQuantity!;
-      }
-    } catch {
-      // Keep the default ceiling; the next subscription event or
-      // reconciliation pass will align it.
-    }
-  }
 
   try {
     const [organizationInsert] = await db.batch([
       db.run(sql`
           insert into ${organizations} (
-            id, name, owner_id, plan, paddle_customer_id,
-            paddle_subscription_id, subscription_status,
-            subscription_updated_at, license_limit, archived_at,
-            created_at, updated_at
+            id, name, owner_id, archived_at, created_at, updated_at
           )
           select
-            ${orgId}, ${data.name}, ${user.id}, 'organization',
-            ${billingUser?.paddleCustomerId ?? null},
-            ${billingUser?.paddleSubscriptionId ?? null},
-            ${billingUser?.subscriptionStatus ?? null},
-            ${billingUser?.subscriptionUpdatedAt?.getTime() ?? null},
-            ${licenseLimit}, null, ${Math.floor(now.getTime() / 1000)},
-            ${Math.floor(now.getTime() / 1000)}
+            ${orgId}, ${data.name}, ${user.id}, null,
+            ${Math.floor(now.getTime() / 1000)}, ${Math.floor(now.getTime() / 1000)}
           from ${users} creating_owner
           where creating_owner.id = ${user.id}
             and creating_owner.deletion_started_at is null

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   isPublicDocumentPath,
+  prerenderedDocumentPaths,
   normalizeDocumentPath,
   publicDocumentPaths,
 } from "./public-routes";
@@ -82,5 +83,17 @@ describe("public document allowlist", () => {
     expect(normalizeDocumentPath("/")).toBe("/");
     expect(normalizeDocumentPath("/pricing/")).toBe("/pricing");
     expect(normalizeDocumentPath("/pricing")).toBe("/pricing");
+  });
+
+  it("renders the pricing page per visitor: public and indexable, but never a static copy", () => {
+    expect(isPublicDocumentPath("/pricing")).toBe(true);
+    expect(prerenderedDocumentPaths()).not.toContain("/pricing");
+  });
+
+  it("prerenders only public pages", () => {
+    for (const path of prerenderedDocumentPaths()) {
+      expect(isPublicDocumentPath(path)).toBe(true);
+    }
+    expect(prerenderedDocumentPaths()).toEqual(["/", "/privacy", "/refund", "/status", "/terms"]);
   });
 });

@@ -9,6 +9,7 @@ import {
   updateMeetingLinkImpl,
 } from "@/modules/meetings/server/history/dashboard.server";
 import type { AuthFnContext } from "@/app/bootstrap/middleware";
+import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
 const appDb = () => db;
@@ -21,11 +22,11 @@ beforeEach(async () => {
     name: "Host",
     email: "host@example.com",
     normalizedEmail: "host@example.com",
-    plan: "pro",
     role: "user",
     createdAt: now,
     updatedAt: now,
   });
+  await seedSubscription(db, { userId: "host" });
   await seedPersonalSpace(appDb(), "host", { now });
   await db.insert(meetingLinks).values({
     id: "personal_room",
@@ -96,7 +97,6 @@ describe("an account without a personal Space", () => {
       name: "Newcomer",
       email: "newcomer@example.com",
       normalizedEmail: "newcomer@example.com",
-      plan: "free",
       role: "user",
       createdAt: now,
       updatedAt: now,

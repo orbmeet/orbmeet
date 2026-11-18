@@ -21,7 +21,6 @@ describe("account deletion session boundary", () => {
       name: "Deleting user",
       email: "deleting@example.com",
       normalizedEmail: "deleting@example.com",
-      plan: "free",
       role: "user",
       createdAt: now,
       updatedAt: now,

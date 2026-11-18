@@ -19,6 +19,7 @@ import {
   resolveAutomationMeeting,
   retrieveAutomationMeeting,
 } from "./meeting-retrieval";
+import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
 const startedAt = new Date("2026-07-18T09:00:00.000Z");
@@ -104,7 +105,6 @@ beforeEach(async () => {
       email: "atiq@example.com",
       normalizedEmail: "atiq@example.com",
       image: null,
-      plan: "pro",
       role: "user",
       createdAt,
       updatedAt: createdAt,
@@ -115,7 +115,6 @@ beforeEach(async () => {
       email: "aariz@example.com",
       normalizedEmail: "aariz@example.com",
       image: null,
-      plan: "free",
       role: "user",
       createdAt,
       updatedAt: createdAt,
@@ -126,12 +125,12 @@ beforeEach(async () => {
       email: "outsider@example.com",
       normalizedEmail: "outsider@example.com",
       image: null,
-      plan: "free",
       role: "user",
       createdAt,
       updatedAt: createdAt,
     },
   ]);
+  await seedSubscription(db, { userId: "user_owner" });
   await insertEndedMeeting("meeting_product", "Product sync");
 });
 

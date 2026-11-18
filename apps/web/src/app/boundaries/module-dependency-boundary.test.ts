@@ -201,9 +201,9 @@ const PUBLISHED_SERVER_FILES: Record<string, readonly string[]> = {
     "server/upload-reservations",
   ],
   billing: [
+    "server/customers.server",
     "server/entitlements.server",
-    "server/paddle",
-    "server/paddle-config",
+    "server/organization-seats.server",
   ],
   contacts: [
     "server/contact-index",

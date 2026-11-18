@@ -39,6 +39,7 @@ import type * as v from "valibot";
 import type { AuthFnContext } from "@/app/bootstrap/middleware";
 import { SPACE_MEMBERSHIP_ROLES } from "@/modules/spaces/contract/types";
 import { PLAN_LIMITS, type PlanLimits } from "@/modules/billing/contract/plan-limits";
+import { userPlanSql } from "@/modules/billing/server/entitlements.server";
 import type { SubscriptionTier } from "@/modules/billing/contract/types";
 import { evictUserFromSpaceMeetings } from "./evict-space-meetings.server";
 import { refreshSpaceAuthorityInOpenMeetings } from "@/modules/meetings/server/runtime/revoke.server";
@@ -283,7 +284,7 @@ export async function addMemberByEmailImpl({
   }
   if (result === "license-required") {
     throw Errors.VALIDATION(
-      "This person needs an Organization license before they can be added to this Space.",
+      "This person must be a member of the Organization before they can be added to this Space.",
     );
   }
   if (result === "not-authorized") {
@@ -459,7 +460,7 @@ export async function applyOwnershipTransfer(
   const tiers = Object.entries(PLAN_LIMITS) as Array<[SubscriptionTier, PlanLimits]>;
   const recipientPlanFits = sql.join(
     tiers.map(([tier, limits]) => {
-      const fits: SQL[] = [sql`${users.plan} = ${tier}`];
+      const fits: SQL[] = [sql`${userPlanSql(users.id)} = ${tier}`];
       if (limits.maxSpaces !== null) fits.push(sql`${activeOwnedSharedSpaceCountSql(toUserId)} < ${limits.maxSpaces}`);
       if (limits.maxMembersPerSpace !== null) fits.push(sql`${memberCount} <= ${limits.maxMembersPerSpace}`);
       return sql`(${sql.join(fits, sql` and `)})`;

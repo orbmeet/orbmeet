@@ -1,13 +1,20 @@
-import { SUBSCRIPTION_STATUSES, type SubscriptionTier } from "@orbmeet/domain-model";
+import {
+  PAID_SUBSCRIPTION_TIERS,
+  SUBSCRIPTION_STATUSES,
+  type SubscriptionTier,
+} from "@orbmeet/domain-model";
 
 export type { SubscriptionTier };
+export type PaidSubscriptionTier = (typeof PAID_SUBSCRIPTION_TIERS)[number];
+/** A subscription's state, or null where there is no subscription. */
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number] | null;
 
-// The tiers a customer can actually buy. Spelled out rather than filtered so
-// the literal types survive, and constrained to SubscriptionTier so renaming
-// or removing a tier fails to compile here instead of drifting silently.
-export const PAID_SUBSCRIPTION_TIERS = [
-  "pro",
-  "organization",
-] as const satisfies readonly SubscriptionTier[];
-export type PaidSubscriptionTier = (typeof PAID_SUBSCRIPTION_TIERS)[number];
+/** Who pays: a person buys Pro, an Organization buys the Organization plan. */
+export type BillingCustomer =
+  | { kind: "user"; userId: string }
+  | { kind: "organization"; organizationId: string };
+
+/** The plan each kind of customer buys. */
+export function planForCustomer(customer: BillingCustomer): PaidSubscriptionTier {
+  return customer.kind === "user" ? "pro" : "organization";
+}

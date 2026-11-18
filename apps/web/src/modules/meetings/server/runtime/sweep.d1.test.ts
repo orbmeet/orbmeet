@@ -25,7 +25,7 @@ beforeEach(async () => {
   woken.length = 0;
   await db.insert(users).values({
     id: "host", name: "Host", email: "host@example.com", normalizedEmail: "host@example.com",
-    plan: "free", role: "user", createdAt: LONG_AGO, updatedAt: LONG_AGO,
+    role: "user", createdAt: LONG_AGO, updatedAt: LONG_AGO,
   });
   await seedPersonalSpace(db, "host", { now: LONG_AGO });
 });

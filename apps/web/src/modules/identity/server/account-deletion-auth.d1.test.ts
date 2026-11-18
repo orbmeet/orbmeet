@@ -18,7 +18,6 @@ describe("revokeAccountAuthenticationExceptCurrent", () => {
       name: "Deleting user",
       email: "deleting@example.com",
       normalizedEmail: "deleting@example.com",
-      plan: "free",
       role: "user",
       deletionStartedAt: now,
       createdAt: now,

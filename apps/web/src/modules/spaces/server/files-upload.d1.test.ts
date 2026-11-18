@@ -4,6 +4,7 @@ import { createTestDb, type TestDb } from "@/test/db";
 import { seedSharedSpace } from "@/test/fixtures";
 import type { AuthFnContext } from "@/app/bootstrap/middleware";
 import { finalizePdfFileUploadImpl, grantPdfFileUploadImpl } from "./files.server";
+import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
 
@@ -26,11 +27,11 @@ beforeEach(async () => {
       name: id,
       email: `${id}@example.com`,
       normalizedEmail: `${id}@example.com`,
-      plan: "pro",
       role: "user",
       createdAt: now,
       updatedAt: now,
     });
+    await seedSubscription(db, { userId: id });
   }
   await seedSharedSpace(db, {
     id: "team",

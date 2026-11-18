@@ -15,7 +15,6 @@ describe("authentication maintenance", () => {
       name: "User",
       email: "user@example.com",
       normalizedEmail: "user@example.com",
-      plan: "free",
       role: "user",
       createdAt,
       updatedAt: createdAt,

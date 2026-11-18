@@ -20,7 +20,6 @@ async function seedEndedSpaceMeeting() {
       name: id,
       email: `${id}@example.com`,
       normalizedEmail: `${id}@example.com`,
-      plan: "free",
       role: "user",
       createdAt: now,
       updatedAt: now,

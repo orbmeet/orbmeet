@@ -47,7 +47,7 @@ beforeEach(async () => {
   const at = new Date(T0);
   await db.insert(users).values({
     id: "host", name: "Host", email: "host@example.com", normalizedEmail: "host@example.com",
-    plan: "free", role: "user", createdAt: at, updatedAt: at,
+    role: "user", createdAt: at, updatedAt: at,
   });
   await seedPersonalSpace(db, "host", { now: at });
   await db.insert(meetingLinks).values({

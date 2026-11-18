@@ -1,177 +1,154 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { organizationMembers, organizations, users } from "@orbmeet/db/schema";
-import { sql } from "drizzle-orm";
+import { billingSubscriptions, organizationMembers, organizations, users } from "@orbmeet/db/schema";
+import { eq } from "drizzle-orm";
 import { createTestDb, type TestDb } from "@/test/db";
+import { seedSubscription } from "@/test/billing";
+import type { PolarSubscription } from "./polar-schema";
 
+const listSubscriptionsByStatusMock = vi.hoisted(() => vi.fn());
 const getSubscriptionMock = vi.hoisted(() => vi.fn());
-const updateSubscriptionQuantityMock = vi.hoisted(() => vi.fn());
-
-vi.mock("@/modules/billing/server/paddle", () => ({
+vi.mock("./polar", async (original) => ({
+  ...await original<typeof import("./polar")>(),
+  listSubscriptionsByStatus: listSubscriptionsByStatusMock,
   getSubscription: getSubscriptionMock,
-  updateSubscriptionQuantity: updateSubscriptionQuantityMock,
 }));
+const runSeriallyMock = vi.hoisted(() => vi.fn(async () => null));
+vi.mock("@/app/serial/serial", () => ({ runSerially: runSeriallyMock }));
 
-import { reconcilePaddleSubscriptions } from "./reconciliation.server";
+import { reconcileSubscriptions } from "./reconciliation.server";
+import { LIVE_POLAR_STATUSES } from "./subscription-store.server";
+
+const PRO = "11111111-1111-4111-8111-111111111111";
+const ORGANIZATION = "22222222-2222-4222-8222-222222222222";
+const env = {
+  POLAR_ACCESS_TOKEN: "t",
+  POLAR_PRODUCT_ID_PRO: PRO,
+  POLAR_PRODUCT_ID_ORGANIZATION: ORGANIZATION,
+} as unknown as Env;
 
 let db: TestDb;
-const appDb = () => db;
+
+function subscription(overrides: Partial<PolarSubscription>): PolarSubscription {
+  return {
+    id: "sub",
+    status: "active",
+    product_id: PRO,
+    seats: null,
+    cancel_at_period_end: false,
+    current_period_end: null,
+    created_at: "2026-11-01T00:00:00Z",
+    modified_at: "2026-11-10T00:00:00Z",
+    customer: { id: "cus", external_id: "user:ada" },
+    pending_update: null,
+    ...overrides,
+  };
+}
+
+async function status(id: string) {
+  const [row] = await db.select({ status: billingSubscriptions.status }).from(billingSubscriptions)
+    .where(eq(billingSubscriptions.id, id));
+  return row?.status;
+}
 
 beforeEach(async () => {
   db = await createTestDb();
+  listSubscriptionsByStatusMock.mockReset();
   getSubscriptionMock.mockReset();
-  updateSubscriptionQuantityMock.mockReset();
+  runSeriallyMock.mockClear();
   const now = new Date();
   await db.insert(users).values([
-    {
-      id: "a_poison",
-      name: "Poison",
-      email: "poison@example.com",
-      normalizedEmail: "poison@example.com",
-      plan: "free",
-      paddleSubscriptionId: "subscription-poison",
-      role: "user",
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: "b_healthy",
-      name: "Healthy",
-      email: "healthy@example.com",
-      normalizedEmail: "healthy@example.com",
-      plan: "free",
-      paddleSubscriptionId: "subscription-healthy",
-      role: "user",
-      createdAt: now,
-      updatedAt: now,
-    },
+    { id: "ada", name: "Ada", email: "ada@example.com", normalizedEmail: "ada@example.com", role: "user", createdAt: now, updatedAt: now },
+    { id: "bob", name: "Bob", email: "bob@example.com", normalizedEmail: "bob@example.com", role: "user", createdAt: now, updatedAt: now },
+  ]);
+  await db.insert(organizations).values({ id: "org_1", name: "Acme", ownerId: "ada", createdAt: now, updatedAt: now });
+  await db.insert(organizationMembers).values([
+    { id: "omb_ada", organizationId: "org_1", userId: "ada", role: "admin", joinedAt: now },
+    { id: "omb_bob", organizationId: "org_1", userId: "bob", role: "member", joinedAt: now },
   ]);
 });
 
-describe("Paddle reconciliation failure isolation", () => {
-  it("reads legacy seconds and writes millisecond-precise billing timestamps", async () => {
-    const eventTime = new Date("2026-07-29T00:10:00.123Z");
-    await db.run(sql`
-      update ${users}
-      set subscription_updated_at = ${Math.floor(eventTime.getTime() / 1000)}
-      where ${users.id} = 'b_healthy'
-    `);
-    await expect(db.query.users.findFirst({
-      where: { id: "b_healthy" },
-      columns: { subscriptionUpdatedAt: true },
-    })).resolves.toEqual({
-      subscriptionUpdatedAt: new Date("2026-07-29T00:10:00.000Z"),
+describe("reconcileSubscriptions", () => {
+  it("lands a subscription whose webhook never arrived", async () => {
+    listSubscriptionsByStatusMock.mockResolvedValueOnce({
+      subscriptions: [subscription({ id: "sub_ada" })],
+      lastPage: true,
     });
 
-    await db.update(users)
-      .set({ subscriptionUpdatedAt: eventTime })
-      .where(sql`${users.id} = 'b_healthy'`);
-    await expect(db.select({ value: sql<number>`${users.subscriptionUpdatedAt}` })
-      .from(users)
-      .where(sql`${users.id} = 'b_healthy'`))
-      .resolves.toEqual([{ value: eventTime.getTime() }]);
+    await expect(reconcileSubscriptions(db, env)).resolves.toBe(1);
+    expect(await status("sub_ada")).toBe("active");
   });
 
-  it("continues past a poison subscription and reconciles later rows", async () => {
-    getSubscriptionMock.mockImplementation(async (_apiKey: string, id: string) => {
-      if (id === "subscription-poison") {
-        return {
-          id: "wrong-subscription",
-          status: "active",
-          items: [{ price: { id: "pri_01test0000000000000000pro" } }],
-          customer_id: "customer-poison",
-          updated_at: "2026-07-29T00:00:00.000Z",
-        };
-      }
-      return {
-        id,
-        status: "active",
-        items: [{ price: { id: "pri_01test0000000000000000pro" } }],
-        customer_id: "customer-healthy",
-        updated_at: "2026-07-29T00:00:00.000Z",
-      };
-    });
-
-    await expect(reconcilePaddleSubscriptions(appDb(), {
-      PADDLE_API_KEY: "test-key",
-      PADDLE_PRICE_ID_PRO: "pri_01test0000000000000000pro",
-      PADDLE_PRICE_ID_ORG_SEAT: "pri_01test000000000000000seat",
-    } as unknown as Env)).rejects.toThrow("Paddle reconciliation completed with row failures");
-
-    await expect(db.query.users.findFirst({
-      where: { id: "b_healthy" },
-    })).resolves.toMatchObject({
-      plan: "pro",
-      paddleCustomerId: "customer-healthy",
-      subscriptionStatus: "active",
-    });
-  });
-
-  it("does not overwrite a newer webhook projection with an older API snapshot", async () => {
-    const newerWebhookAt = new Date("2026-07-29T00:10:00.000Z");
-    await db
-      .update(users)
-      .set({
-        plan: "free",
-        subscriptionStatus: "canceled",
-        subscriptionUpdatedAt: newerWebhookAt,
-      })
-      .where(sql`1 = 1`);
-    getSubscriptionMock.mockImplementation(async (_apiKey: string, id: string) => ({
-      id,
-      status: "active",
-      items: [{ price: { id: "pri_01test0000000000000000pro" } }],
-      customer_id: `customer-${id}`,
-      updated_at: "2026-07-29T00:05:00.000Z",
-    }));
-
-    await reconcilePaddleSubscriptions(appDb(), {
-      PADDLE_API_KEY: "test-key",
-      PADDLE_PRICE_ID_PRO: "pri_01test0000000000000000pro",
-      PADDLE_PRICE_ID_ORG_SEAT: "pri_01test000000000000000seat",
-    } as unknown as Env, new Date("2026-07-29T00:20:00.000Z"));
-
-    await expect(db.query.users.findFirst({ where: { id: "b_healthy" } }))
-      .resolves.toMatchObject({
-        plan: "free",
-        subscriptionStatus: "canceled",
-        subscriptionUpdatedAt: newerWebhookAt,
+  it("reads every page", async () => {
+    listSubscriptionsByStatusMock
+      .mockResolvedValueOnce({ subscriptions: [subscription({ id: "sub_ada" })], lastPage: false })
+      .mockResolvedValueOnce({
+        subscriptions: [subscription({ id: "sub_bob", customer: { id: "cus_b", external_id: "user:bob" } })],
+        lastPage: true,
       });
+
+    await expect(reconcileSubscriptions(db, env)).resolves.toBe(2);
+    expect(listSubscriptionsByStatusMock).toHaveBeenNthCalledWith(2, expect.anything(), LIVE_POLAR_STATUSES, 2);
+    expect(await status("sub_bob")).toBe("active");
   });
 
-  it("preserves purchased Organization headroom beyond current membership", async () => {
-    const now = new Date();
-    await db.insert(organizations).values({
-      id: "org_healthy",
-      name: "Healthy Organization",
-      ownerId: "b_healthy",
-      plan: "organization",
-      paddleSubscriptionId: "subscription-healthy",
-      createdAt: now,
-      updatedAt: now,
-    });
-    await db.insert(organizationMembers).values({
-      id: "org_member_owner",
-      organizationId: "org_healthy",
-      userId: "b_healthy",
-      role: "admin",
-      joinedAt: now,
-    });
-    getSubscriptionMock.mockImplementation(async (_apiKey: string, id: string) => ({
-      id,
-      status: "active",
-      items: [{ price: { id: "pri_01test000000000000000seat" }, quantity: 4 }],
-      customer_id: `customer-${id}`,
-      updated_at: "2026-07-29T00:05:00.000Z",
-    }));
+  it("re-reads a running subscription Polar no longer lists, so a missed end lands", async () => {
+    await seedSubscription(db, { userId: "ada" }, { id: "sub_ended" });
+    listSubscriptionsByStatusMock.mockResolvedValueOnce({ subscriptions: [], lastPage: true });
+    getSubscriptionMock.mockResolvedValueOnce(subscription({ id: "sub_ended", status: "canceled" }));
 
-    await reconcilePaddleSubscriptions(appDb(), {
-      PADDLE_API_KEY: "test-key",
-      PADDLE_PRICE_ID_PRO: "pri_01test0000000000000000pro",
-      PADDLE_PRICE_ID_ORG_SEAT: "pri_01test000000000000000seat",
-    } as unknown as Env);
+    await reconcileSubscriptions(db, env);
+    expect(getSubscriptionMock).toHaveBeenCalledWith(expect.anything(), "sub_ended");
+    expect(await status("sub_ended")).toBe("canceled");
+  });
 
-    expect(updateSubscriptionQuantityMock).not.toHaveBeenCalled();
-    expect(await db.query.organizations.findFirst({ where: { id: "org_healthy" } }))
-      .toMatchObject({ licenseLimit: 4 });
+  it("changes nothing when Polar has never heard of a stored subscription", async () => {
+    await seedSubscription(db, { userId: "ada" }, { id: "sub_elsewhere" });
+    listSubscriptionsByStatusMock.mockResolvedValueOnce({ subscriptions: [], lastPage: true });
+    getSubscriptionMock.mockResolvedValueOnce(null);
+
+    await reconcileSubscriptions(db, env);
+    expect(await status("sub_elsewhere")).toBe("active");
+  });
+
+  it("queues a seat correction for an Organization whose seats differ from its members", async () => {
+    listSubscriptionsByStatusMock.mockResolvedValueOnce({
+      subscriptions: [subscription({
+        id: "sub_org",
+        product_id: ORGANIZATION,
+        seats: 5,
+        customer: { id: "cus_org", external_id: "org:org_1" },
+      })],
+      lastPage: true,
+    });
+
+    await reconcileSubscriptions(db, env);
+    expect(runSeriallyMock).toHaveBeenCalledExactlyOnceWith(env, { kind: "syncOrganizationSeats", organizationId: "org_1" });
+  });
+
+  it("leaves an Organization alone when its seats already match", async () => {
+    listSubscriptionsByStatusMock.mockResolvedValueOnce({
+      subscriptions: [subscription({
+        id: "sub_org",
+        product_id: ORGANIZATION,
+        seats: 2,
+        customer: { id: "cus_org", external_id: "org:org_1" },
+      })],
+      lastPage: true,
+    });
+
+    await reconcileSubscriptions(db, env);
+    expect(runSeriallyMock).not.toHaveBeenCalled();
+  });
+
+  it("finishes the pass and then reports what failed", async () => {
+    await seedSubscription(db, { userId: "ada" }, { id: "sub_a" });
+    await seedSubscription(db, { userId: "bob" }, { id: "sub_b" });
+    listSubscriptionsByStatusMock.mockResolvedValueOnce({ subscriptions: [], lastPage: true });
+    getSubscriptionMock
+      .mockRejectedValueOnce(new Error("Polar unavailable"))
+      .mockResolvedValueOnce(subscription({ id: "sub_b", status: "canceled", customer: { id: "c", external_id: "user:bob" } }));
+
+    await expect(reconcileSubscriptions(db, env)).rejects.toBeInstanceOf(AggregateError);
+    expect(getSubscriptionMock).toHaveBeenCalledTimes(2);
   });
 });

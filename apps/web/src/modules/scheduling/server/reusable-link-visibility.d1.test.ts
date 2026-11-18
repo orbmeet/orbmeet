@@ -47,7 +47,6 @@ async function seedOwner() {
     email: OWNER_EMAIL,
     normalizedEmail: OWNER_EMAIL,
     image: null,
-    plan: "free",
     role: "user",
     createdAt: NOW,
     updatedAt: NOW,

@@ -9,7 +9,8 @@ import type { AuthenticatedUser } from "@/modules/identity/contract/auth/session
 
 import { hashSessionToken } from "@/platform/crypto/tokens.server";
 import { logWarn } from "@/lib/logger";
-import { hasManagedPaddleSubscription } from "@/modules/billing/contract/subscription";
+import { userBillingSelection } from "@/modules/billing/server/entitlements.server";
+import { sanitizeUser } from "@/modules/identity/server/session";
 import { timingSafeEqual } from "@orbmeet/primitives";
 
 export type { PersonalAccessTokenScope };
@@ -58,7 +59,7 @@ export async function authenticateAutomationToken(
   const tokenId = tokenIdFromRaw(rawToken);
   if (!tokenId) throw Errors.UNAUTHORIZED();
   const row = await db
-    .select({ token: personalAccessTokens, user: users })
+    .select({ token: personalAccessTokens, user: users, billing: userBillingSelection(users.id) })
     .from(personalAccessTokens)
     .innerJoin(users, eq(users.id, personalAccessTokens.userId))
     .where(
@@ -94,21 +95,6 @@ export async function authenticateAutomationToken(
   return {
     tokenId: row.token.id,
     scopes: row.token.scopes,
-    user: {
-      id: row.user.id,
-      name: row.user.name,
-      email: row.user.email,
-      image: row.user.image,
-      timeZone: row.user.timeZone,
-      transcribeMeetings: row.user.transcribeMeetings,
-      appearance: row.user.appearance,
-      plan: row.user.plan,
-      role: row.user.role,
-      subscriptionStatus: row.user.subscriptionStatus,
-      hasManagedSubscription: hasManagedPaddleSubscription({
-        subscriptionId: row.user.paddleSubscriptionId,
-        subscriptionStatus: row.user.subscriptionStatus,
-      }),
-    },
+    user: sanitizeUser(row.user, row.billing),
   };
 }

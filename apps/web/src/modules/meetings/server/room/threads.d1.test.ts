@@ -14,6 +14,7 @@ import { and, eq } from "drizzle-orm";
 import { createTestDb } from "@/test/db";
 import { seedPersonalSpace } from "@/test/fixtures";
 import {selectMyThreads} from "@/modules/meetings/server/room/threads.server";
+import { seedSubscription } from "@/test/billing";
 
 let db: Database;
 
@@ -41,11 +42,11 @@ async function insertUser(id: string, plan: "free" | "pro" = "pro") {
     name: id,
     email: `${id}@example.com`,
     normalizedEmail: `${id}@example.com`,
-    plan,
     role: "user",
     createdAt: hoursAgo(100),
     updatedAt: hoursAgo(100),
   });
+  if (plan === "pro") await seedSubscription(db, { userId: id });
   await seedPersonalSpace(db, id, { now: hoursAgo(100) });
 }
 

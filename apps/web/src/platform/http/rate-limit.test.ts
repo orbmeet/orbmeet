@@ -64,17 +64,17 @@ describe("enforceRateLimit", () => {
 describe("webhook rate limiting", () => {
   it("uses independent provider bindings", async () => {
     const livekitLimit = vi.fn().mockResolvedValue({ success: true });
-    const paddleLimit = vi.fn().mockResolvedValue({ success: true });
+    const billingLimit = vi.fn().mockResolvedValue({ success: true });
     const env = createEnv({
       LIVEKIT_WEBHOOK_RATE_LIMITER: { limit: livekitLimit },
-      PADDLE_WEBHOOK_RATE_LIMITER: { limit: paddleLimit },
+      BILLING_WEBHOOK_RATE_LIMITER: { limit: billingLimit },
     });
 
     await enforceWebhookPreAuthRateLimit(env, "livekit");
-    await enforceWebhookPreAuthRateLimit(env, "paddle");
+    await enforceWebhookPreAuthRateLimit(env, "polar");
 
     expect(livekitLimit).toHaveBeenCalledOnce();
-    expect(paddleLimit).toHaveBeenCalledOnce();
+    expect(billingLimit).toHaveBeenCalledOnce();
   });
 
   it("distinguishes exhausted capacity from unavailable limiter infrastructure", () => {

@@ -258,7 +258,7 @@ export async function joinViaInviteImpl({
   if (inviteSpace.organizationId) {
     if (!(await hasOrganizationLicense(db, inviteSpace.organizationId, user.id))) {
       throw Errors.FORBIDDEN(
-        "Ask an Organization administrator to assign you a license before joining this Space.",
+        "Ask an Organization administrator to add you to the Organization before joining this Space.",
       );
     }
   }

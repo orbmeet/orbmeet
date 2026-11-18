@@ -63,7 +63,6 @@ beforeEach(async () => {
     name: "Owner",
     email: "owner@example.com",
     normalizedEmail: "owner@example.com",
-    plan: "free",
     role: "user",
     createdAt: base,
     updatedAt: base,

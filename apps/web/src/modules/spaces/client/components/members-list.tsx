@@ -211,7 +211,7 @@ export function MembersList({
         or being removed, a signed-in person keeps only the past Meetings they
         actually joined.
         {isOrganizationSpace
-          ? " Organization-funded Spaces can add only people with an Organization license."
+          ? " Organization-funded Spaces can add only members of the Organization."
           : ""}
       </p>
       {error && (
@@ -302,7 +302,7 @@ function SpaceInvitationUrl({
           <p {...stylex.props(styles.panelTitle)}>Invite link</p>
           <p {...stylex.props(styles.panelNote)}>
             {isOrganizationSpace
-              ? "Grants lasting membership to a licensed Organization user · valid until replaced"
+              ? "Grants lasting membership to a member of the Organization · valid until replaced"
               : "Grants lasting membership: members can enter Space Meetings and edit Space Whiteboards · valid until replaced"}
             {!invitationPath && !inviteQuery.isPending ? " · No link yet: reset to create one" : ""}
           </p>

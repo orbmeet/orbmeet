@@ -18,7 +18,6 @@ async function seedMeeting(db: Database, baseTime: Date) {
     email: "host@example.com",
     normalizedEmail: "host@example.com",
     image: null,
-    plan: "free",
     role: "user",
     createdAt: baseTime,
     updatedAt: baseTime,

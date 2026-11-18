@@ -2,18 +2,17 @@ import { describe, expect, it } from "vitest";
 import { scopeOf, type SerialTask } from "./tasks";
 
 describe("scopeOf", () => {
-  it("queues every change to one Organization's seats together", () => {
+  it("queues every change to one Organization's seats, and its checkout, together", () => {
     const scopes = new Set([
       scopeOf({ kind: "addOrganizationMember", organizationId: "org_1", actorUserId: "u", email: "e", role: "member" }),
       scopeOf({ kind: "removeOrganizationMember", organizationId: "org_1", actorUserId: "u", memberUserId: "m" }),
+      scopeOf({ kind: "syncOrganizationSeats", organizationId: "org_1" }),
       scopeOf({
-        kind: "transferOrganizationOwnership",
-        organizationId: "org_1",
-        currentOwnerUserId: "u",
-        newOwnerUserId: "n",
-        acceptedAt: 0,
+        kind: "prepareCheckout",
+        customer: { kind: "organization", organizationId: "org_1" },
+        actorUserId: "u",
+        customerIpAddress: null,
       }),
-      scopeOf({ kind: "reconcileOrganizationOwner", organizationId: "org_1", userId: "u", subscriptionId: "s", now: 0 }),
     ]);
     expect([...scopes]).toEqual(["organization:org_1"]);
   });
@@ -35,7 +34,12 @@ describe("scopeOf", () => {
   it("keeps different things in different queues", () => {
     expect(scopeOf({ kind: "archiveWhiteboard", whiteboardId: "wb_1", actorUserId: "u" }))
       .not.toBe(scopeOf({ kind: "archiveWhiteboard", whiteboardId: "wb_2", actorUserId: "u" }));
-    expect(scopeOf({ kind: "preparePaddleCheckout", userId: "org_1", plan: "pro" }))
+    expect(scopeOf({
+      kind: "prepareCheckout",
+      customer: { kind: "user", userId: "org_1" },
+      actorUserId: "org_1",
+      customerIpAddress: null,
+    }))
       .not.toBe(scopeOf({ kind: "removeOrganizationMember", organizationId: "org_1", actorUserId: "u", memberUserId: "m" }));
   });
 });

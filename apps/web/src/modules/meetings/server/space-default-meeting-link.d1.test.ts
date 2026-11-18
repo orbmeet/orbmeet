@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { meetingLinks, meetings, organizations, spaceMembers, spaces, users } from "@orbmeet/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
 import {ensureSpaceDefaultMeetingLink, replaceSpaceMeetingLinkCode} from "@/modules/meetings/server/space-default-meeting-link.server";
+import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
 const appDb = () => db;
@@ -11,7 +12,7 @@ beforeEach(async () => {
   db = await createTestDb();
 });
 
-async function insertUser(id: string, plan: "free" | "pro" | "organization" = "free") {
+async function insertUser(id: string, plan: "free" | "pro" = "free") {
   const now = new Date();
   await db.insert(users).values({
     id,
@@ -19,11 +20,11 @@ async function insertUser(id: string, plan: "free" | "pro" | "organization" = "f
     email: `${id}@example.com`,
     normalizedEmail: `${id}@example.com`,
     image: null,
-    plan,
     role: "user",
     createdAt: now,
     updatedAt: now,
   });
+  if (plan === "pro") await seedSubscription(db, { userId: id });
 }
 
 async function insertSpace(id = "space_1", ownerId = "owner") {
@@ -152,16 +153,16 @@ describe("space default meeting links", () => {
 
   it("uses a direct Space admin for a missing organization default link", async () => {
     const now = new Date();
-    await insertUser("org_owner", "organization");
+    await insertUser("org_owner");
     await insertUser("teacher", "free");
     await db.insert(organizations).values({
       id: "org_1",
       name: "University",
       ownerId: "org_owner",
-      plan: "organization",
       createdAt: now,
       updatedAt: now,
     });
+    await seedSubscription(db, { organizationId: "org_1", seats: 25 });
     await db.insert(spaces).values({
       kind: "shared",
       id: "space_org",

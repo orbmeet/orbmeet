@@ -47,7 +47,7 @@ beforeEach(async () => {
 async function registerUser(email = "person@gmail.com") {
   await db.insert(users).values({
     id: "existing_user", name: "Existing Person", email, normalizedEmail: email,
-    plan: "free", role: "user", createdAt: new Date(), updatedAt: new Date(),
+    role: "user", createdAt: new Date(), updatedAt: new Date(),
   });
 }
 

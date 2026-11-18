@@ -92,7 +92,6 @@ async function seedMeetings(
     name: `Host ${id}`,
     email: `host-${id}@example.com`,
     normalizedEmail: `host-${id}@example.com`,
-    plan: "free" as const,
     role: "user" as const,
     createdAt: now,
     updatedAt: now,

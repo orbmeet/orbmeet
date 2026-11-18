@@ -130,11 +130,11 @@ export function TermsPage() {
                 <strong>Pro ($5/user/month)</strong> — A customizable personal meeting link, unlimited Spaces with up to 200 members each, up to 500 participants per Meeting, unlimited Meeting duration, and 50 GB cloud storage.
               </li>
               <li>
-                <strong>Organization ($10/license/month)</strong> — Up to 25 licensed users, shared billing, Organization roles, centrally funded Spaces, unlimited participants, unlimited Meeting duration, and unlimited cloud storage. A license permits assignment to Organization-funded Spaces; direct Space membership still controls content access.
+                <strong>Organization ($10/member/month)</strong> — Billed per member of the Organization, with no limit on members; shared billing, Organization roles, centrally funded Spaces, unlimited participants, unlimited Meeting duration, and unlimited cloud storage. Organization membership permits assignment to Organization-funded Spaces; direct Space membership still controls content access.
               </li>
             </ul>
             <p {...stylex.props(styles.para)}>
-              Paid subscriptions are billed on a recurring monthly basis through our payment processor, Paddle. By subscribing to a paid plan, you authorize recurring charges to your chosen payment method. You may cancel your subscription at any time; cancellation takes effect at the end of the current billing cycle. Refunds are handled in accordance with our refund policy and Paddle&apos;s terms. We reserve the right to modify pricing with at least 30 days&apos; prior notice.
+              Paid subscriptions are billed on a recurring monthly basis through Polar, our payment processor and merchant of record. Prices are listed here in US dollars; where Orb Meet offers a price in your local currency, checkout charges that price instead, and applicable taxes are shown and may be added at checkout. By subscribing to a paid plan, you authorize recurring charges to your chosen payment method. You may cancel your subscription at any time; cancellation takes effect at the end of the current billing cycle. Refunds are handled in accordance with our refund policy and Polar&apos;s terms. We reserve the right to modify pricing with at least 30 days&apos; prior notice.
             </p>
           </section>
 

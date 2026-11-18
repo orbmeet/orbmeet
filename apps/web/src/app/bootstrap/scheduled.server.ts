@@ -3,7 +3,7 @@ import { createDb } from "@orbmeet/db";
 import { settleAllOrThrow, settleSequentiallyOrThrow } from "@/lib/settle-all-or-throw";
 import { cleanupFileOperations } from "@/modules/assets/server/file-maintenance";
 import { cleanupQueuedR2Objects } from "@/modules/assets/server/r2-cleanup.server";
-import { runPaddleSubscriptionReconciliation } from "@/modules/billing/server/reconciliation.server";
+import { runSubscriptionReconciliation } from "@/modules/billing/server/reconciliation.server";
 import { runAuthenticationMaintenance } from "@/modules/identity/server/maintenance.server";
 import { sweepQuietMeetings } from "@/modules/meetings/server/runtime/sweep.server";
 import { registerUnregisteredRecordings } from "@/modules/meetings/server/media/recordings.server";
@@ -70,8 +70,8 @@ function tasksFor(cron: string, env: Env, now: Date): Task[] {
           run: () => resumeStrandedSpacePurges(createDb(env.DB), env, now),
         },
         {
-          label: "Paddle subscription reconciliation",
-          run: () => runPaddleSubscriptionReconciliation(env, now),
+          label: "Billing subscription reconciliation",
+          run: () => runSubscriptionReconciliation(env),
         },
         {
           label: "webhook receipt cleanup",

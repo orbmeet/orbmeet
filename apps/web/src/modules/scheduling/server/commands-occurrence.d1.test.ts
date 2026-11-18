@@ -158,7 +158,6 @@ describe("Scheduled meeting commands: the occurrence and canceling", () => {
       email: "space-member@example.com",
       normalizedEmail: "space-member@example.com",
       image: null,
-      plan: "free" as const,
       role: "user" as const,
       createdAt: runtimeNow,
       updatedAt: runtimeNow,

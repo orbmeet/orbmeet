@@ -14,6 +14,7 @@ import {
   resolveOwnedContactSeeds,
   searchAutomationTargets,
 } from "@/modules/contacts/server/contact-index";
+import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
 const createdAt = new Date("2026-07-14T08:00:00.000Z");
@@ -25,11 +26,11 @@ async function insertUser(id: string, name: string, email: string) {
     email,
     normalizedEmail: email.toLowerCase(),
     image: null,
-    plan: "pro",
     role: "user",
     createdAt,
     updatedAt: createdAt,
   });
+  await seedSubscription(db, { userId: id });
 }
 
 const organizer = { id: "usr_owner", email: "atiq@example.com" };

@@ -1,72 +1,44 @@
-import type { PaidSubscriptionTier } from "../contract/types";
-import { openPaddleCheckout } from "./paddle-checkout";
 import { isRecord } from "@orbmeet/primitives";
+import type { CheckoutRequest, PortalRequest } from "../contract/requests";
 
-interface CheckoutResponse {
-  transactionId: string;
+function responseUrl(value: unknown): string | null {
+  return isRecord(value) && typeof value.url === "string" ? value.url : null;
 }
 
-interface PortalResponse {
-  url: string;
-}
-
-function isCheckoutResponse(value: unknown): value is CheckoutResponse {
-  return (
-    isRecord(value)
-    && typeof value.transactionId === "string"
-  );
-}
-
-function isPortalResponse(value: unknown): value is PortalResponse {
-  return isRecord(value) && typeof value.url === "string";
-}
-
-export async function startSubscriptionCheckout(
-  plan: PaidSubscriptionTier,
-): Promise<void> {
+/**
+ * Send the browser to Polar's hosted checkout: Pro for the signed-in person,
+ * or the Organization plan for an Organization they own. It returns to
+ * Settings, where BillingCheckoutSync waits for the subscription to land. A
+ * customer who already has a running subscription is sent to the portal.
+ */
+export async function startSubscriptionCheckout(request: CheckoutRequest): Promise<void> {
   const response = await fetch("/api/billing/checkout", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ plan }),
+    body: JSON.stringify(request),
   });
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null);
-    if (
-      response.status === 409 &&
-      isRecord(body) &&
-      body.error === "SUBSCRIPTION_EXISTS"
-    ) {
-      await openBillingPortal();
+    if (response.status === 409 && isRecord(body) && body.error === "SUBSCRIPTION_EXISTS") {
+      await openBillingPortal(request.plan === "organization" ? { organizationId: request.organizationId } : {});
       return;
     }
-    if (
-      response.status === 409 &&
-      isRecord(body) &&
-      body.error === "CHECKOUT_PENDING"
-    ) {
-      throw new Error("Your checkout is still being processed. Please try again in a moment.");
-    }
-    throw new Error(
-      isRecord(body) && typeof body.error === "string"
-        ? body.error
-        : "Could not start checkout",
-    );
+    throw new Error(isRecord(body) && typeof body.error === "string" ? body.error : "Could not start checkout");
   }
-
-  const checkout: unknown = await response.json();
-  if (!isCheckoutResponse(checkout)) {
-    throw new Error("Checkout response was missing required Paddle fields");
-  }
-  await openPaddleCheckout(checkout);
+  const url = responseUrl(await response.json());
+  if (!url) throw new Error("Checkout response was missing a URL");
+  window.location.assign(url);
 }
 
-export async function openBillingPortal(): Promise<void> {
-  const response = await fetch("/api/billing/portal", { method: "POST" });
+/** Open Polar's billing portal for the signed-in person, or an Organization they own. */
+export async function openBillingPortal(request: PortalRequest = {}): Promise<void> {
+  const response = await fetch("/api/billing/portal", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
   if (!response.ok) throw new Error(await response.text());
-
-  const portal: unknown = await response.json();
-  if (!isPortalResponse(portal)) {
-    throw new Error("Billing portal response was missing a URL");
-  }
-  window.location.href = portal.url;
+  const url = responseUrl(await response.json());
+  if (!url) throw new Error("Billing portal response was missing a URL");
+  window.location.assign(url);
 }

@@ -5,13 +5,10 @@ import {
   MAX_PASSKEY_CREDENTIAL_ID_LENGTH,
   PASSKEY_DEVICE_TYPES as PASSKEY_DEVICE_TYPE_VALUES,
   PERSONAL_ACCESS_TOKEN_SCOPES as PERSONAL_ACCESS_TOKEN_SCOPE_VALUES,
-  SUBSCRIPTION_STATUSES as SUBSCRIPTION_STATUS_VALUES,
-  SUBSCRIPTION_TIERS as SUBSCRIPTION_TIER_VALUES,
   USER_ROLES as USER_ROLE_VALUES,
   VERIFICATION_TYPES as VERIFICATION_TYPE_VALUES,
 } from "@orbmeet/domain-model";
 import {
-  billingEventTimestamp,
   JSON_TEXT_MAX_LENGTH,
   oneOf,
   optionalExactTextLength,
@@ -37,13 +34,6 @@ export const users = sqliteTable(
     // yet; clients may suggest their current device zone, but must not persist
     // or silently change it on the user's behalf.
     timeZone: text("time_zone"),
-    plan: text("plan", { enum: SUBSCRIPTION_TIER_VALUES })
-      .default("free")
-      .notNull(),
-    paddleCustomerId: text("paddle_customer_id"),
-    paddleSubscriptionId: text("paddle_subscription_id"),
-    subscriptionStatus: text("subscription_status", { enum: SUBSCRIPTION_STATUS_VALUES }),
-    subscriptionUpdatedAt: billingEventTimestamp("subscription_updated_at"),
     // Set before account erasure begins. Ownership-creating statements check
     // this in the same write that assigns a restrict-FK, closing the race
     // between deletion preflight and destructive cleanup.
@@ -57,9 +47,7 @@ export const users = sqliteTable(
     transcribeMeetings: integer("transcribe_meetings", { mode: "boolean" }).default(true).notNull(),
     // Light, dark, or the device's own setting. Kept on the account so it
     // follows the person to another device; each browser also keeps a copy in
-    // a cookie, which is what the first paint reads. No CHECK: SQLite can add
-    // one only by rebuilding the table, and on D1 that rebuild's DROP TABLE
-    // cascades into every table referencing a user. The one writer validates.
+    // a cookie, which is what the first paint reads.
     appearance: text("appearance", { enum: APPEARANCE_VALUES }).default("system").notNull(),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
@@ -75,14 +63,8 @@ export const users = sqliteTable(
     check("users_normalized_email_length_check", sql`length(${table.normalizedEmail}) <= 320`),
     check("users_image_length_check", optionalTextLength(table.image, 2048)),
     check("users_updated_after_created_check", sql`${table.updatedAt} >= ${table.createdAt}`),
-    check("users_plan_check", oneOf(table.plan, SUBSCRIPTION_TIER_VALUES)),
-    check(
-      "users_subscription_status_check",
-      sql`${table.subscriptionStatus} IS NULL OR ${oneOf(table.subscriptionStatus, SUBSCRIPTION_STATUS_VALUES)}`,
-    ),
     check("users_role_check", oneOf(table.role, USER_ROLE_VALUES)),
-    uniqueIndex("users_paddle_customer_id_idx").on(table.paddleCustomerId),
-    uniqueIndex("users_paddle_subscription_id_idx").on(table.paddleSubscriptionId),
+    check("users_appearance_check", oneOf(table.appearance, APPEARANCE_VALUES)),
   ],
 );
 

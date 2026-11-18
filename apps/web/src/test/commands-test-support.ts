@@ -10,6 +10,7 @@ import { createTestDb, type TestDb } from "@/test/db";
 import { listMeetingSchedulesPageForUser } from "@/modules/scheduling/server/queries.server";
 
 import { createMeetingScheduleRecord } from "@/modules/scheduling/server/commands";
+import { seedSubscription } from "@/test/billing";
 
 export const now = new Date("2026-07-14T09:00:00.000Z");
 
@@ -38,7 +39,6 @@ export async function seedScheduleUsers(): Promise<TestDb> {
       email: organizer.email,
       normalizedEmail: organizer.email,
       image: null,
-      plan: organizer.plan,
       role: organizer.role,
       createdAt,
       updatedAt: createdAt,
@@ -49,12 +49,12 @@ export async function seedScheduleUsers(): Promise<TestDb> {
       email: "Maruf@Example.com",
       normalizedEmail: "maruf@example.com",
       image: null,
-      plan: "free",
       role: "user",
       createdAt,
       updatedAt: createdAt,
     },
   ]);
+  await seedSubscription(db, { userId: organizer.id });
   return db;
 }
 

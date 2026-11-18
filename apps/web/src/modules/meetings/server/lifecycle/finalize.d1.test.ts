@@ -27,7 +27,6 @@ async function insertUser(id: string) {
     email: `${id}@example.com`,
     normalizedEmail: `${id}@example.com`,
     image: null,
-    plan: "free",
     role: "user",
     createdAt: now,
     updatedAt: now,

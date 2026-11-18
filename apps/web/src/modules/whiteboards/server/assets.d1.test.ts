@@ -24,6 +24,7 @@ import {
   retireWhiteboardAssets,
 } from "./assets";
 import { cleanupWhiteboardAssetOperations } from "./asset-maintenance";
+import { seedSubscription } from "@/test/billing";
 
 /** Minimal R2 stand-in: only the keys listed here have objects behind them. */
 function createEnvWithObjects(sizeByKey: Record<string, number>): Env {
@@ -50,11 +51,11 @@ beforeEach(async () => {
     name: "Host",
     email: "host@example.com",
     normalizedEmail: "host@example.com",
-    plan: "pro",
     role: "user",
     createdAt: now,
     updatedAt: now,
   });
+  await seedSubscription(db, { userId: "host" });
   await seedPersonalSpace(getAppDb(), "host", { now });
   await db.insert(whiteboards).values({
     id: "whiteboard_1",

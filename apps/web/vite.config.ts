@@ -9,7 +9,7 @@ import { privateAddonPlugins } from "./build/private-addon.ts";
 
 import stylex from "@stylexjs/unplugin";
 import { cloudflare } from "@cloudflare/vite-plugin";
-import { publicDocumentPaths } from "./src/lib/public-routes.ts";
+import { prerenderedDocumentPaths } from "./src/lib/public-routes.ts";
 import { workerModuleGuard } from "./build/vite-plugins/worker-module-guard.ts";
 import { finalizeBuildArtifacts } from "./build/vite-plugins/finalize-build-artifacts.ts";
 import { staticAssetHeaders } from "./build/vite-plugins/static-asset-headers.ts";
@@ -27,7 +27,6 @@ export default defineConfig(async ({ command, mode }) => {
     devVarsUrl: new URL(e2e ? "./.dev.vars.e2e" : "./.dev.vars", import.meta.url),
     useDevVars,
   };
-  const paddleClientToken = readClientVar("VITE_PADDLE_CLIENT_TOKEN", undefined, clientVarOptions) ?? "";
   const tldrawLicenseKey = readClientVar("VITE_TLDRAW_LICENSE_KEY", undefined, clientVarOptions) ?? "";
 
   return {
@@ -36,7 +35,6 @@ export default defineConfig(async ({ command, mode }) => {
       // built-in import.meta.env.DEV differs between those transforms while
       // Start renders its React-owned document shell.
       __STYLEX_DEV__: JSON.stringify(command === "serve"),
-      "import.meta.env.VITE_PADDLE_CLIENT_TOKEN": JSON.stringify(paddleClientToken),
       "import.meta.env.VITE_TLDRAW_LICENSE_KEY": JSON.stringify(tldrawLicenseKey),
       // Dev-only opt-in so the production intent-preload path can be exercised
       // locally: `ROUTER_PRELOAD=intent pnpm dev`. See src/router.tsx.
@@ -107,10 +105,10 @@ export default defineConfig(async ({ command, mode }) => {
           enabled: true,
           host: "https://orbmeet.com",
         },
-        // Exactly the public pages (src/lib/public-routes.ts). Start would
+        // Exactly the prerendered public pages (src/lib/public-routes.ts). Start would
         // otherwise discover every static route, including private ones such as
         // /auth, and publish them as static Assets in place of a rendering.
-        pages: publicDocumentPaths().map((path) => ({ path })),
+        pages: prerenderedDocumentPaths().map((path) => ({ path })),
         prerender: {
           enabled: true,
           crawlLinks: false,

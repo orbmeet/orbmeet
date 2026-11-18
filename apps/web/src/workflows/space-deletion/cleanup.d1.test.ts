@@ -23,6 +23,7 @@ import {
 } from "./cleanup.server";
 import { requestSpaceDeletion } from "@/modules/spaces/server/deletion.server";
 import { immediateJobStep } from "@/test/jobs";
+import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
 const appDb = () => db;
@@ -42,7 +43,6 @@ async function seedSpace() {
     name: "Owner",
     email: "owner@example.com",
     normalizedEmail: "owner@example.com",
-    plan: "free",
     role: "user",
     createdAt: now,
     updatedAt: now,
@@ -87,7 +87,6 @@ async function seedOrganizationSpace() {
       name: "Org Owner",
       email: "org-owner@example.com",
       normalizedEmail: "org-owner@example.com",
-      plan: "organization",
       role: "user",
       createdAt: now,
       updatedAt: now,
@@ -97,7 +96,6 @@ async function seedOrganizationSpace() {
       name: "Org Admin",
       email: "org-admin@example.com",
       normalizedEmail: "org-admin@example.com",
-      plan: "free",
       role: "user",
       createdAt: now,
       updatedAt: now,
@@ -107,7 +105,6 @@ async function seedOrganizationSpace() {
       name: "Org Member",
       email: "org-member@example.com",
       normalizedEmail: "org-member@example.com",
-      plan: "free",
       role: "user",
       createdAt: now,
       updatedAt: now,
@@ -117,7 +114,6 @@ async function seedOrganizationSpace() {
       name: "Teacher",
       email: "teacher@example.com",
       normalizedEmail: "teacher@example.com",
-      plan: "free",
       role: "user",
       createdAt: now,
       updatedAt: now,
@@ -127,10 +123,10 @@ async function seedOrganizationSpace() {
     id: "org_1",
     name: "University",
     ownerId: "org_owner",
-    plan: "organization",
     createdAt: now,
     updatedAt: now,
   });
+  await seedSubscription(db, { organizationId: "org_1", seats: 25 });
   await db.insert(organizationMembers).values([
     {
       id: "org_admin_membership",

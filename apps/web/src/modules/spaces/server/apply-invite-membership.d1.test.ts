@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { organizationMembers, organizations, spaces, spaceInvites, spaceMembers, users } from "@orbmeet/db/schema";
-import { eq } from "drizzle-orm";
 import { PLAN_LIMITS } from "@/modules/billing/contract/plan-limits";
 import { createTestDb, type TestDb } from "@/test/db";
 import {applyInviteMembership, replaceSpaceInviteRecord} from "@/modules/spaces/server/invites.server";
+import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
 const appDb = () => db;
@@ -19,7 +19,6 @@ async function insertUser(id: string) {
     name: id,
     email: `${id}@example.com`,
     normalizedEmail: `${id}@example.com`,
-    plan: "free",
     role: "user",
     createdAt: now,
     updatedAt: now,
@@ -118,7 +117,7 @@ describe("applyInviteMembership", () => {
     // Full on the owner's Free plan; the cap is read from the plan as the
     // write runs, so an upgrade between attempts makes room at once.
     await expect(join()).resolves.toBe(false);
-    await db.update(users).set({ plan: "pro" }).where(eq(users.id, "owner"));
+    await seedSubscription(db, { userId: "owner" });
     await expect(join()).resolves.toBe(true);
   });
 
@@ -130,11 +129,10 @@ describe("applyInviteMembership", () => {
       id: "org_1",
       name: "Acme",
       ownerId: "owner",
-      plan: "organization",
-      licenseLimit: 25,
       createdAt: now,
       updatedAt: now,
     });
+    await seedSubscription(db, { organizationId: "org_1", seats: 25 });
     await db.insert(spaces).values({
       kind: "shared",
       id: "spc_1",

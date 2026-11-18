@@ -12,6 +12,8 @@ import { preloadMeetingRoute } from "@/modules/meetings/client/preload-route";
 import { EXAMPLE_MEETING_CODE, MEETING_CODE_REGEX } from "@/modules/meetings/contract/constants";
 import { createMeetingLink } from "@/modules/meetings/server/lifecycle/create.functions";
 import { sessionQueryOptions } from "@/app/query-client/queries/session";
+import { planPricesQueryOptions } from "@/app/query-client/queries/plan-prices";
+import { DEFAULT_PLAN_PRICES, formatPlanPrice } from "@/modules/billing/contract/plan-prices";
 import { MAIN_CONTENT_ID, SkipLink } from "@/app/shell/skip-link";
 import { BrandMark, Spinner } from "@orbmeet/ui/react";
 import { focus, layout, motion, pressable, touch } from "@orbmeet/ui/styles/atoms";
@@ -49,9 +51,9 @@ const FOOTER_LINKS = [
 ] as const;
 
 const PLANS = [
-  { name: "Free", price: "$0", detail: "100 people, up to 1 h 30 min. The board, notes and Orb included." },
-  { name: "Pro", price: "$5", detail: "Per user a month. 500 people, no time limit, cloud recording." },
-  { name: "Organization", price: "$10", detail: "Per licensed user a month. Unlimited people and storage, shared billing." },
+  { id: "free", name: "Free", detail: "100 people, up to 1 h 30 min. The board, notes and Orb included." },
+  { id: "pro", name: "Pro", detail: "A month, just for you. 500 people, no time limit, cloud recording." },
+  { id: "organization", name: "Organization", detail: "Per member a month. Unlimited people and storage, shared billing." },
 ] as const;
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
@@ -248,6 +250,14 @@ function JoinWithCode({ onIntent, onError }: { onIntent: () => void; onError: (m
 }
 
 function LandingPlans() {
+  // The visitor's checkout currency once known; USD until then.
+  const { data: prices = DEFAULT_PLAN_PRICES } = useQuery(planPricesQueryOptions());
+  const priceOf = (id: (typeof PLANS)[number]["id"]) =>
+    id === "pro"
+      ? formatPlanPrice(prices.pro)
+      : id === "organization"
+        ? formatPlanPrice(prices.organizationSeat)
+        : formatPlanPrice({ currency: prices.pro.currency, amount: 0 });
   return (
     <section aria-labelledby="plans-title" {...stylex.props(styles.wrap, styles.plans)}>
       <h2 id="plans-title" {...stylex.props(styles.plansTitle)}>Start free. Pay when you grow.</h2>
@@ -255,7 +265,7 @@ function LandingPlans() {
         {PLANS.map((plan) => (
           <div key={plan.name} {...stylex.props(styles.tier)}>
             <span {...stylex.props(styles.tierName)}>{plan.name}</span>
-            <strong {...stylex.props(styles.tierPrice)}>{plan.price}</strong>
+            <strong {...stylex.props(styles.tierPrice)}>{priceOf(plan.id)}</strong>
             <p {...stylex.props(styles.tierDetail)}>{plan.detail}</p>
           </div>
         ))}

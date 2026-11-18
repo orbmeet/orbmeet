@@ -22,6 +22,7 @@ vi.mock("@/platform/email/delivery", () => ({
 }));
 
 import { runMeetingScheduleNotificationMaintenance } from "./notifications.server";
+import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
 
@@ -57,11 +58,11 @@ beforeEach(async () => {
     email: organizer.email,
     normalizedEmail: organizer.email,
     image: null,
-    plan: organizer.plan,
     role: organizer.role,
     createdAt: now,
     updatedAt: now,
   });
+  await seedSubscription(db, { userId: organizer.id });
 });
 
 const emailBinding = { send: async () => ({ messageId: "msg_test" }) };

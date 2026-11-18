@@ -365,16 +365,17 @@ export function PrivacyPage() {
                 .
               </li>
               <li>
-                <strong>Paddle</strong> — Handles subscription billing
-                and payment processing. We do not store your credit card
-                information directly; it is managed by Paddle. See{" "}
+                <strong>Polar</strong> — Handles subscription billing
+                and payment processing as our merchant of record. We do not
+                store your credit card information directly; it is managed
+                by Polar. See{" "}
                 <a
-                  href="https://www.paddle.com/legal/privacy"
+                  href="https://polar.sh/legal/privacy"
                   target="_blank"
                   rel="noopener noreferrer"
                   {...stylex.props(styles.link)}
                 >
-                  Paddle&apos;s Privacy Policy
+                  Polar&apos;s Privacy Policy
                 </a>
                 .
               </li>

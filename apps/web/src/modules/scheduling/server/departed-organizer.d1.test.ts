@@ -23,7 +23,6 @@ async function seedUser(id: string) {
     name: id,
     email: `${id}@example.com`,
     normalizedEmail: `${id}@example.com`,
-    plan: "free",
     role: "user",
     createdAt: now,
     updatedAt: now,

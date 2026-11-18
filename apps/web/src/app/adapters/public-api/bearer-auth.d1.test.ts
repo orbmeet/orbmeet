@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { hashSessionToken } from "@/platform/crypto/tokens.server";
 import { createTestDb, type TestDb } from "@/test/db";
 import { authenticateAutomationToken, tokenIdFromRaw } from "./bearer-auth";
+import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
 const now = new Date("2026-07-14T09:00:00.000Z");
@@ -20,11 +21,11 @@ beforeEach(async () => {
     normalizedEmail: "api@example.com",
     image: null,
     timeZone: "Asia/Dhaka",
-    plan: "pro",
     role: "user",
     createdAt: now,
     updatedAt: now,
   });
+  await seedSubscription(db, { userId: "usr_api" });
   await db.insert(personalAccessTokens).values({
     id: tokenId,
     userId: "usr_api",

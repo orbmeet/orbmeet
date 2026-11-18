@@ -1,14 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { handlePaddleWebhookRequest } from "@/modules/billing/server/paddle-webhook.server";
+import { handleBillingWebhookRequest } from "@/modules/billing/server/webhook.server";
 
 /**
- * Paddle webhook receiver. Signature verification, dedup receipts, and the
- * subscription projection live in the billing module.
+ * Polar webhook receiver. Signature verification, dedup receipts, and storing
+ * the subscription live in the billing module.
  */
 export const Route = createFileRoute("/api/billing/webhook")({
   server: {
     handlers: {
-      POST: ({ request }) => handlePaddleWebhookRequest(request),
+      POST: ({ request }) => handleBillingWebhookRequest(request),
     },
   },
 });

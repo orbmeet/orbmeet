@@ -49,6 +49,8 @@ const styles = stylex.create({
   alignToField: { paddingTop: { default: 0, [bp.sm]: space.s7 } },
   planMeta: { paddingBottom: space.s2 },
   planMetaText: { fontSize: text.sm, lineHeight: leading.sm, color: ink.muted },
+  billing: { alignItems: "center", flexWrap: "wrap" },
+  statusBadge: { textTransform: "capitalize" },
   licenceNote: {
     margin: 0,
     fontSize: text.xs,
@@ -107,7 +109,11 @@ const styles = stylex.create({
 import { Link } from "@tanstack/react-router";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { OrganizationRole } from "@/modules/organizations/contract/roles";
-import type { SubscriptionTier } from "@/modules/billing/contract/plan-limits";
+import { openBillingPortal, startSubscriptionCheckout } from "@/modules/billing/client/billing-client";
+import { isPaymentFailing, PaymentFailedNotice } from "@/modules/billing/client/payment-failed-notice";
+import { planPricesQueryOptions } from "@/app/query-client/queries/plan-prices";
+import { DEFAULT_PLAN_PRICES, formatPlanPrice } from "@/modules/billing/contract/plan-prices";
+import type { SubscriptionStatus } from "@/modules/billing/contract/types";
 import { Button } from "@orbmeet/ui/react";
 import { Input } from "@orbmeet/ui/react";
 import { Select } from "@orbmeet/ui/react";
@@ -136,10 +142,79 @@ import {
 function roleLabel(role: OrganizationRole): string {
   if (role === "owner") return "Organization owner";
   if (role === "admin") return "Organization admin";
-  return "Licensed user";
+  return "Organization member";
 }
 
-export function OrganizationSection({ plan }: { plan: SubscriptionTier }) {
+interface OrganizationBillingSummary {
+  plan: "organization" | "free";
+  subscriptionStatus: SubscriptionStatus;
+  seats: number | null;
+  cancelAtPeriodEnd: boolean | null;
+}
+
+/**
+ * The Organization's own subscription: its owner subscribes, or manages a
+ * running subscription in the billing portal. Everyone else sees its state.
+ */
+function OrganizationBilling({
+  organizationId,
+  isOwner,
+  billing,
+}: {
+  organizationId: string;
+  isOwner: boolean;
+  billing: OrganizationBillingSummary;
+}) {
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const running = billing.subscriptionStatus !== null;
+  const { data: prices = DEFAULT_PLAN_PRICES } = useQuery(planPricesQueryOptions());
+  const seatPrice = `${formatPlanPrice(prices.organizationSeat)} per member/mo${prices.taxAddedAtCheckout ? " + tax" : ""}`;
+
+  async function act() {
+    setLoading(true);
+    setError(null);
+    try {
+      if (running) await openBillingPortal({ organizationId });
+      else await startSubscriptionCheckout({ plan: "organization", organizationId });
+    } catch (err) {
+      console.error("Organization billing failed:", err);
+      setError("Something went wrong. Please try again or contact support.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div {...stylex.props(stack.x2)}>
+      <PaymentFailedNotice status={billing.subscriptionStatus} customer="organization" canUpdate={isOwner} />
+      <div {...stylex.props(row.x2, styles.billing)}>
+        {billing.subscriptionStatus && billing.subscriptionStatus !== "active" && (
+          <Badge variant="warning" sx={styles.statusBadge}>
+            {billing.subscriptionStatus.replace("_", " ")}
+          </Badge>
+        )}
+        <span {...stylex.props(styles.planMetaText)}>
+          {billing.plan === "organization"
+            ? `Billed for ${billing.seats ?? 0} ${billing.seats === 1 ? "member" : "members"}${billing.cancelAtPeriodEnd ? " · ends at the period's end" : ""}`
+            : "Not subscribed: Free limits, and no members can be added until the owner subscribes."}
+        </span>
+      </div>
+      {isOwner ? (
+        <div>
+          <Button variant="secondary" sx={styles.iconButton} onClick={() => { void act(); }} disabled={loading}>
+            {running ? <><ExternalLink size={14} /> {loading ? "Opening..." : isPaymentFailing(billing.subscriptionStatus) ? "Update payment method" : "Manage billing"}</> : loading ? "Loading..." : `Subscribe — ${seatPrice}`}
+          </Button>
+        </div>
+      ) : (
+        <p {...stylex.props(settings.blurb)}>The Organization's owner manages its billing.</p>
+      )}
+      {error && <p {...stylex.props(settings.error, settings.errorFlush)}>{error}</p>}
+    </div>
+  );
+}
+
+export function OrganizationSection() {
   const queryClient = useQueryClient();
   const organizationsQuery = useQuery(myOrganizationsQueryOptions());
   // Memoize so the empty-data fallback doesn't allocate a new array each render
@@ -151,7 +226,6 @@ export function OrganizationSection({ plan }: { plan: SubscriptionTier }) {
   const ownershipTransfers = organizationsQuery.data?.ownershipTransfers ?? [];
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const selectedOrganization = organizations.find((org) => org.id === selectedId) ?? organizations[0] ?? null;
-  const canCreateOrganization = plan === "organization";
 
   const [name, setName] = React.useState("");
   const createMutation = useMutation({
@@ -210,8 +284,8 @@ export function OrganizationSection({ plan }: { plan: SubscriptionTier }) {
                 Ownership request for {transfer.organizationName}
               </p>
               <p {...stylex.props(styles.transferBody)}>
-                {transfer.requestedByName} nominated you as owner. Accepting makes your
-                Organization subscription responsible for all current licenses. The request
+                {transfer.requestedByName} nominated you as owner. Accepting makes you
+                responsible for the Organization and its billing. The request
                 expires {new Date(transfer.expiresAt).toLocaleString()}.
               </p>
               <div {...stylex.props(row.x2, styles.transferActions)}>
@@ -253,29 +327,26 @@ export function OrganizationSection({ plan }: { plan: SubscriptionTier }) {
       {organizations.length === 0 ? (
         <div {...stylex.props(stack.x4)}>
           <p {...stylex.props(settings.blurb)}>
-            Create an Organization to manage licenses, shared billing, and Organization-funded Spaces.
+            Create an Organization for shared billing, member roles and Organization-funded Spaces. Once subscribed, it is billed per member: one seat for each person in it.
           </p>
           <div {...stylex.props(styles.fieldRow)}>
             <Input
               label="Organization name"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              disabled={!canCreateOrganization || createMutation.isPending}
+              disabled={createMutation.isPending}
               placeholder="Acme Studio"
             />
             <div {...stylex.props(styles.alignToField)}>
               <Button
                 type="button"
                 onClick={() => createMutation.mutate()}
-                disabled={!canCreateOrganization || createMutation.isPending || !name.trim()}
+                disabled={createMutation.isPending || !name.trim()}
               >
                 {createMutation.isPending ? "Creating..." : "Create"}
               </Button>
             </div>
           </div>
-          {!canCreateOrganization && (
-            <p {...stylex.props(settings.blurb)}>Upgrade to the Organization plan before creating an Organization.</p>
-          )}
           {createMutation.error && (
             <p {...stylex.props(settings.error, settings.errorFlush)}>
               {createMutation.error instanceof Error ? createMutation.error.message : "Failed to create organization."}
@@ -293,11 +364,16 @@ export function OrganizationSection({ plan }: { plan: SubscriptionTier }) {
             />
             <div {...stylex.props(row.x2, styles.planMeta)}>
               <Badge variant="primary">{roleLabel((selectedOrganization?.role ?? "member"))}</Badge>
-              <span {...stylex.props(styles.planMetaText)}>
-                $10 per license · up to {selectedOrganization?.licenseLimit ?? 0} licenses
-              </span>
             </div>
           </div>
+
+          {selectedOrganization && (
+            <OrganizationBilling
+              organizationId={selectedOrganization.id}
+              isOwner={selectedOrganization.role === "owner"}
+              billing={selectedOrganization.billing}
+            />
+          )}
 
           <p {...stylex.props(styles.licenceNote)}>
             A license lets a person be assigned to Organization-funded Spaces. It does not reveal content: people still need direct membership in each Space they use.
@@ -488,7 +564,7 @@ function OrganizationMembers({
   if (membersQuery.isError) {
     return (
       <QueryErrorNotice
-        message="Organization licenses could not be loaded."
+        message="Organization members could not be loaded."
         onRetry={() => { void membersQuery.refetch(); }}
       />
     );
@@ -500,7 +576,7 @@ function OrganizationMembers({
         <div {...stylex.props(settings.formPanel)}>
           <div {...stylex.props(styles.addMemberGrid)}>
             <Input
-              label="Assign license to account"
+              label="Add a member by email"
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
@@ -512,8 +588,8 @@ function OrganizationMembers({
               value={newMemberRole}
               onValueChange={(value) => setNewMemberRole(value === "admin" ? "admin" : "member")}
               options={[
-                { label: "Licensed user", value: "member" },
-                { label: "Licensed administrator", value: "admin", disabled: !canAddAdmins },
+                { label: "Member", value: "member" },
+                { label: "Administrator", value: "admin", disabled: !canAddAdmins },
               ]}
               disabled={addMemberMutation.isPending}
             />
@@ -529,7 +605,7 @@ function OrganizationMembers({
           </div>
           {addMemberMutation.error && (
             <p {...stylex.props(settings.error)}>
-              {addMemberMutation.error instanceof Error ? addMemberMutation.error.message : "Failed to assign license."}
+              {addMemberMutation.error instanceof Error ? addMemberMutation.error.message : "Failed to add member."}
             </p>
           )}
         </div>
@@ -566,16 +642,16 @@ function OrganizationMembers({
                   variant="ghost"
                   disabled={removeMemberMutation.isPending}
                   onClick={() => removeMemberMutation.mutate(member.userId)}
-                  aria-label={`Release ${member.user.name}'s Organization license`}
+                  aria-label={`Remove ${member.user.name} from the Organization`}
                 >
-                  <Trash2 size={14} /> Release license
+                  <Trash2 size={14} /> Remove
                 </Button>
               )}
             </div>
           </div>
         ))}
         {members.length === 0 && (
-          <div {...stylex.props(settings.listEmpty)}>No Organization licenses yet.</div>
+          <div {...stylex.props(settings.listEmpty)}>No members yet.</div>
         )}
       </div>
 
@@ -583,7 +659,7 @@ function OrganizationMembers({
         <p {...stylex.props(settings.error, settings.errorFlush)}>
           {removeMemberMutation.error instanceof Error
             ? removeMemberMutation.error.message
-            : "Failed to release Organization license."}
+            : "Failed to remove member."}
         </p>
       )}
 
@@ -595,9 +671,9 @@ function OrganizationMembers({
           <DialogBody sx={styles.dialogBody}>
             <DialogTitle>Transfer organization ownership?</DialogTitle>
             <DialogDescription>
-              Send an ownership request to {transferTarget?.name}. They must accept before
-              ownership changes or their subscription is billed for this Organization’s licenses.
-              You will remain an administrator after they accept.
+              Send an ownership request to {transferTarget?.name}. Ownership, including
+              managing the Organization’s billing, moves to them once they accept. Its
+              subscription stays as it is. You will remain an administrator after they accept.
             </DialogDescription>
             <div {...stylex.props(row.x3, styles.dialogActions)}>
               <DialogClose render={<Button variant="secondary" />}>Cancel</DialogClose>

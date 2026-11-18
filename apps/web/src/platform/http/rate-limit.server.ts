@@ -100,7 +100,7 @@ export async function enforceTranscriptIngestPreAuthRateLimit(env: Env): Promise
  * them: every webhook for the whole fleet arrives from one provider's egress
  * addresses, so a 60/min address budget drops legitimate events long before an
  * attacker feels it — the trap the transcript ingest limiter above was created
- * to escape, and the one Paddle's receiver was still in.
+ * to escape, and the one the billing receiver was still in.
  *
  * Both providers retry a rejected delivery, so a throttled event is delayed
  * rather than lost, but the budget is still sized for real fleet volume so
@@ -110,12 +110,12 @@ export async function enforceTranscriptIngestPreAuthRateLimit(env: Env): Promise
  */
 export async function enforceWebhookPreAuthRateLimit(
   env: Env,
-  provider: "livekit" | "paddle",
+  provider: "livekit" | "polar",
 ): Promise<void> {
   await limit(
     env,
     {
-      binding: provider === "livekit" ? env.LIVEKIT_WEBHOOK_RATE_LIMITER : env.PADDLE_WEBHOOK_RATE_LIMITER,
+      binding: provider === "livekit" ? env.LIVEKIT_WEBHOOK_RATE_LIMITER : env.BILLING_WEBHOOK_RATE_LIMITER,
       name: "Webhook rate limiter",
     },
     `${provider}-webhook-ip:${getClientIP()}`,

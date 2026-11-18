@@ -25,11 +25,6 @@ const scannedRoots = [
 
 const MINIMUM_TRACKED_SIZE = 2;
 
-// Paddle's own status vocabulary currently matches ours value for value. It is
-// an external contract we translate from, not a copy of ours, so it stays
-// spelled out where the translation happens.
-const EXEMPT_FILES = new Set(["apps/web/src/modules/billing/server/paddle-subscription.ts"]);
-
 function stringArrayLiterals(source: string): string[][] {
   return [...source.matchAll(/\[((?:\s*"[^"\n]*"\s*,?)+)\s*\]/g)].map((match) =>
     [...match[1].matchAll(/"([^"\n]*)"/g)].map((value) => value[1]),
@@ -72,7 +67,6 @@ describe("domain value ownership", () => {
   it("finds no re-declared copy of a domain value set", () => {
     const duplicates = scannedRoots.flatMap((root) =>
       collectSourceFiles(join(repoRoot, root))
-        .filter((path) => !EXEMPT_FILES.has(relative(repoRoot, path)))
         .flatMap((path) =>
           stringArrayLiterals(readFileSync(path, "utf8"))
             .map((values) => ownedValueSets.get(key(values)))

@@ -3,6 +3,7 @@ import { meetingLinks, users } from "@orbmeet/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
 import { seedPersonalSpace } from "@/test/fixtures";
 import { selectDashboardMeetingLinks } from "./dashboard-queries";
+import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
 const getAppDb = () => db;
@@ -11,7 +12,7 @@ beforeEach(async () => {
   db = await createTestDb();
 });
 
-async function insertUser(id: string, plan: "free" | "pro" | "organization") {
+async function insertUser(id: string, plan: "free" | "pro") {
   const now = new Date();
   await db.insert(users).values({
     id,
@@ -19,11 +20,11 @@ async function insertUser(id: string, plan: "free" | "pro" | "organization") {
     email: `${id}@example.com`,
     normalizedEmail: `${id}@example.com`,
     image: null,
-    plan,
     role: "user",
     createdAt: now,
     updatedAt: now,
   });
+  if (plan === "pro") await seedSubscription(db, { userId: id });
 }
 
 async function insertMeetingLink(ownerUserId: string, code: string) {

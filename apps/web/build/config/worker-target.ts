@@ -53,11 +53,13 @@ const defaultVars = {
   // media node, comma-separated; it is down only while every node is.
   UPTIMEROBOT_MONITOR_LIVEKIT_ID: "",
   UPTIMEROBOT_MONITOR_WHITEBOARD_ID: "",
-  // Paddle Billing, all public: Paddle.js's client token and Catalog price ids.
-  VITE_PADDLE_CLIENT_TOKEN: "",
-  PADDLE_PRICE_ID_PRO: "",
-  // Recurring $10/month price for one active Organization member.
-  PADDLE_PRICE_ID_ORG_SEAT: "",
+  // Polar billing, all public. `sandbox` points the API client at Polar's
+  // sandbox server, whose tokens and products are separate from production's.
+  POLAR_SERVER: "production",
+  // Recurring product for the Pro plan.
+  POLAR_PRODUCT_ID_PRO: "",
+  // Recurring seat-based product: one seat per active Organization member.
+  POLAR_PRODUCT_ID_ORGANIZATION: "",
 };
 
 export const deployVars: Record<string, string> = {

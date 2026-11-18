@@ -1,7 +1,8 @@
 import { useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { myOrganizationsQueryOptions } from "@/app/query-client/queries/organizations";
 import { sessionQueryOptions } from "@/app/query-client/queries/session";
-import { subscribeToPaddleCheckoutCompletion } from "./paddle-checkout";
+import { consumeCheckoutReturn, type CheckoutReturn } from "./checkout-return";
 
 const PROJECTION_RETRY_DELAYS_MS = [0, 500, 1_000, 2_000, 4_000, 8_000] as const;
 
@@ -21,54 +22,75 @@ function waitForDelay(delayMs: number, signal: AbortSignal): Promise<void> {
 }
 
 /**
- * Bridge Paddle's browser event to the webhook-owned subscription projection.
- * Checkout success is immediate, while the signed webhook is eventually
- * delivered. Re-fetch until that authoritative projection becomes visible,
- * then leave the session cache coherent for every plan badge and entitlement.
+ * The query that shows what was bought, and whether its subscription has
+ * landed: the person's session for Pro, their Organizations for an
+ * Organization's plan.
  */
+function checkoutProjection(queryClient: QueryClient, checkout: CheckoutReturn) {
+  const { organizationId } = checkout;
+  if (organizationId) {
+    const options = myOrganizationsQueryOptions();
+    return {
+      queryKey: options.queryKey,
+      landed: async () => {
+        const data = await queryClient.fetchQuery({ ...options, staleTime: 0 });
+        return data.organizations.some(
+          (organization) => organization.id === organizationId && organization.billing.subscriptionStatus !== null,
+        );
+      },
+    };
+  }
+  const options = sessionQueryOptions();
+  return {
+    queryKey: options.queryKey,
+    landed: async () => {
+      const session = await queryClient.fetchQuery({ ...options, staleTime: 0 });
+      return Boolean(session?.user?.hasManagedSubscription);
+    },
+  };
+}
+
+/**
+ * Bridge the return from Polar's hosted checkout to the webhook-owned
+ * subscription projection. The redirect back is immediate, while the signed
+ * webhook is eventually delivered. Re-fetch until that authoritative
+ * projection becomes visible, then leave the cache coherent for every plan
+ * badge and entitlement.
+ */
+// Read once per page load (undefined until then): the markers leave the URL
+// as they are read, and a re-run effect (StrictMode, a remount) must still
+// finish the convergence.
+let pendingCheckoutReturn: CheckoutReturn | null | undefined;
+
 export function BillingCheckoutSync() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    let currentRefresh: AbortController | null = null;
-    const unsubscribe = subscribeToPaddleCheckoutCompletion(() => {
-      currentRefresh?.abort();
-      const controller = new AbortController();
-      currentRefresh = controller;
+    if (pendingCheckoutReturn === undefined) pendingCheckoutReturn = consumeCheckoutReturn();
+    const checkout = pendingCheckoutReturn;
+    if (!checkout) return;
+    const controller = new AbortController();
+    const projection = checkoutProjection(queryClient, checkout);
 
-      void (async () => {
-        const options = sessionQueryOptions();
-        try {
-          for (const delayMs of PROJECTION_RETRY_DELAYS_MS) {
-            await waitForDelay(delayMs, controller.signal);
-            if (controller.signal.aborted) return;
-            await queryClient.invalidateQueries({
-              queryKey: options.queryKey,
-              refetchType: "none",
-            });
-            const session = await queryClient.fetchQuery({
-              ...options,
-              staleTime: 0,
-            });
-            if (session?.user?.hasManagedSubscription) return;
-          }
-        } finally {
+    void (async () => {
+      try {
+        for (const delayMs of PROJECTION_RETRY_DELAYS_MS) {
+          await waitForDelay(delayMs, controller.signal);
+          if (controller.signal.aborted) return;
+          await queryClient.invalidateQueries({ queryKey: projection.queryKey, refetchType: "none" });
+          if (await projection.landed()) break;
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          pendingCheckoutReturn = null;
           // If the webhook exceeded the bounded convergence window, keep the
           // cache stale so focus/navigation retries instead of freezing Free.
-          if (!controller.signal.aborted) {
-            await queryClient.invalidateQueries({
-              queryKey: options.queryKey,
-              refetchType: "none",
-            });
-          }
+          await queryClient.invalidateQueries({ queryKey: projection.queryKey, refetchType: "none" });
         }
-      })();
-    });
+      }
+    })();
 
-    return () => {
-      currentRefresh?.abort();
-      unsubscribe();
-    };
+    return () => controller.abort();
   }, [queryClient]);
 
   return null;

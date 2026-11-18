@@ -1,10 +1,8 @@
 import "@tanstack/react-start/server-only";
 import { createDb } from "@orbmeet/db";
 import { addOrganizationMember, removeOrganizationMember } from "@/modules/organizations/server/membership.server";
-import { transferOrganizationBillingOwnership } from "@/modules/billing/server/organization-transfer.server";
-import { applyPaddleEvent } from "@/modules/billing/server/paddle-webhook.server";
-import { reconcileSubscriber } from "@/modules/billing/server/reconciliation.server";
-import { preparePaddleCheckout } from "@/modules/billing/server/checkout.server";
+import { syncOrganizationSeats } from "@/modules/billing/server/organization-seats.server";
+import { prepareCheckout } from "@/modules/billing/server/checkout.server";
 import {
   archiveWhiteboard,
   deleteArchivedWhiteboard,
@@ -24,16 +22,12 @@ export async function runSerialTask(env: Env, task: SerialTask): Promise<SerialR
     case "addOrganizationMember":
       return addOrganizationMember(db, env, task);
     case "removeOrganizationMember":
-      return removeOrganizationMember(db, task);
-    case "transferOrganizationOwnership":
-      return transferOrganizationBillingOwnership(db, env, { ...task, now: new Date(task.acceptedAt) });
-    case "applyOrganizationPaddleEvent":
-      await applyPaddleEvent(db, task.event, env);
+      return removeOrganizationMember(db, env, task);
+    case "syncOrganizationSeats":
+      await syncOrganizationSeats(db, env, task.organizationId);
       return null;
-    case "reconcileOrganizationOwner":
-      return reconcileSubscriber(db, env, task, new Date(task.now));
-    case "preparePaddleCheckout":
-      return preparePaddleCheckout(db, env, task);
+    case "prepareCheckout":
+      return prepareCheckout(db, env, task);
     case "archiveWhiteboard":
       return archiveWhiteboard(db, env, task);
     case "restoreArchivedWhiteboard":

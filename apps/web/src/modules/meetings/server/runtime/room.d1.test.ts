@@ -50,7 +50,7 @@ beforeEach(async () => {
   for (const mock of Object.values(livekit)) mock.mockClear();
   await db.insert(users).values(["host", "ada"].map((id) => ({
     id, name: id, email: `${id}@example.com`, normalizedEmail: `${id}@example.com`,
-    plan: "free" as const, role: "user" as const, createdAt: T0, updatedAt: T0,
+    role: "user" as const, createdAt: T0, updatedAt: T0,
   })));
   await seedPersonalSpace(db, "host", { now: T0 });
   await db.insert(meetingLinks).values({
@@ -188,7 +188,7 @@ describe("MeetingRoomHost", () => {
     const ids = ["u1", "u2", "u3", "u4", "u5"];
     await db.insert(users).values(ids.map((id) => ({
       id, name: id, email: `${id}@example.com`, normalizedEmail: `${id}@example.com`,
-      plan: "free" as const, role: "user" as const, createdAt: T0, updatedAt: T0,
+      role: "user" as const, createdAt: T0, updatedAt: T0,
     })));
     const joins = await Promise.all(ids.map((userId) => join(send, { kind: "user", userId })));
     await host.idle();

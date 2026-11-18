@@ -5,7 +5,7 @@ import { getRunChanges, withD1Retry } from "@/platform/database/db-utils";
 
 /**
  * Idempotent at-least-once webhook delivery, shared by every provider
- * (LiveKit, Paddle, …). A receipt row is the dedup + processing-lease record:
+ * (LiveKit, Polar, …). A receipt row is the dedup + processing-lease record:
  *
  *   reserve → (process) → markProcessed   on success
  *   reserve → (process) → release         on failure, so a redelivery retries

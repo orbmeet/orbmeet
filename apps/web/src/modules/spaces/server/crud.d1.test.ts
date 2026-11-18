@@ -11,6 +11,7 @@ import {
 } from "@orbmeet/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
 import {findViewableSpaceIdBySlug, insertSpaceWithInitialMembership, updateSpaceProfile} from "@/modules/spaces/server/crud.server";
+import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
 const getAppDb = () => db;
@@ -27,7 +28,6 @@ async function insertUser(id: string) {
     email: `${id}@example.com`,
     normalizedEmail: `${id}@example.com`,
     image: null,
-    plan: "free",
     role: "user",
     createdAt: now,
     updatedAt: now,
@@ -195,10 +195,10 @@ describe("insertSpaceWithInitialMembership", () => {
       id: "org_1",
       name: "Acme",
       ownerId: "org_owner",
-      plan: "organization",
       createdAt: now,
       updatedAt: now,
     });
+    await seedSubscription(db, { organizationId: "org_1", seats: 25 });
     await db.insert(organizationMembers).values({
       id: "org_member_1",
       organizationId: "org_1",
@@ -237,10 +237,10 @@ describe("insertSpaceWithInitialMembership", () => {
       id: "org_1",
       name: "Acme",
       ownerId: "org_owner",
-      plan: "organization",
       createdAt: now,
       updatedAt: now,
     });
+    await seedSubscription(db, { organizationId: "org_1", seats: 25 });
 
     await expect(insertSpaceWithInitialMembership(getAppDb(), {
       spaceId: "SPACE_ORG",

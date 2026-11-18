@@ -51,7 +51,7 @@ beforeEach(async () => {
   for (const mock of Object.values(livekit)) mock.mockClear();
   await db.insert(users).values({
     id: "host", name: "host", email: "host@example.com", normalizedEmail: "host@example.com",
-    plan: "free", role: "user", createdAt: T0, updatedAt: T0,
+    role: "user", createdAt: T0, updatedAt: T0,
   });
   await seedPersonalSpace(db, "host", { now: T0 });
   await db.insert(meetingLinks).values({

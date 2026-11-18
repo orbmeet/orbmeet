@@ -200,7 +200,7 @@ export function SettingsPage() {
           />
         </Panel>
         <Panel id="organization">
-          <OrganizationSection plan={user.plan} />
+          <OrganizationSection />
         </Panel>
       </div>
     );

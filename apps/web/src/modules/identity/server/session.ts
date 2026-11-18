@@ -11,12 +11,12 @@ import type { User } from "@orbmeet/db/schema";
 import type { AuthenticatedUser } from "@/modules/identity/contract/auth/session-user";
 import { createCookieString, appendCookies, getCookieValue, sessionTokensFromCookie } from "@/platform/http/cookies.server";
 import { getEnv } from "@/platform/runtime/server-runtime.server";
-import { hasManagedPaddleSubscription } from "@/modules/billing/contract/subscription";
+import { userBillingSelection, type UserBilling } from "@/modules/billing/server/entitlements.server";
 
 export type { AuthenticatedUser };
 
-export function sanitizeUser(user: User | null): AuthenticatedUser | null {
-  if (!user) return null;
+/** The public view of a user row and their billing (`userBillingSelection`). */
+export function sanitizeUser(user: User, billing: UserBilling): AuthenticatedUser {
   return {
     id: user.id,
     name: user.name,
@@ -25,13 +25,10 @@ export function sanitizeUser(user: User | null): AuthenticatedUser | null {
     timeZone: user.timeZone,
     transcribeMeetings: user.transcribeMeetings,
     appearance: user.appearance,
-    plan: user.plan,
+    plan: billing.plan,
     role: user.role,
-    subscriptionStatus: user.subscriptionStatus ?? null,
-    hasManagedSubscription: hasManagedPaddleSubscription({
-      subscriptionId: user.paddleSubscriptionId,
-      subscriptionStatus: user.subscriptionStatus,
-    }),
+    subscriptionStatus: billing.subscriptionStatus,
+    hasManagedSubscription: billing.hasManagedSubscription,
   };
 }
 
@@ -41,8 +38,8 @@ const MAX_DEVICES_PER_USER = 8;
 
 // ─── Session resolution ──────────────────────────────────────────────
 
-type SessionWithUser = typeof sessions.$inferSelect & { user: User };
-type SessionWithPublicUser = Omit<SessionWithUser, "user"> & {
+type SessionWithUser = typeof sessions.$inferSelect & { user: User; billing: UserBilling };
+type SessionWithPublicUser = Omit<SessionWithUser, "user" | "billing"> & {
   user: AuthenticatedUser;
 };
 
@@ -57,12 +54,12 @@ const accountDeletionSessionCache = new WeakMap<Request, Promise<CachedSession>>
 // Extend session expiry and rotate token when approaching threshold (sliding window).
 // Stores old token hash in previousTokenHash so clients that missed the rotation
 // cookie can still authenticate on the next request.
-export async function maybeRefreshSession(
-  session: SessionWithUser,
+export async function maybeRefreshSession<S extends typeof sessions.$inferSelect>(
+  session: S,
   env: Env,
   db: Database,
   matchedViaPrevious: boolean,
-): Promise<{ session: SessionWithUser; setCookie: string | null }> {
+): Promise<{ session: S; setCookie: string | null }> {
   const now = Date.now();
   const absoluteExpiresAtMs = session.absoluteExpiresAt.getTime();
   if (absoluteExpiresAtMs <= now) {
@@ -144,7 +141,7 @@ async function resolveSession(
 
   // Check both tokenHash and previousTokenHash in a single round-trip
   const candidateRows = await db
-    .select({ session: sessions, user: users })
+    .select({ session: sessions, user: users, billing: userBillingSelection(users.id) })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(and(
@@ -154,9 +151,10 @@ async function resolveSession(
       ),
       allowAccountDeletionResume ? undefined : isNull(users.deletionStartedAt),
     ));
-  const candidates: SessionWithUser[] = candidateRows.map(({ session, user }) => ({
+  const candidates: SessionWithUser[] = candidateRows.map(({ session, user, billing }) => ({
     ...session,
     user,
+    billing,
   }));
 
   const candidatesByTokenHash = new Map<string, SessionWithUser>();
@@ -209,9 +207,10 @@ async function resolveSession(
     appendCookies([setCookie]);
   }
 
-  const sanitizedUser = sanitizeUser(refreshed.user)!;
+  const { billing, ...refreshedSession } = refreshed;
+  const sanitizedUser = sanitizeUser(refreshed.user, billing);
   return {
-    session: { ...refreshed, user: sanitizedUser },
+    session: { ...refreshedSession, user: sanitizedUser },
     user: sanitizedUser,
   };
 }
@@ -426,10 +425,8 @@ export async function getRememberedUserFromRequest(): Promise<AuthenticatedUser 
       userTimeZone: users.timeZone,
       userTranscribeMeetings: users.transcribeMeetings,
       userAppearance: users.appearance,
-      userPlan: users.plan,
       userRole: users.role,
-      userSubscriptionStatus: users.subscriptionStatus,
-      userPaddleSubscriptionId: users.paddleSubscriptionId,
+      billing: userBillingSelection(users.id),
     })
     .from(devices)
     .innerJoin(users, eq(users.id, devices.userId))
@@ -463,13 +460,10 @@ export async function getRememberedUserFromRequest(): Promise<AuthenticatedUser 
     timeZone: row[0].userTimeZone,
     transcribeMeetings: row[0].userTranscribeMeetings,
     appearance: row[0].userAppearance,
-    plan: row[0].userPlan,
+    plan: row[0].billing.plan,
     role: row[0].userRole,
-    subscriptionStatus: row[0].userSubscriptionStatus ?? null,
-    hasManagedSubscription: hasManagedPaddleSubscription({
-      subscriptionId: row[0].userPaddleSubscriptionId,
-      subscriptionStatus: row[0].userSubscriptionStatus,
-    }),
+    subscriptionStatus: row[0].billing.subscriptionStatus,
+    hasManagedSubscription: row[0].billing.hasManagedSubscription,
   };
 }
 

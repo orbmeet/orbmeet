@@ -72,7 +72,7 @@ export default defineConfig({
 		domains,
 		triggers: [
 			// Every minute: media node health, cleanup, schedule notifications and
-			// a check on quiet meetings. Daily: authentication cleanup, Paddle
+			// a check on quiet meetings. Daily: authentication cleanup, billing
 			// reconciliation, webhook receipt pruning, and recordings the queue
 			// below never registered. Anything with steps and retries of its own
 			// runs as a job (JOBS), not here. Dispatch lives in
@@ -120,9 +120,9 @@ export default defineConfig({
 			UPTIMEROBOT_MONITOR_WHITEBOARD_ID: bindings.text(
 				vars.UPTIMEROBOT_MONITOR_WHITEBOARD_ID,
 			),
-			VITE_PADDLE_CLIENT_TOKEN: bindings.text(vars.VITE_PADDLE_CLIENT_TOKEN),
-			PADDLE_PRICE_ID_PRO: bindings.text(vars.PADDLE_PRICE_ID_PRO),
-			PADDLE_PRICE_ID_ORG_SEAT: bindings.text(vars.PADDLE_PRICE_ID_ORG_SEAT),
+			POLAR_SERVER: bindings.text(vars.POLAR_SERVER),
+			POLAR_PRODUCT_ID_PRO: bindings.text(vars.POLAR_PRODUCT_ID_PRO),
+			POLAR_PRODUCT_ID_ORGANIZATION: bindings.text(vars.POLAR_PRODUCT_ID_ORGANIZATION),
 			// D1 Database — create with: cf d1 create orbmeet-db, and put its id
 			// in cloudflare.deploy.json.
 			DB: bindings.d1({ name: "orbmeet-db", id: databaseId }),
@@ -209,9 +209,9 @@ export default defineConfig({
 				namespace: "1008",
 				simple: { limit: 20, period: 60 },
 			}),
-			// Paddle delivery and retries are independent of LiveKit. Keep its
+			// Polar delivery and retries are independent of LiveKit. Keep its
 			// pre-authentication verification capacity in a separate namespace.
-			PADDLE_WEBHOOK_RATE_LIMITER: bindings.rateLimit({
+			BILLING_WEBHOOK_RATE_LIMITER: bindings.rateLimit({
 				namespace: "1009",
 				simple: { limit: 1200, period: 60 },
 			}),
@@ -236,7 +236,7 @@ export default defineConfig({
 			R2_SECRET_ACCESS_KEY: bindings.secret(),
 			R2_ACCOUNT_ID: bindings.secret(),
 			// Optional secrets (AI_API_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
-			// UPTIMEROBOT_API_KEY, PADDLE_API_KEY, PADDLE_WEBHOOK_SECRET,
+			// UPTIMEROBOT_API_KEY, POLAR_ACCESS_TOKEN, POLAR_WEBHOOK_SECRET,
 			// MATHINK_ORIGIN_SECRET, CODE_RUNNER_SECRET) are intentionally not
 			// declared: a fresh clone must deploy without them. They are typed in
 			// src/env.d.ts instead.

@@ -5,6 +5,7 @@ import { createTestDb, type TestDb } from "@/test/db";
 import { assertPastMeetingManager, canManagePastMeeting } from "./access-assertions";
 import { spaceRoleFor } from "../runtime/client.server";
 import { resolveMeetingEntitlement } from "@/modules/billing/server/entitlements.server";
+import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
 const appDb = () => db;
@@ -13,7 +14,7 @@ beforeEach(async () => {
   db = await createTestDb();
 });
 
-async function insertUser(id: string, plan: "free" | "pro" | "organization" = "free") {
+async function insertUser(id: string, plan: "free" | "pro" = "free") {
   const now = new Date();
   await db.insert(users).values({
     id,
@@ -21,11 +22,11 @@ async function insertUser(id: string, plan: "free" | "pro" | "organization" = "f
     email: `${id}@example.com`,
     normalizedEmail: `${id}@example.com`,
     image: null,
-    plan,
     role: "user",
     createdAt: now,
     updatedAt: now,
   });
+  if (plan === "pro") await seedSubscription(db, { userId: id });
 }
 
 async function insertSpaceMeeting() {
@@ -135,7 +136,7 @@ describe("meeting authority and entitlements", () => {
   });
 
   it("gives an organization admin no meeting authority without a direct Space row", async () => {
-    await insertUser("org_owner", "organization");
+    await insertUser("org_owner");
     await insertUser("org_admin");
     await insertUser("host");
     const now = new Date();
@@ -143,10 +144,10 @@ describe("meeting authority and entitlements", () => {
       id: "org_1",
       name: "Acme",
       ownerId: "org_owner",
-      plan: "organization",
       createdAt: now,
       updatedAt: now,
     });
+    await seedSubscription(db, { organizationId: "org_1", seats: 25 });
     await db.insert(organizationMembers).values({
       id: "org_admin_row",
       organizationId: "org_1",
@@ -209,7 +210,6 @@ describe("meeting authority and entitlements", () => {
     });
 
     expect(entitlement).toMatchObject({
-      plan: "free",
       billingUserId: "member",
       source: "meeting-snapshot",
     });
@@ -217,7 +217,7 @@ describe("meeting authority and entitlements", () => {
   });
 
   it("sources organization-owned space limits from the organization", async () => {
-    await insertUser("org_owner", "organization");
+    await insertUser("org_owner");
     await insertUser("org_member", "free");
     const now = new Date();
 
@@ -225,11 +225,10 @@ describe("meeting authority and entitlements", () => {
       id: "org_1",
       name: "Acme Studio",
       ownerId: "org_owner",
-      plan: "organization",
-      licenseLimit: 25,
       createdAt: now,
       updatedAt: now,
     });
+    await seedSubscription(db, { organizationId: "org_1", seats: 25 });
     await db.insert(organizationMembers).values([
       { id: "omb_owner", organizationId: "org_1", userId: "org_owner", role: "admin", joinedAt: now },
       { id: "omb_member", organizationId: "org_1", userId: "org_member", role: "member", joinedAt: now },
@@ -253,7 +252,6 @@ describe("meeting authority and entitlements", () => {
     });
 
     expect(entitlement).toMatchObject({
-      plan: "organization",
       billingUserId: "org_owner",
       source: "organization",
     });

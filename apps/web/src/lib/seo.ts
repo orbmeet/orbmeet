@@ -62,22 +62,22 @@ export const PRICING_FAQS = [
   {
     question: "How does Organization billing work?",
     answer:
-      "Organization costs $10 per licensed user each month. A license permits assignment to Organization-funded Spaces; it does not grant access to every Space.",
+      "The Organization plan is billed per member: each person in the Organization is one seat, at the per-member price above. Adding someone adds a seat straight away; removing someone lowers the count from the next month.",
   },
   {
-    question: "Who needs an Organization license?",
+    question: "Who counts as a member?",
     answer:
-      "Every owner, administrator, or user assigned to an Organization-funded Space needs a license.",
+      "Everyone in the Organization: its owner, administrators and members. Being in the Organization lets someone join its Organization-funded Spaces; there is no limit on how many members it has.",
   },
   {
-    question: "Does a license grant content access?",
+    question: "Does Organization membership grant content access?",
     answer:
       "No. Direct Space membership separately controls Meetings, Whiteboards, Files, and history.",
   },
   {
     question: "Can I manage my subscription?",
     answer:
-      "Yes. Active subscribers can open the Paddle billing portal from Settings to manage or cancel their subscription.",
+      "Yes. Active subscribers can open the Polar billing portal from Settings to manage or cancel their subscription.",
   },
 ] as const;
 

@@ -135,7 +135,7 @@ export const r2ObjectCleanupTasks = sqliteTable(
 );
 
 /**
- * One row per provider event (LiveKit, Paddle, …): deduplicates redeliveries
+ * One row per provider event (LiveKit, Polar, …): deduplicates redeliveries
  * and leases processing to one worker at a time, so a crashed attempt is
  * retried once its lease expires. See platform/http/webhooks/receipts.ts.
  */

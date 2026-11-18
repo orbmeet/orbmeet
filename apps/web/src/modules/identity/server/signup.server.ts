@@ -26,6 +26,7 @@ import { getClientIP } from "@/platform/http/client-ip.server";
 import { enforceIpRateLimit, enforceRateLimit } from "@/platform/http/rate-limit.server";
 import { getEnv } from "@/platform/runtime/server-runtime.server";
 import { enforceSessionCapStatement, rememberDevice, sanitizeUser } from "./session";
+import { FREE_USER_BILLING } from "@/modules/billing/server/entitlements.server";
 import {
   consumeEmailAuthFlowStatement,
   emailAuthFlowLiveSql,
@@ -68,7 +69,6 @@ export async function verifyOtpImpl({ data }: { data: v.InferOutput<typeof otpVe
     normalizedEmail: flow.data.normalizedEmail,
     name: flow.data.name,
     image: null,
-    plan: "free",
     role: "user",
     createdAt: now,
     updatedAt: now,
@@ -84,11 +84,6 @@ export async function verifyOtpImpl({ data }: { data: v.InferOutput<typeof otpVe
           email: sql`${flow.data.recipientEmail}`.as("email"),
           normalizedEmail: sql`${flow.data.normalizedEmail}`.as("normalized_email"),
           image: sql`null`.as("image"),
-          plan: sql`'free'`.as("plan"),
-          paddleCustomerId: sql`null`.as("paddle_customer_id"),
-          paddleSubscriptionId: sql`null`.as("paddle_subscription_id"),
-          subscriptionStatus: sql`null`.as("subscription_status"),
-          subscriptionUpdatedAt: sql`null`.as("subscription_updated_at"),
           role: sql`'user'`.as("role"),
           createdAt: sql`${nowSeconds}`.as("created_at"),
           updatedAt: sql`${nowSeconds}`.as("updated_at"),
@@ -173,7 +168,8 @@ export async function verifyOtpImpl({ data }: { data: v.InferOutput<typeof otpVe
     }),
   ]);
   return {
-    user: sanitizeUser(userRecord as typeof users.$inferSelect),
+    // A new account has no subscriptions yet.
+    user: sanitizeUser(userRecord as typeof users.$inferSelect, FREE_USER_BILLING),
     passkeyRegistrationGrant: passkeyGrant.token,
   };
 }

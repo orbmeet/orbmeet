@@ -14,6 +14,7 @@ import { createTestDb, type TestDb } from "@/test/db";
 import { seedPersonalSpace } from "@/test/fixtures";
 import { getPrincipalStoredBytes, getUserStoredBytes } from "./storage";
 import { reserveUploadBytes } from "./upload-reservations";
+import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
 const appDb = () => db;
@@ -27,7 +28,6 @@ beforeEach(async () => {
       name: "Billing owner",
       email: "billing@example.com",
       normalizedEmail: "billing@example.com",
-      plan: "pro",
       role: "user",
       createdAt: now,
       updatedAt: now,
@@ -37,12 +37,12 @@ beforeEach(async () => {
       name: "Starter",
       email: "starter@example.com",
       normalizedEmail: "starter@example.com",
-      plan: "free",
       role: "user",
       createdAt: now,
       updatedAt: now,
     },
   ]);
+  await seedSubscription(db, { userId: "billing_owner" });
   await seedPersonalSpace(db, "starter");
   await db.insert(meetingLinks).values({
     id: "link_storage",
@@ -91,10 +91,10 @@ describe("Meeting storage accounting", () => {
       id: "organization_1",
       name: "Organization",
       ownerId: "billing_owner",
-      plan: "organization",
       createdAt: now,
       updatedAt: now,
     });
+    await seedSubscription(db, { organizationId: "organization_1", seats: 25 });
     await db
       .update(meetings)
       .set({
@@ -170,10 +170,10 @@ describe("file storage accounting", () => {
       id: "organization_files",
       name: "Organization files",
       ownerId: "billing_owner",
-      plan: "organization",
       createdAt: now,
       updatedAt: now,
     });
+    await seedSubscription(db, { organizationId: "organization_files", seats: 25 });
     await db.insert(spaces).values({
       id: "organization_space",
       slug: "organization-space",

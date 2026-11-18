@@ -13,6 +13,7 @@ import { generateId } from "@/lib/ids";
 import { generateMeetingCode } from "@/modules/meetings/contract/code-generation";
 import { Errors } from "@/lib/app-errors";
 import { getPlanLimits } from "@/modules/billing/contract/plan-limits";
+import { loadOrganizationPlan, organizationPlanSql } from "@/modules/billing/server/entitlements.server";
 import { enforceRateLimit } from "@/platform/http/rate-limit.server";
 import { getRunChanges, isUniqueConstraintError } from "@/platform/database/db-utils";
 import { assertSpaceCapability, activeOwnedSharedSpaceCountSql, getSpaceAccess, retainsSpaceManagerSql, selectSpacesForUser } from "./helpers";
@@ -82,11 +83,7 @@ export async function insertSpaceWithInitialMembership(
   const creationAllowed = organizationId
     ? and(
         retainsOrganizationAdminSql(organizationId, creatorUserId),
-        sql`exists (
-          select 1 from ${organizations} funded_organization
-          where funded_organization.id = ${organizationId}
-            and funded_organization.plan = 'organization'
-        )`,
+        sql`${organizationPlanSql(organizationId)} = 'organization'`,
       )
     : maxSpaces === null
       ? sql`exists (
@@ -250,11 +247,7 @@ export async function createSpaceImpl({
   let maxSpaces: number | null;
   if (data.organizationId) {
     await assertOrganizationRole(db, data.organizationId, user.id, "admin");
-    const organization = await db.query.organizations.findFirst({
-      where: { id: data.organizationId },
-      columns: { plan: true },
-    });
-    if (organization?.plan !== "organization") {
+    if ((await loadOrganizationPlan(db, data.organizationId)) !== "organization") {
       throw Errors.PLAN_LIMIT_REACHED("Organization billing is required to create funded Spaces");
     }
     organizationId = data.organizationId;

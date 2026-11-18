@@ -6,6 +6,7 @@
 export const queryKeys = {
   status: () => ["status"] as const,
   clientMeetingHints: () => ["client-meeting-hints"] as const,
+  planPrices: () => ["plan-prices"] as const,
   session: () => ["session"] as const,
   rememberedUser: () => ["remembered-user"] as const,
   participantHandoff: (meetingId: string, admissionId: string) =>

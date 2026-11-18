@@ -34,7 +34,6 @@ async function seedUser(userId = "usr_adv_session") {
     name: "Adversarial Tester",
     email: `${userId}@example.com`,
     normalizedEmail: `${userId}@example.com`,
-    plan: "free",
     role: "user",
     createdAt: now,
     updatedAt: now,
