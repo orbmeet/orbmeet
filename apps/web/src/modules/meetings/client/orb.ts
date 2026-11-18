@@ -72,23 +72,65 @@ interface SaidSegment {
   startedAt: number;
 }
 
+interface RoomChatMessage {
+  userName: string;
+  text: string;
+  sentAt: number;
+  /** Set on a private message, which stays out of what Orb is told. */
+  to?: unknown;
+}
+
 /**
- * What was said in the last ten minutes, for Orb, as "Name: words" lines — one
- * per turn, so a speaker's run of segments reads as one line. When it is too
- * long, the oldest words go first.
+ * What was said and written to the room in the last ten minutes, in the order
+ * it happened: the call's captions as `Name: words`, the room's chat and what
+ * was asked of Orb there as `Name (in the chat): text`, and Orb's answers as
+ * `Orb (in the chat): text`. Asked "what did I miss?", Orb answered from the
+ * captions alone and left out what happened in the chat, such as someone
+ * asking it to draw. Private messages and private threads are never included.
  */
-export function recentlySaid(segments: readonly SaidSegment[], now: number, windowMs = ORB_SAID_WINDOW_MS): string {
-  const lines: { name: string; words: string[] }[] = [];
-  for (const segment of segments) {
-    if (!segment.isFinal || now - segment.startedAt > windowMs) continue;
+export function recentConversation(
+  sources: {
+    said: readonly SaidSegment[];
+    chat: readonly RoomChatMessage[];
+    orb?: readonly AssistantEntry[];
+  },
+  now: number,
+  windowMs = ORB_SAID_WINDOW_MS,
+): string {
+  const events: { at: number; name: string; text: string; chat: boolean }[] = [];
+  const recent = (at: number) => now - at <= windowMs;
+  for (const segment of sources.said) {
     const text = segment.text.trim();
-    if (!text) continue;
-    const last = lines.at(-1);
-    if (last?.name === segment.userName) last.words.push(text);
-    else lines.push({ name: segment.userName, words: [text] });
+    if (segment.isFinal && text && recent(segment.startedAt)) {
+      events.push({ at: segment.startedAt, name: segment.userName, text, chat: false });
+    }
   }
-  const said = lines.map((line) => `${line.name}: ${line.words.join(" ")}`).join("\n");
-  return said.length > ORB_SAID_MAX_LENGTH ? said.slice(said.length - ORB_SAID_MAX_LENGTH) : said;
+  for (const message of sources.chat) {
+    const text = message.text.trim();
+    if (!message.to && text && recent(message.sentAt)) {
+      events.push({ at: message.sentAt, name: message.userName, text, chat: true });
+    }
+  }
+  for (const entry of sources.orb ?? []) {
+    // The room's conversation only: a private thread is nobody else's business.
+    if (entry.audience?.kind === "private" || !recent(entry.at)) continue;
+    if (entry.kind === "prompt" && entry.text.trim()) {
+      events.push({ at: entry.at, name: entry.author, text: `@${ORB_NAME} ${entry.text.trim()}`, chat: true });
+    } else if (entry.kind === "reply" && entry.done && entry.text.trim()) {
+      events.push({ at: entry.at, name: ORB_NAME, text: entry.text.trim(), chat: true });
+    }
+  }
+  events.sort((a, b) => a.at - b.at);
+  const lines: { name: string; chat: boolean; words: string[] }[] = [];
+  for (const event of events) {
+    const last = lines.at(-1);
+    if (last && last.name === event.name && last.chat === event.chat) last.words.push(event.text);
+    else lines.push({ name: event.name, chat: event.chat, words: [event.text] });
+  }
+  const text = lines
+    .map((line) => (line.chat ? `${line.name} (in the chat): ${line.words.join(" / ")}` : `${line.name}: ${line.words.join(" ")}`))
+    .join("\n");
+  return text.length > ORB_SAID_MAX_LENGTH ? text.slice(text.length - ORB_SAID_MAX_LENGTH) : text;
 }
 
 /** An answer of Orb's, put to the room by someone who saw it in private. */

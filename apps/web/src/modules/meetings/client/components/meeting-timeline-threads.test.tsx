@@ -49,14 +49,14 @@ async function mount(overrides: Partial<MeetingTimelineProps> = {}) {
   return props;
 }
 
-function input(): HTMLInputElement {
-  const element = container.querySelector("form input");
-  if (!(element instanceof HTMLInputElement)) throw new Error("No message box");
+function input(): HTMLTextAreaElement {
+  const element = container.querySelector("form textarea");
+  if (!(element instanceof HTMLTextAreaElement)) throw new Error("No message box");
   return element;
 }
 
 async function type(value: string) {
-  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
   await act(async () => {
     setValue?.call(input(), value);
     input().dispatchEvent(new Event("input", { bubbles: true }));

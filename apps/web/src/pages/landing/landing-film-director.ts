@@ -14,6 +14,8 @@ import { handDrawn, inkPath, roughDot, roughRect, roughSquiggle, type Point } fr
 const SVG_NS = "http://www.w3.org/2000/svg";
 /** The order of the chapter buttons in `landing-film.tsx`. */
 const CHAPTERS = ["talk", "board", "orb", "private", "screen", "hangup"] as const;
+/** How long before the next chapter a paused seek lands: the chapter, settled. */
+const SETTLED_BEFORE_NEXT_S = 0.9;
 
 interface Rect {
   x: number;
@@ -284,7 +286,13 @@ export function startFilm(root: HTMLElement, { onFrame }: FilmOptions): FilmCont
   timeline.to(one("tabThumb"), { x: 96, duration: 0.45 }, privateAt + 0.75);
   timeline.to(everyone, { height: 0, autoAlpha: 0, duration: 0.35, ease: "power2.inOut" }, privateAt + 0.75);
   say(one("p0"), privateAt + 0.85);
+  // In the thread with Orb the box asks Orb, not the room.
+  timeline.set(one("ph"), { autoAlpha: 0 }, privateAt + 0.75);
+  timeline.set(one("phOrb"), { autoAlpha: 1 }, privateAt + 0.75);
+  timeline.set(one("phOrb"), { autoAlpha: 0 }, privateAt + 1.15);
   const asked = type("What did I miss?", privateAt + 1.15, 0.7);
+  timeline.set(one("ph"), { autoAlpha: 0 }, asked);
+  timeline.set(one("phOrb"), { autoAlpha: 1 }, asked);
   say(one("p1"), asked);
   say(one("p2"), asked + 0.8);
 
@@ -294,6 +302,8 @@ export function startFilm(root: HTMLElement, { onFrame }: FilmOptions): FilmCont
   spotOff(screenAt - 0.3);
   mode(2, screenAt);
   timeline.to(one("tabThumb"), { x: 0, duration: 0.45 }, screenAt + 0.1);
+  timeline.set(one("phOrb"), { autoAlpha: 0 }, screenAt + 0.1);
+  timeline.set(one("ph"), { autoAlpha: 1 }, screenAt + 0.1);
   timeline.to(privately, { height: 0, autoAlpha: 0, duration: 0.35 }, screenAt + 0.1);
   timeline.to(everyone, { height: "auto", autoAlpha: 1, duration: 0.5 }, screenAt + 0.3);
   timeline.to(one("boardPane"), { rotationY: -70, autoAlpha: 0, duration: 0.9, transformOrigin: "100% 50%" }, screenAt + 0.1);
@@ -427,7 +437,13 @@ export function startFilm(root: HTMLElement, { onFrame }: FilmOptions): FilmCont
 
   return {
     seek(chapter) {
-      timeline.seek(CHAPTERS[chapter], false);
+      // Playing, a chapter starts from its beginning and plays in. Paused,
+      // its first instant is the frame before its own transition, so every
+      // chapter showed the one before it, and Talk a blank curtain: show the
+      // chapter once it has settled instead, just before the next begins.
+      const start = starts[chapter];
+      const next = starts[chapter + 1] ?? finish;
+      timeline.seek(paused ? Math.max(start, next - SETTLED_BEFORE_NEXT_S) : start, false);
       draw();
       syncPlayback();
     },

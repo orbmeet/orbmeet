@@ -82,7 +82,30 @@ function formatWhen(iso: string): string {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    // A public page is read from every time zone: say which one this is.
+    timeZoneName: "short",
   });
+}
+
+/**
+ * The uptime monitor's reason, in words a visitor can use. Its raw strings are
+ * check internals ("Keyword Not Found", "Not logged in"); the ones that do not
+ * map to anything a visitor would recognise are left out.
+ */
+function describeIncidentCause(cause: string | null | undefined): string | null {
+  if (!cause) return null;
+  const reason = cause.toLowerCase();
+  if (reason.includes("timeout") || reason.includes("timed out")) return "Not responding";
+  if (/\b5\d\d\b/.test(reason) || reason.includes("bad gateway") || reason.includes("service unavailable") || reason.includes("internal server error")) {
+    return "Server error";
+  }
+  if (reason.includes("refused") || reason.includes("unreachable") || reason.includes("dns") || reason.includes("ssl") || reason.includes("tls")) {
+    return "Unreachable";
+  }
+  if (reason.includes("keyword") || reason.includes("not logged in") || reason.includes("unexpected")) {
+    return "Unexpected response";
+  }
+  return null;
 }
 
 // ─── Styles ──────────────────────────────────────────────────────────
@@ -286,7 +309,7 @@ function Summary({
       <div {...stylex.props(styles.refreshRow)}>
         <span {...stylex.props(styles.updated)}>
           {fetchedAt
-            ? `Updated ${new Date(fetchedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`
+            ? `Updated ${new Date(fetchedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", timeZoneName: "short" })}`
             : "Checking…"}
         </span>
         <button
@@ -345,6 +368,7 @@ function ServiceRowSkeleton() {
 
 function IncidentRow({ incident, now }: { incident: RecentIncident & { service: string }; now: number }) {
   const ongoing = incident.resolvedAt === null;
+  const cause = describeIncidentCause(incident.cause);
   const lasted = (ongoing ? now : Date.parse(incident.resolvedAt!)) - Date.parse(incident.startedAt);
   const server = incident.service === "Video meetings" ? "A video server" : `A ${incident.service.toLowerCase()} server`;
   const subject = incident.scope === "service"
@@ -366,7 +390,7 @@ function IncidentRow({ incident, now }: { incident: RecentIncident & { service: 
           {incident.scope === "server" && (incident.serviceAffected
             ? ` · ${incident.service} unavailable`
             : ` · ${incident.service} ${ongoing ? "continue" : "continued"} normally`)}
-          {incident.cause && ` · ${incident.cause}`}
+          {cause && ` · ${cause}`}
         </p>
       </div>
     </li>
@@ -464,6 +488,21 @@ export function StatusPage() {
             title={empty.title}
             titleAs="h2"
             description={empty.description}
+            // The error says "try refreshing": give it the button to do so.
+            action={
+              dataState === "error" ? (
+                <button
+                  type="button"
+                  onClick={() => void query.refetch()}
+                  disabled={query.isFetching}
+                  aria-busy={query.isFetching}
+                  {...stylex.props(pressable.base, focus.ring, motion.move, styles.refresh)}
+                >
+                  <RefreshCw size={13} aria-hidden="true" {...stylex.props(query.isFetching && progress.spin)} />
+                  Refresh
+                </button>
+              ) : undefined
+            }
             sx={styles.empty}
           />
         )}

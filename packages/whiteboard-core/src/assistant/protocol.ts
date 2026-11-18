@@ -181,7 +181,7 @@ const PageContextSchema = v.object({
 export type AssistantPageContext = v.InferOutput<typeof PageContextSchema>;
 export type AssistantPageOutline = v.InferOutput<typeof PageOutlineSchema>;
 
-/** What was said in the meeting lately, as "Name: words" lines; enough for "catch me up". */
+/** What was said and written in the meeting lately, as "Name: words" and "Name (in the chat): text" lines; enough for "catch me up". */
 export const MAX_ASSISTANT_SAID_LENGTH = 24_000;
 
 /** A participant key (see {@link AssistantAudience}): a grant principal type, `:`, and an id of up to 192 characters. */

@@ -121,7 +121,9 @@ export function EndMeetingDialog({
           </DialogTitle>
           <DialogDescription sx={[styles.description, styles.clearsClose]}>
             {hasLeaveChoice
-              ? "You can leave and let others continue, or end the meeting for everyone."
+              ? others
+                ? "You can leave and let others continue, or end the meeting for everyone."
+                : "You’re the only one here. Leave and come back with the same link, or end the meeting now."
               : "Everyone is disconnected. The board and what was transcribed stay in the meeting’s recap; the chat is deleted."}
           </DialogDescription>
         </DialogBody>
@@ -154,7 +156,7 @@ export function EndMeetingDialog({
             disabled={pending}
             {...stylex.props(pressable.base, motion.tint, styles.button, styles.endAll)}
           >
-            {hasLeaveChoice ? "End for all" : "End for everyone"}
+            {hasLeaveChoice ? (others ? "End for all" : "End meeting") : "End for everyone"}
           </button>
         </div>
       </DialogContent>

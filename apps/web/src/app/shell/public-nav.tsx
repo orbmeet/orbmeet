@@ -5,10 +5,12 @@ import { zIndex } from "@orbmeet/ui/tokens/layers.stylex";
 import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
 import { measure, space } from "@orbmeet/ui/tokens/space.stylex";
 import { fonts, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import * as stylex from "@stylexjs/stylex";
 import { ArrowLeft } from "lucide-react";
 
+import { sessionQueryOptions } from "@/app/query-client/queries/session";
 import { SkipLink } from "./skip-link";
 
 const styles = stylex.create({
@@ -59,6 +61,18 @@ const styles = stylex.create({
     letterSpacing: "-0.02em",
     color: ink.strong,
   },
+  links: { display: "flex", alignItems: "center", gap: { default: space.s4, [bp.sm]: space.s6 } },
+  account: {
+    display: "inline-flex",
+    alignItems: "center",
+    minHeight: 44,
+    borderRadius: 8,
+    fontSize: text.sm,
+    fontWeight: weight.medium,
+    color: ink.strong,
+    textDecorationLine: { default: "none", [env.hoverable]: { default: "none", ":hover": "underline" } },
+    textUnderlineOffset: 3,
+  },
   back: {
     display: "inline-flex",
     alignItems: "center",
@@ -91,6 +105,9 @@ interface PublicNavProps {
  * every public page's top edge the same.
  */
 export function PublicNav({ variant = "document" }: PublicNavProps) {
+  // The way in, as on the landing page: a visitor reading pricing or status
+  // had to go back home to find Sign in.
+  const { data: session } = useQuery(sessionQueryOptions());
   return (
     <header {...stylex.props(styles.dock, docks[variant])}>
       {/* First focusable thing in the document on every page that has a nav. */}
@@ -102,10 +119,21 @@ export function PublicNav({ variant = "document" }: PublicNavProps) {
           <BrandMark size={24} />
           <span {...stylex.props(styles.name)}>Orb Meet</span>
         </Link>
-        <Link to="/" {...stylex.props(styles.back, motion.tint, focus.ring)}>
-          <ArrowLeft size={16} aria-hidden="true" />
-          Back to home
-        </Link>
+        <nav aria-label="Site" {...stylex.props(styles.links)}>
+          <Link to="/" {...stylex.props(styles.back, motion.tint, focus.ring)}>
+            <ArrowLeft size={16} aria-hidden="true" />
+            Back to home
+          </Link>
+          {session?.user ? (
+            <Link to="/home" {...stylex.props(styles.account, focus.ring)}>
+              Open app
+            </Link>
+          ) : (
+            <Link to="/auth" search={{ mode: "login" }} {...stylex.props(styles.account, focus.ring)}>
+              Sign in
+            </Link>
+          )}
+        </nav>
       </div>
     </header>
   );

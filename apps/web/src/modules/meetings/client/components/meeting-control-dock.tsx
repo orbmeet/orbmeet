@@ -23,6 +23,7 @@ import { motion, pressable } from "@orbmeet/ui/styles/atoms";
 import { accent, danger, ink, live, neutral, surface, warning } from "@orbmeet/ui/tokens/colors.stylex";
 import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
 import { duration, easing } from "@orbmeet/ui/tokens/motion.stylex";
+import { topBar } from "@orbmeet/ui/tokens/markers.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { leading, text, tracking, weight } from "@orbmeet/ui/tokens/typography.stylex";
@@ -196,7 +197,12 @@ const styles = stylex.create({
     backgroundColor: warning.w500,
     boxShadow: `0 0 0 2px ${surface.raised}`,
   },
-  viewLabel: { display: { default: "none", [bp.lg]: "inline" } },
+  viewLabel: {
+    display: {
+      default: "none",
+      [bp.lg]: { default: "inline", [stylex.when.ancestor(':is([data-labels="none"])', topBar)]: "none" },
+    },
+  },
   viewLabelHidden: { display: "none" },
   viewOptions: {
     display: "flex",
@@ -853,10 +859,13 @@ function MoreMenu({
  */
 function LeaveMenu({
   pending,
+  alone = false,
   onLeave,
   onEndForEveryone,
 }: {
   pending: boolean;
+  /** Nobody else is here: there is no "everyone else" to stay. */
+  alone?: boolean;
   onLeave: () => void;
   onEndForEveryone?: () => void;
 }) {
@@ -880,7 +889,7 @@ function LeaveMenu({
         <DockMenuRow
           icon={LogOut}
           label="Leave meeting"
-          hint={onEndForEveryone ? "Everyone else stays in the call" : "You can rejoin with the same link"}
+          hint={onEndForEveryone && !alone ? "Everyone else stays in the call" : "You can rejoin with the same link"}
           disabled={pending}
           onClick={() => {
             setOpen(false);
@@ -893,7 +902,7 @@ function LeaveMenu({
             <DockMenuRow
               icon={PhoneOff}
               label="End meeting for everyone"
-              hint="Disconnects every participant"
+              hint={alone ? "Ends it now and starts the recap" : "Disconnects every participant"}
               danger
               disabled={pending}
               onClick={() => {
@@ -1051,7 +1060,12 @@ export function MeetingRoomActions({
       />
       </div>
 
-      <LeaveMenu pending={leavePending} onLeave={onLeave} onEndForEveryone={onEndForEveryone} />
+      <LeaveMenu
+        pending={leavePending}
+        alone={people !== undefined && people.count <= 1}
+        onLeave={onLeave}
+        onEndForEveryone={onEndForEveryone}
+      />
     </Toolbar.Root>
   );
 }

@@ -39,14 +39,21 @@ export function firstName(name: string): string {
 
 /**
  * "6:33–7:31 AM": when a meeting ran, as one range. The day period is said
- * once when both ends share it.
+ * once when both ends share it. A meeting that crosses midnight names only the
+ * day it ended on, "11:03 PM–12:04 AM (Oct 18)": `formatRange` across two days
+ * spelled out both full dates, "10/17/2026, 11:03 PM – 10/18/2026, 12:04 AM".
  */
 export function formatTimeRange(start: string, end: string | null): string {
   if (!end) return formatMeetingTime(start);
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  if (Number.isNaN(endDate.getTime()) || endDate.getTime() <= startDate.getTime()) return formatMeetingTime(start);
   const format = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit" });
-  return format
-    .formatRange(new Date(start), new Date(end))
-    .replace(/\s*[–-]\s*/u, "–");
+  if (startDate.toDateString() !== endDate.toDateString()) {
+    const endDay = endDate.toLocaleDateString([], { month: "short", day: "numeric" });
+    return `${format.format(startDate)}–${format.format(endDate)} (${endDay})`;
+  }
+  return format.formatRange(startDate, endDate).replace(/\s*[–-]\s*/u, "–");
 }
 
 /** "57 min", "1 h 16 min", "2 h": how long a meeting ran, spelled out for a list. */

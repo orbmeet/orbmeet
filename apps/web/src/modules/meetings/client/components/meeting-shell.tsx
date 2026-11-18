@@ -1,3 +1,4 @@
+import { TOAST_RIGHT_INSET_VAR } from "@orbmeet/ui/react";
 import { safe } from "@orbmeet/ui/styles/atoms";
 import { onBoard, stageChrome } from "@orbmeet/ui/styles/stage";
 import { zIndex } from "@orbmeet/ui/tokens/layers.stylex";
@@ -11,6 +12,15 @@ import { selectMeetingChromeInsets } from "@/modules/meetings/client/chrome";
 
 const styles = stylex.create({
   shell: { position: "relative", height: "100dvh", overflow: "hidden" },
+  /**
+   * The top bar's height, which grows to two rows on a portrait tablet (see
+   * MeetingTopBar). The stage reserves it through this variable rather than a
+   * fixed number, so the bar never covers what sits at the top of the stage.
+   * Pinned to chrome.ts by meeting-top-bar.test.ts.
+   */
+  topBarHeight: {
+    "--meeting-top-bar-height": { default: "60px", "@media (max-width: 899px)": "108px" },
+  },
   /** Header band. The band itself is inert; only the header inside it is not. */
   headerBand: {
     position: "absolute",
@@ -138,13 +148,24 @@ export function MeetingShell({
     hasModeSwitch,
   });
 
+  // Toasts are portalled to the document, outside this frame: tell them how
+  // much of the right edge a side panel holds, so they stand beside it.
+  React.useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty(TOAST_RIGHT_INSET_VAR, panelWidth);
+    return () => {
+      root.style.removeProperty(TOAST_RIGHT_INSET_VAR);
+    };
+  }, [panelWidth]);
+
   return (
     <div
       ref={ref}
       {...stylex.props(
         styles.shell,
+        !isPhone && header ? styles.topBarHeight : null,
         stageChrome.publish(
-          `${chrome.top}px`,
+          !isPhone && header ? "var(--meeting-top-bar-height)" : `${chrome.top}px`,
           `${chrome.bottom}px`,
           // Nothing docks against the stage's right any more: a panel is
           // reserved through `panelWidth`, the faces beside content with it.

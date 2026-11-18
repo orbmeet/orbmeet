@@ -7,6 +7,7 @@ import type { JoinResult } from "@/modules/meetings/contract/types";
 import type { MeetingSurfaceState } from "@/modules/meetings/contract/live-state";
 import type { AssistantHost, AssistantView, WhiteboardFollowState } from "@orbmeet/whiteboard-client/react";
 import { logError } from "@/lib/logger";
+import { getServerErrorCode } from "@/lib/error-inspection";
 import { reportBoundaryError } from "@/lib/telemetry/client-errors";
 import { markMeetingEntryMetric } from "@/modules/meetings/client/entry-metrics";
 import {
@@ -291,16 +292,34 @@ export function useMeetingWhiteboard({
   const whiteboardDisabledByConfig =
     whiteboardRequested && !whiteboardCanAttemptOpen;
 
+  const canChooseExistingBoard = isAuthenticated && meeting.canModerate;
   const reportViewFailure = React.useCallback(
     (error: unknown) => {
       logError("[Meeting] Failed to change Whiteboard visibility", error);
+      // Opening the board starts a new one, and a Space at its plan's board
+      // limit refuses it every time: "please try again" sent hosts round in
+      // circles. Say why, and point at what does work.
+      if (getServerErrorCode(error) === "PLAN_LIMIT_REACHED") {
+        addToast({
+          title: "No room for a new board",
+          description: canChooseExistingBoard
+            ? "This Space has reached its plan's board limit. Open one of its existing boards instead, or archive old boards in the Library."
+            : "This Space has reached its plan's board limit. A host can open one of its existing boards instead.",
+          data: { variant: "error" },
+          timeout: 0,
+          ...(canChooseExistingBoard
+            ? { actionProps: { children: "Open an existing board", onClick: () => setShowWhiteboardPicker(true) } }
+            : {}),
+        });
+        return;
+      }
       addToast({
-        title: "Whiteboard action failed",
-        description: "Could not change the Whiteboard visibility. Please try again.",
+        title: "The board didn't open",
+        description: "Something went wrong on our side. Try again in a moment.",
         data: { variant: "error" },
       });
     },
-    [addToast],
+    [addToast, canChooseExistingBoard],
   );
   // Anyone can press Board. A moderator opens a closed board for everyone;
   // anyone else asks a moderator to, and pressing again takes the ask back.
@@ -320,13 +339,27 @@ export function useMeetingWhiteboard({
   const mustAskForBoard = !whiteboardState.sharedSurfaceOpen && !meeting.canModerate;
   const showBoard = React.useCallback(() => {
     if (mustAskForBoard) {
-      void (boardAsked ? takeBackBoardAsk() : askForBoard()).catch(() =>
-        addToast({
-          title: "Couldn't reach the host",
-          description: "Try asking again in a moment.",
-          data: { variant: "error" },
-        }),
-      );
+      // Say what pressing Board did: a small dot on the button was all a
+      // guest saw, and nothing said a host had been asked.
+      const asking = !boardAsked;
+      void (asking ? askForBoard() : takeBackBoardAsk())
+        .then(() =>
+          addToast(
+            asking
+              ? {
+                  title: "You asked the host to open the board",
+                  description: "It opens here when they do. Press Board again to take the request back.",
+                }
+              : { title: "Request taken back" },
+          ),
+        )
+        .catch(() =>
+          addToast({
+            title: "Couldn't reach the host",
+            description: "Try asking again in a moment.",
+            data: { variant: "error" },
+          }),
+        );
       return;
     }
     void session.showBoard().catch(reportViewFailure);

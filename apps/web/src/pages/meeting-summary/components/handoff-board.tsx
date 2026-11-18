@@ -22,6 +22,10 @@ export function HandoffBoard({
       assets={assets}
       shapeUtils={whiteboardShapeUtils}
       onMount={(editor) => {
+        // The whole board in view, as the host's recap shows it: opened at
+        // the camera's origin, a phone showed one box of a flowchart.
+        const bounds = editor.getCurrentPageBounds();
+        if (bounds) editor.zoomToBounds(bounds, { inset: 16 });
         editor.updateInstanceState({ isReadonly: true });
       }}
       options={WHITEBOARD_TLDRAW_OPTIONS}

@@ -11,7 +11,7 @@ import { Presentation, Video } from "lucide-react";
 
 import { MeetingBoardPreview } from "./meeting-board-preview";
 import { MeetingOutputActions } from "./meeting-output-actions";
-import { formatMeetingLength, formatTimeRange, meetingDisplayTitle } from "./meeting-format";
+import { formatMeetingDate, formatMeetingLength, formatTimeRange, meetingDisplayTitle } from "./meeting-format";
 
 /** What a row needs to know about a past meeting; every meeting list has it. */
 export interface MeetingRowData {
@@ -83,6 +83,7 @@ export function MeetingRow({
   viewerName,
   renderTitle,
   fromSpace,
+  showDate = false,
 }: {
   meeting: MeetingRowData;
   viewerName?: string;
@@ -90,6 +91,11 @@ export function MeetingRow({
   renderTitle?: (title: string) => ReactNode;
   /** Where "back" from the meeting goes, when listed inside a Space. */
   fromSpace?: string;
+  /**
+   * Say which day it was. For lists not grouped under day headings, where a
+   * time alone ("4:17–4:26 AM") could be any day.
+   */
+  showDate?: boolean;
 }) {
   const title = meetingDisplayTitle(meeting.title, meeting.participantNames, viewerName);
   const length = formatMeetingLength(meeting.startedAt, meeting.endedAt);
@@ -113,6 +119,7 @@ export function MeetingRow({
       <span {...stylex.props(styles.body)}>
         <span {...stylex.props(styles.title, layout.truncate)}>{renderTitle ? renderTitle(title) : title}</span>
         <DotList sx={styles.meta}>
+          {showDate && meeting.startedAt ? <span>{formatMeetingDate(meeting.startedAt)}</span> : null}
           {meeting.startedAt ? (
             <span {...stylex.props(styles.time)}>{formatTimeRange(meeting.startedAt, meeting.endedAt)}</span>
           ) : null}

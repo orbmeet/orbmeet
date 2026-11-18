@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
-import { Lock, Monitor, SquarePen, Users } from "lucide-react";
+import { Lock, Monitor, Pause, Play, SquarePen, Users } from "lucide-react";
 import { BrandMark } from "@orbmeet/ui/react";
 import { focus, motion } from "@orbmeet/ui/styles/atoms";
 import { accent, border, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
@@ -117,6 +117,7 @@ const styles = stylex.create({
   privatePill: { paddingBlock: 5, paddingInline: 12, borderRadius: 999, backgroundColor: surface.canvas, fontSize: 13, color: neutral.n700, display: "flex", alignItems: "center", gap: 6 },
   composer: { position: "relative", marginTop: 6, marginBottom: 12, marginInline: 12, height: 46, paddingInline: 14, borderWidth: 1, borderStyle: "solid", borderColor: accent.a600, borderRadius: 13, display: "flex", alignItems: "center", color: ink.muted, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden" },
   placeholder: { position: "absolute" },
+  placeholderHidden: { opacity: 0, visibility: "hidden" },
   typed: { color: ink.strong },
   caret: { display: "inline-block", width: 1.5, height: 17, marginInlineStart: 1, backgroundColor: accent.a600, opacity: 0 },
   spot: { position: "absolute", zIndex: 5, left: 924, top: 178, width: 344, height: 610, borderRadius: 18, boxShadow: film.spotlight, pointerEvents: "none", visibility: "hidden" },
@@ -152,6 +153,15 @@ const styles = stylex.create({
     color: { default: ink.muted, [env.hoverable]: { default: ink.muted, ":hover": ink.strong } },
   },
   chapterOn: { color: ink.strong, fontWeight: 500 },
+  playback: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    paddingInlineStart: "clamp(12px, 2.2vw, 30px)",
+    borderInlineStartWidth: 1,
+    borderInlineStartStyle: "solid",
+    borderInlineStartColor: border.subtle,
+  },
   chapterBar: { position: "absolute", left: 0, right: 0, bottom: 3, height: 2, backgroundColor: accent.a600, transform: "scaleX(0)", transformOrigin: "0 50%" },
 });
 
@@ -264,6 +274,8 @@ const FilmStage = memo(function FilmStage({ stageRef }: { stageRef: RefObject<HT
             </div>
             <div {...stylex.props(styles.composer)}>
               <span data-f="ph" {...stylex.props(styles.placeholder)}>Message everyone</span>
+              {/* The private thread's own box, as the room has it. */}
+              <span data-f="phOrb" {...stylex.props(styles.placeholder, styles.placeholderHidden)}>Ask Orb</span>
               <span data-f="typed" {...stylex.props(styles.typed)} />
               <i data-f="caret" {...stylex.props(styles.caret)} />
             </div>
@@ -409,7 +421,14 @@ export function LandingFilm() {
             <i ref={(el) => { bars.current[index] = el; }} {...stylex.props(styles.chapterBar)} />
           </button>
         ))}
-        <button type="button" onClick={togglePaused} {...stylex.props(styles.chapter, focus.ring, motion.tint)}>
+        {/* A control for the film, not one of its chapters: set apart, with its icon. */}
+        <button
+          type="button"
+          onClick={togglePaused}
+          aria-label={paused ? "Play the film" : "Pause the film"}
+          {...stylex.props(styles.chapter, styles.playback, focus.ring, motion.tint)}
+        >
+          {paused ? <Play size={14} aria-hidden="true" /> : <Pause size={14} aria-hidden="true" />}
           {paused ? "Play" : "Pause"}
         </button>
       </div>

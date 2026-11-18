@@ -14,12 +14,18 @@ export interface OrbTip {
   text: string;
   /** Something to ask Orb, written out: pressing it puts it in the box. */
   example?: string;
+  /**
+   * A button that does the thing at once, privately, instead of an example
+   * to send to the room: a quoted phrase under "Message everyone" read as
+   * something to type there, where everyone would see it.
+   */
+  action?: { kind: "catch-up"; label: string };
 }
 
 export interface OrbTipContext {
   /** Orb draws for this viewer: they can write on the board. */
   canDraw: boolean;
-  /** The meeting is transcribing, so "catch me up" has something to go on. */
+  /** The meeting is transcribing and catch-up can be asked, so it has something to go on. */
   transcribing: boolean;
   /** There is a private thread with Orb to point to. */
   orbThread: boolean;
@@ -45,7 +51,8 @@ export function orbTips(context: OrbTipContext): OrbTip[] {
     { id: "select", text: `Ask about one part of the board: select it, then press Ask ${ORB_NAME} beside it.` },
     context.transcribing && {
       id: "catch-up",
-      text: `Missed something? “${ORB_NAME}, catch me up” sums up the last 10 minutes, for you alone.`,
+      text: `Missed something? ${ORB_NAME} sums up the last 10 minutes, for you alone: `,
+      action: { kind: "catch-up", label: "Catch me up" },
     },
     context.orbThread && {
       id: "orb-thread",

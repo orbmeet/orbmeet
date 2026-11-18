@@ -22,7 +22,7 @@ import {
   isOrbMentionPrefix,
   ORB_NAME,
   orbQuestion,
-  recentlySaid,
+  recentConversation,
   sharedOrbAnswer,
   withOrbMention,
   type MeetingAssistant,
@@ -52,6 +52,8 @@ import { firstName } from "./meeting-format";
 
 const URL_REGEX = /https?:\/\/[^\s<>)"']*[^\s<>)"'.,;:!?]/g;
 const MAX_MESSAGE_LENGTH = 500;
+/** How tall the message box grows before it scrolls: about five lines. */
+const COMPOSER_MAX_HEIGHT_PX = 120;
 /** How long a question waits for the board, and Orb with it, to come up. */
 const BOARD_OPEN_WAIT_MS = 20_000;
 
@@ -252,7 +254,8 @@ const styles = stylex.create({
   fieldHead: { paddingTop: space.s2, paddingInline: space.s2_5 },
   composerRow: {
     display: "flex",
-    alignItems: "center",
+    // The send button stays by the last line as the box grows.
+    alignItems: "flex-end",
     gap: space.s1_5,
     paddingBlock: space.s1_5,
     paddingInlineStart: space.s3,
@@ -327,10 +330,17 @@ const styles = stylex.create({
   input: {
     flexGrow: 1,
     minWidth: 0,
-    height: 36,
+    // One line to begin with (36px, as the send button), then as many as the
+    // message needs up to COMPOSER_MAX_HEIGHT_PX; the effect sets the height.
+    minHeight: 36,
+    maxHeight: 120,
+    overflowY: "auto",
+    resize: "none",
+    paddingBlock: 8,
+    lineHeight: "20px",
     borderWidth: 0,
     backgroundColor: "transparent",
-    padding: 0,
+    paddingInline: 0,
     fontFamily: "inherit",
     // 16px under a finger: iOS zooms the page into a smaller focused field (see styles.css).
     fontSize: { default: text.sm, [env.touch]: text.base },
@@ -728,7 +738,15 @@ export function MeetingTimeline({
   const ownKeyboardOffset = useIOSKeyboard();
   const keyboardOffset = embeddedInSheet ? 0 : ownKeyboardOffset;
   const streamRef = React.useRef<HTMLDivElement>(null);
-  const inputRef = React.useRef<HTMLInputElement>(null);
+  const inputRef = React.useRef<HTMLTextAreaElement>(null);
+  // The box grows with what is written, a few lines at most, then scrolls: a
+  // one-line field scrolled a long message sideways and hid its start.
+  React.useLayoutEffect(() => {
+    const box = inputRef.current;
+    if (!box) return;
+    box.style.height = "auto";
+    box.style.height = `${Math.min(box.scrollHeight, COMPOSER_MAX_HEIGHT_PX)}px`;
+  }, [inputValue]);
   // Follow new entries only while the reader is at the bottom, so scrolling
   // back through the meeting is never yanked away by the next sentence.
   const pinnedToBottomRef = React.useRef(true);
@@ -803,7 +821,7 @@ export function MeetingTimeline({
     orb && orb.available && orbTeaching && inRoom && !tipsOff
       ? orbTips({
           canDraw: orb.canDraw,
-          transcribing: orbTeaching.transcribing,
+          transcribing: orbTeaching.transcribing && Boolean(onCatchUp),
           orbThread: Boolean(threads?.orb),
           privateChats: (threads?.people.length ?? 0) > 0,
           paletteShortcut: orbTeaching.paletteShortcut,
@@ -824,7 +842,9 @@ export function MeetingTimeline({
   const [ideaShift, setIdeaShift] = React.useState(0);
   const ideas = orbQuestionIdeas(tipTurn + ideaShift, orbTeaching?.transcribing ?? false);
 
-  const saidLately = () => recentlySaid(speech.entries, Date.now());
+  // What was said and written to the room lately: "what did I miss?" is as
+  // much about the chat as about the call.
+  const saidLately = () => recentConversation({ said: speech.entries, chat: messages, orb: orbEntries }, Date.now());
   const askOrb = async (question: string, target: TimelineThread): Promise<string | null> => {
     if (!question) return withOrb ? "Write your question first." : `Write your question after @${ORB_NAME}.`;
     if (!orb) {
@@ -1195,9 +1215,9 @@ export function MeetingTimeline({
             </div>
           )}
           <div {...stylex.props(styles.composerRow)}>
-            <input
+            <textarea
               ref={inputRef}
-              type="text"
+              rows={1}
               value={inputValue}
               disabled={partnerAway}
               onChange={(event) => {
@@ -1206,6 +1226,13 @@ export function MeetingTimeline({
                 setBoardAsk(null);
               }}
               onKeyDown={(event) => {
+                // Enter sends, as it did in the one-line field; Shift+Enter
+                // starts a new line. (isKey ignores a key that finishes an IME word.)
+                if (isKey(event.nativeEvent, "Enter") && !event.shiftKey) {
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                  return;
+                }
                 if (offerOrb && isKey(event.nativeEvent, "Tab")) {
                   event.preventDefault();
                   completeMention();
@@ -1272,6 +1299,16 @@ export function MeetingTimeline({
               <p {...stylex.props(styles.tipText)}>
                 <span {...stylex.props(styles.tipLabel)}>Tip </span>
                 {tip.text}
+                {tip.action?.kind === "catch-up" && onCatchUp && (
+                  <button
+                    type="button"
+                    onClick={onCatchUp}
+                    title={`Asks ${ORB_NAME} in your own thread. Nobody else sees it.`}
+                    {...stylex.props(focus.ring, styles.tipExample)}
+                  >
+                    {tip.action.label}
+                  </button>
+                )}
                 {tip.example && (
                   <button
                     type="button"

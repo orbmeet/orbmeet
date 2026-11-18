@@ -398,7 +398,9 @@ export function WhiteboardDocumentPage() {
         </div>
       </header>
       <div {...stylex.props(styles.body)}>
-        <main {...stylex.props(styles.main)}>
+        {/* A div: the authed shell's <main> already holds this page, and a
+            landmark inside a landmark of the same kind confuses screen readers. */}
+        <div {...stylex.props(styles.main)}>
           {access.error ? (
             <div {...stylex.props(styles.centered, styles.accessError)}>
               {getErrorMessage(access.error)}
@@ -427,7 +429,7 @@ export function WhiteboardDocumentPage() {
               />
             </div>
           )}
-        </main>
+        </div>
         {showHistory ? (
           <WhiteboardHistoryPanel
             whiteboardId={document.id}

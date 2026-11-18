@@ -3,6 +3,7 @@ import {
   formatMeetingDate,
   formatMeetingDuration,
   formatMeetingLength,
+  formatTimeRange,
   meetingDisplayTitle,
   peopleInMeeting,
 } from "./meeting-format";
@@ -85,5 +86,27 @@ describe("meetingDisplayTitle", () => {
     );
     expect(meetingDisplayTitle(null, ["A", "B", "C", "D"], "A")).toBe("Call with B and 2 others");
     expect(meetingDisplayTitle(null, ["Atiq Rahman"], "Atiq Rahman")).toBe("Call on your own");
+  });
+});
+
+describe("formatTimeRange", () => {
+  const at = (day: number, hour: number, minute: number) => new Date(2026, 9, day, hour, minute).toISOString();
+
+  it("names only the end's day when a meeting crosses midnight", () => {
+    const range = formatTimeRange(at(17, 23, 3), at(18, 0, 4));
+    expect(range).toContain("(Oct 18)");
+    expect(range).not.toContain("2026");
+    expect(range).not.toContain("10/17");
+  });
+
+  it("keeps a same-day meeting as one range without a date", () => {
+    const range = formatTimeRange(at(17, 6, 33), at(17, 7, 31));
+    expect(range).not.toContain("(");
+    expect(range).toContain("–");
+  });
+
+  it("falls back to the start for a missing or backwards end", () => {
+    expect(formatTimeRange(at(17, 6, 33), null)).not.toContain("–");
+    expect(formatTimeRange(at(17, 6, 33), at(17, 6, 0))).not.toContain("–");
   });
 });

@@ -344,8 +344,10 @@ const styles = stylex.create({
 });
 
 /**
- * Phones get an annotate-only kit (pen, highlighter, eraser, undo, color);
- * the full shape/text/table tools need a tablet or desktop to be usable.
+ * Phones in a meeting get an annotate-only kit (select, pen, highlighter,
+ * eraser, undo and redo, color); the full shape/text/table tools need a tablet
+ * or desktop to be usable. Select stays: without it a stroke could not be
+ * moved or deleted, only rubbed out.
  */
 export function getWhiteboardToolbarVariant(
   compact: boolean,
@@ -654,9 +656,9 @@ export const WhiteboardToolbar = track(function WhiteboardToolbar() {
   }
 
   // Phones: a strip along the top, thumb-sized, with everything past the pen
-  // and eraser folded into More — except undo, which a finger reaches for
-  // after nearly every stroke. Redo joins it where there is
-  // a More menu (the minimal phone kit has neither the room nor the menu).
+  // and eraser folded into More — except undo and redo, which a finger reaches
+  // for after nearly every stroke. The strip scrolls, with a fade at the edge
+  // it continues past, when a narrow phone cannot hold it all.
   return (
     <ToolColorContext.Provider value={{ currentToolId, highlightColor, setToolColor }}>
       <div
@@ -674,16 +676,14 @@ export const WhiteboardToolbar = track(function WhiteboardToolbar() {
               <ToolbarActionButton onClick={() => { void actions["undo"]?.onSelect("toolbar"); }} disabled={!canUndo} label="Undo" compact>
                 <Undo2 size={TOOL_ICON_SIZE} strokeWidth={TOOL_ICON_STROKE} />
               </ToolbarActionButton>
-              {!minimal && (
-                <ToolbarActionButton onClick={() => { void actions["redo"]?.onSelect("toolbar"); }} disabled={!canRedo} label="Redo" compact>
-                  <Redo2 size={TOOL_ICON_SIZE} strokeWidth={TOOL_ICON_STROKE} />
-                </ToolbarActionButton>
-              )}
+              <ToolbarActionButton onClick={() => { void actions["redo"]?.onSelect("toolbar"); }} disabled={!canRedo} label="Redo" compact>
+                <Redo2 size={TOOL_ICON_SIZE} strokeWidth={TOOL_ICON_STROKE} />
+              </ToolbarActionButton>
             </div>
           )}
 
           <div {...stylex.props(styles.group, styles.coreGroup)}>
-            {!minimal && <ToolButton id="select" current={currentToolId} onSelect={handleToolSelect} label="Select" compact />}
+            <ToolButton id="select" current={currentToolId} onSelect={handleToolSelect} label="Select" compact />
             <ToolButton id="draw" current={currentToolId} onSelect={handleToolSelect} label="Draw" compact />
             <ToolButton id="highlight" current={currentToolId} onSelect={handleToolSelect} label="Highlighter" compact />
             <ToolButton id="eraser" current={currentToolId} onSelect={handleToolSelect} label="Eraser" compact />
@@ -920,6 +920,8 @@ function ToolbarActionButton({
         compact ? styles.actionCompact : styles.actionRegular,
         variant === "danger" ? styles.actionDanger : styles.actionIdle,
       )}
+      // A title alone is a hover hint, not a name every screen reader reads.
+      aria-label={label}
       title={label}
     >
       {children}

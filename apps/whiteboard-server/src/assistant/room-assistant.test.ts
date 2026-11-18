@@ -471,7 +471,7 @@ describe("RoomAssistant in private", () => {
       said: "Maya Kim: so we split it into two cases",
     });
     await until(() => privateRunEnded(t.privately.get(alice.participant)), "the private run to end");
-    expect(promptText(t.contexts[0])).toContain("What was said in the meeting lately:\nMaya Kim: so we split it into two cases");
+    expect(promptText(t.contexts[0])).toContain("What was said and written in the meeting lately:\nMaya Kim: so we split it into two cases");
   });
 
   it("keeps what went with a question on it, for its answer to show", async () => {

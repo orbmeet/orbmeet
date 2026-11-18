@@ -53,6 +53,8 @@ const styles = stylex.create({
     color: danger.d600,
   },
   backButton: { marginTop: space.s6, alignSelf: "flex-start" },
+  /** A ghost button's words line up with the column, its padding hangs outside it. */
+  flushStart: { marginInlineStart: `calc(-1 * ${space.s4})` },
 
   description: {
     marginTop: space.s2,
@@ -82,7 +84,12 @@ const styles = stylex.create({
    */
   otpInput: {
     height: 56,
-    width: 48,
+    // The six cells share the column's width, as wide as the fields on the
+    // page before, rather than sitting in a short row of fixed 48px boxes.
+    flexGrow: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    maxWidth: 72,
     borderRadius: 12,
     borderWidth: 1,
     borderStyle: "solid",
@@ -192,16 +199,20 @@ export function VerifyPage() {
     return (
       <AuthLayout>
         <div {...stylex.props(enter.fadeUp)}>
-          <h1 {...stylex.props(styles.title)}>Verification expired</h1>
+          {/* The flow lives in the tab that asked for the code, so this also
+              shows when the link is opened in another tab. "Expired" sent
+              people to wait out a code that was still good. */}
+          <h1 {...stylex.props(styles.title)}>This sign-in isn&rsquo;t open here</h1>
           <p {...stylex.props(styles.lede)}>
-            Start sign-in again in this tab to request a new code.
+            Enter your code in the tab where you asked for it. If you closed that tab, or more than 10 minutes have
+            passed, start again here for a new code.
           </p>
           <Button
             type="button"
             sx={styles.backButton}
             onClick={() => void router.navigate({ to: "/auth", search: { redirect: redirectTo } })}
           >
-            Back to sign in
+            Start again
           </Button>
         </div>
       </AuthLayout>
@@ -298,7 +309,7 @@ export function VerifyPage() {
         <Button
           type="button"
           variant="ghost"
-          sx={styles.backButton}
+          sx={[styles.backButton, styles.flushStart]}
           disabled={verifyMutation.isPending || resendMutation.isPending}
           onClick={() => {
             clearClientAuthFlow(flowId);

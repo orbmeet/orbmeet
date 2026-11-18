@@ -6,6 +6,7 @@ import { accent, danger, neutral, surface } from "@orbmeet/ui/tokens/colors.styl
 import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";
 import { shadows } from "@orbmeet/ui/tokens/shadows.stylex";
+import { topBar } from "@orbmeet/ui/tokens/markers.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { fonts, leading, text, tracking, weight } from "@orbmeet/ui/tokens/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
@@ -22,6 +23,18 @@ import { countBadge } from "@/modules/meetings/client/meeting-styles";
  * They share a slot size, a state vocabulary and a menu chrome by importing
  * them from here rather than each carrying a copy.
  */
+/**
+ * How many of its controls' words the top bar shows, set by MeetingTopBar on
+ * the element carrying the `topBar` marker: all that the breakpoints allow,
+ * few (not those of your own controls), or none. It steps down when the
+ * meeting's name and status would otherwise be cut off — "Transcribing" among
+ * them, which is about everyone in the room and must stay readable.
+ */
+export const TOP_BAR_LABELS_ATTRIBUTE = "data-labels";
+export type TopBarLabels = "all" | "few" | "none";
+const LABELS_NONE = ':is([data-labels="none"])';
+const LABELS_FEW_OR_NONE = ':is([data-labels="few"], [data-labels="none"])';
+
 const dockItem = stylex.create({
   /**
    * Every control in the bar is the same 34px slot inside a 48px bar — and
@@ -157,7 +170,10 @@ export const dockStyles = stylex.create({
    * about 250px. A tablet showed bare icons, and touch has no tooltip.
    */
   label: {
-    display: { default: "none", [bp.lg]: "inline" },
+    display: {
+      default: "none",
+      [bp.lg]: { default: "inline", [stylex.when.ancestor(LABELS_NONE, topBar)]: "none" },
+    },
     maxWidth: 96,
   },
   /**
@@ -166,7 +182,10 @@ export const dockStyles = stylex.create({
    * meeting's name still keeps its room. Below that the tooltip carries them.
    */
   labelWide: {
-    display: { default: "none", [bp.xl]: "inline" },
+    display: {
+      default: "none",
+      [bp.xl]: { default: "inline", [stylex.when.ancestor(LABELS_FEW_OR_NONE, topBar)]: "none" },
+    },
     maxWidth: 96,
   },
   /** The rule between groups. */

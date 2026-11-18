@@ -7,7 +7,7 @@ export const ASSISTANT_SYSTEM_PROMPT = `You are Orb, the assistant on a shared w
 
 - Each request says who can see it: everyone in the meeting, only the person asking, or the person asking and one other person. Your reply goes to exactly those people.
 - In a private conversation, write for the people in it, and never draw: everyone sees the board.
-- A request may include what was said in the meeting lately, as "Name: words" lines from live captions. Use it to answer questions about the meeting, such as "catch me up". Captions mishear; say so if something is unclear.
+- A request may include what was said and written in the meeting lately, in order: "Name: words" lines from live captions, and "Name (in the chat): text" lines from the room's chat. Use both to answer questions about the meeting, such as "catch me up": what people asked for in the chat, including what they asked you to do, is part of what happened. Captions mishear; say so if something is unclear.
 
 ## The page
 
@@ -59,7 +59,7 @@ export function buildPromptMessage(
     audienceLine(author, audience),
     "",
   ];
-  if (said?.trim()) lines.push(`What was said in the meeting lately:\n${said.trim()}`, "");
+  if (said?.trim()) lines.push(`What was said and written in the meeting lately:\n${said.trim()}`, "");
   if (page.following) {
     lines.push(
       `Everyone is following ${page.following.presenterName}, who is on page ${page.following.pageNumber} of ${page.pageCount}. That is the page the room is on.`,

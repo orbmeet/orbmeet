@@ -25,6 +25,7 @@ import { queryKeys } from "@/app/query-client/query-keys";
 import { deviceTimeZone } from "@/lib/time-zone";
 import type { MeetingSurfaceState } from "@/modules/meetings/contract/live-state";
 import { createNewWhiteboard, listPresentableWhiteboards, presentWhiteboard } from "@/modules/whiteboards/server/api.functions";
+import { boardDisplayTitle } from "@/modules/whiteboards/client/board-title";
 
 const styles = stylex.create({
   newButton: { marginBottom: space.s4, width: "100%" },
@@ -239,7 +240,7 @@ export function MeetingWhiteboardPicker({
                   </span>
                   <span {...stylex.props(styles.choiceBody)}>
                     <span {...stylex.props(styles.choiceTitle, layout.truncate)}>
-                      {whiteboard.title}
+                      {boardDisplayTitle(whiteboard)}
                     </span>
                     {whiteboard.contextName && (
                       <span {...stylex.props(styles.choiceContext, layout.truncate)}>
@@ -263,6 +264,9 @@ export function MeetingWhiteboardPicker({
                   ) : (
                     <Button
                       size="sm"
+                      // One primary action in the dialog, "New blank Whiteboard":
+                      // a filled button on every row made each row shout.
+                      variant="secondary"
                       sx={styles.presentButton}
                       disabled={selectMutation.isPending}
                       onClick={() => selectMutation.mutate({

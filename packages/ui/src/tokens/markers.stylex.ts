@@ -25,3 +25,10 @@ import * as stylex from "@stylexjs/stylex";
  * hover and the disclosure's open state stay separately addressable.
  */
 export const disclosure = stylex.defineMarker();
+
+/**
+ * The meeting's top bar. It drops its controls' words, in two steps, when the
+ * meeting's name and status would otherwise be cut off; the labels inside
+ * read that through `stylex.when.ancestor(..., topBar)`.
+ */
+export const topBar = stylex.defineMarker();

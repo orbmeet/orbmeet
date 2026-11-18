@@ -515,7 +515,11 @@ export function PublicMeetingSummaryPage() {
             <p {...stylex.props(styles.bannerDetail)}>
               The meeting has ended. Orb is preparing your summary.
             </p>
-            <p {...stylex.props(styles.wrapUpRow)}>This usually takes a few seconds.</p>
+            {/* The summary waits out DISCONNECTED_TRANSCRIPT_GRACE_MS for the last
+                words to arrive, so "a few seconds" was two minutes. */}
+            <p {...stylex.props(styles.wrapUpRow)}>
+              This takes about two minutes, while the last of what was said comes in.
+            </p>
           </div>
         </div>
         {whiteboardSection}

@@ -134,7 +134,7 @@ export function MeetingEntryModeField({
     >
       <legend {...stylex.props(styles.legend)}>
         <ShieldCheck size={16} {...stylex.props(styles.legendGlyph)} />
-        How eligible people enter
+        How people get in
       </legend>
       <div {...stylex.props(styles.options)}>
         {options.map((option) => {

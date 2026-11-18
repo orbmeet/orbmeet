@@ -68,7 +68,9 @@ export function SessionsSection() {
   return (
     <SettingsSection title="Signed-in devices">
       <div {...stylex.props(stack.x4)}>
-        {sessionsList.map((session) => (
+        {/* This device first, the rest newest first: it was wherever its sign-in
+            date put it, row 7 of 9 for a session signed in last week. */}
+        {[...sessionsList].sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent)).map((session) => (
           <div key={session.id} {...stylex.props(settings.itemRow)}>
             <div {...stylex.props(layout.minZero)}>
               <div {...stylex.props(row.x2)}>

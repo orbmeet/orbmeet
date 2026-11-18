@@ -47,7 +47,7 @@ export interface UseAssistantOptions {
 export interface AssistantPromptOptions {
   /** Who sees the question and the answer. Absent: the room. */
   audience?: AssistantAudienceRequest;
-  /** What was said in the meeting lately, as "Name: words" lines. */
+  /** What was said and written in the meeting lately, as "Name: words" and "Name (in the chat): text" lines. */
   said?: string;
 }
 

@@ -1,4 +1,4 @@
-import { getRouteApi } from "@tanstack/react-router";
+import { getRouteApi, Link } from "@tanstack/react-router";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import * as React from "react";
@@ -30,7 +30,7 @@ import { TooltipProvider } from "@orbmeet/ui/react";
 import { ambient, progress, spinner, stagger } from "@orbmeet/ui/styles/animations";
 import { focus, motion, pressable } from "@orbmeet/ui/styles/atoms";
 import { glow, surfaces } from "@orbmeet/ui/styles/surfaces";
-import { accent, decor, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
+import { accent, border, decor, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";
 import { shadows } from "@orbmeet/ui/tokens/shadows.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
@@ -180,8 +180,28 @@ const styles = stylex.create({
     lineHeight: leading.xl,
     color: ink.muted,
   },
-  endedAction: {
+  endedActions: {
     marginTop: space.s5,
+    display: "flex",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: space.s2,
+  },
+  endedSecondary: {
+    display: "inline-flex",
+    borderRadius: radii.control,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: border.subtle,
+    backgroundColor: { default: surface.raised, [env.hoverable]: { default: surface.raised, ":hover": surface.sunken } },
+    paddingInline: space.s4,
+    paddingBlock: space.s2,
+    fontSize: text.sm,
+    fontWeight: weight.medium,
+    color: ink.strong,
+    textDecorationLine: "none",
+  },
+  endedAction: {
     display: "inline-flex",
     borderRadius: radii.control,
     backgroundColor: { default: accent.a700, [env.hoverable]: { default: accent.a700, ":hover": accent.a800 } },
@@ -248,14 +268,26 @@ function EndedMeetingNotice() {
       <div {...stylex.props(surfaces.card, styles.endedCard)}>
         <h1 {...stylex.props(styles.endedTitle)}>This meeting has ended</h1>
         <p {...stylex.props(styles.endedDetail)}>
-          This join link has already been used. Ask the organizer for a new one.
+          {/* A room's code outlives its meetings, so this is not a used-up
+              link: "already been used" sent people asking for a new one. */}
+          Nobody is in this room right now. If you were in the meeting and have an account,
+          sign in to see what it left. Otherwise, ask the person who invited you when the next one starts.
         </p>
-        <a
-          href="/"
-          {...stylex.props(pressable.base, focus.ring, motion.tint, styles.endedAction)}
-        >
-          Return home
-        </a>
+        <div {...stylex.props(styles.endedActions)}>
+          <Link
+            to="/auth"
+            search={{ mode: "login", redirect: typeof window === "undefined" ? undefined : window.location.pathname }}
+            {...stylex.props(pressable.base, focus.ring, motion.tint, styles.endedAction)}
+          >
+            Sign in
+          </Link>
+          <a
+            href="/"
+            {...stylex.props(pressable.base, focus.ring, motion.tint, styles.endedSecondary)}
+          >
+            Go to Orb Meet
+          </a>
+        </div>
       </div>
     </div>
   );

@@ -158,7 +158,11 @@ const styles = stylex.create({
     placeItems: "center",
     flexGrow: 1,
     flexBasis: 280,
-    minHeight: 200,
+    minHeight: { default: 140, [bp.md]: 200 },
+    // On a phone the card stacks: the words first and a shorter preview under
+    // them. Preview first, the meeting's name fell below the tab bar.
+    maxHeight: { default: 180, [bp.md]: "none" },
+    order: { default: 1, [bp.md]: 0 },
     backgroundColor: surface.sunken,
     color: neutral.n400,
     overflow: "hidden",
@@ -386,7 +390,7 @@ function Recent({ viewerName }: { viewerName: string }) {
             <Link to="/library" {...stylex.props(touch.target, styles.sectionLink, focus.ring)}>All meetings</Link>
           </div>
           {earlier.map((meeting) => (
-            <MeetingRow key={meeting.meetingId} meeting={meeting} viewerName={viewerName} />
+            <MeetingRow key={meeting.meetingId} meeting={meeting} viewerName={viewerName} showDate />
           ))}
         </section>
       ) : null}

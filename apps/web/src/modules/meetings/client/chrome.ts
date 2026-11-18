@@ -50,6 +50,18 @@ export const PHONE_DOCK_HEIGHT_PX = 64;
 export const DESKTOP_TOP_BAR_HEIGHT_PX = 60;
 
 /**
+ * Below this width (a portrait tablet) the top bar cannot hold the room's name
+ * and its controls on one line, and puts the name on a row of its own.
+ */
+export const DESKTOP_TOP_BAR_TWO_ROW_MAX_WIDTH_PX = 899;
+
+/**
+ * The top bar's height in that two-row layout. The stage reserves it too:
+ * reserving the one-row height let the bar cover the board's page and zoom bar.
+ */
+export const DESKTOP_TOP_BAR_TWO_ROW_HEIGHT_PX = 108;
+
+/**
  * Breathing room between a piece of chrome and the stage content it floats
  * over. Used on both sides of the dock, which is why dock clearance is the
  * dock's own height plus twice this.

@@ -221,6 +221,7 @@ export function MeetingsPanel({
                 meeting={{ ...meeting, meetingId: meeting.id, spaceName, hasWhiteboard: meeting.hasWhiteboardState || meeting.hasWhiteboardPdf }}
                 viewerName={session?.user.name ?? undefined}
                 fromSpace={spaceSlug}
+                showDate
               />
             ))}
           </section>

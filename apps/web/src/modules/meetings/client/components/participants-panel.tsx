@@ -1,9 +1,10 @@
 import * as React from "react";
-import { Captions, Mic, MicOff, MoreHorizontal, X, DoorOpen, Lock, LockOpen, MessageSquareLock, ShieldCheck, UserMinus, UserPlus } from "lucide-react";
-import { useSpeakingParticipants } from "@livekit/components-react";
+import { Captions, Hand, Mic, MicOff, MoreHorizontal, X, DoorOpen, Lock, LockOpen, MessageSquareLock, ShieldCheck, UserMinus, UserPlus } from "lucide-react";
+import { useParticipants, useSpeakingParticipants } from "@livekit/components-react";
+import { RoomEvent } from "livekit-client";
 import { enter, progress } from "@orbmeet/ui/styles/animations";
 import { focus, layout, motion, pressable, row, stack } from "@orbmeet/ui/styles/atoms";
-import { accent, danger, ink, neutral, success, surface } from "@orbmeet/ui/tokens/colors.stylex";
+import { accent, danger, ink, neutral, success, surface, warning } from "@orbmeet/ui/tokens/colors.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { text, weight } from "@orbmeet/ui/tokens/typography.stylex";
@@ -12,10 +13,18 @@ import type { StyleXStyles } from "@stylexjs/stylex";
 import { Avatar, Button, MenuContent, MenuItem, MenuRoot, MenuTrigger, Switch } from "@orbmeet/ui/react";
 
 import { sidePanel } from "@/modules/meetings/client/meeting-styles";
+import { PARTICIPANT_ATTRIBUTE, parseRaisedHand } from "@/modules/meetings/contract/live-state";
 import type { MeetingRole } from "@/modules/meetings/contract/constants";
 import { env } from "@orbmeet/ui/tokens/media.stylex";
 import type { DockSecurityControls } from "./dock-controls";
 import { canChangeModerator, canMessagePrivately, canRemoveParticipant, useRemovalConfirmation } from "./participant-actions";
+
+/** What can change who has a hand up, or who is here to have one. */
+const HAND_EVENTS = [
+  RoomEvent.ParticipantAttributesChanged,
+  RoomEvent.ParticipantConnected,
+  RoomEvent.ParticipantDisconnected,
+];
 
 interface Participant {
   id: string;
@@ -157,6 +166,21 @@ const styles = stylex.create({
     borderWidth: 1,
     borderStyle: "solid",
   },
+  /** A raised hand: the amber the tile's badge wears. */
+  hand: {
+    display: "flex",
+    flexShrink: 0,
+    height: 24,
+    width: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radii.field,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: warning.w200,
+    backgroundColor: warning.w50,
+    color: warning.w800,
+  },
   micOn: {
     backgroundColor: success.s50,
     borderColor: success.s100,
@@ -176,7 +200,6 @@ const styles = stylex.create({
     flexShrink: 0,
     alignItems: "center",
     gap: space.s3,
-    margin: space.s3,
     borderRadius: radii.control,
     borderWidth: 1,
     borderStyle: "solid",
@@ -186,6 +209,22 @@ const styles = stylex.create({
     color: neutral.n600,
   },
   lockText: { minWidth: 0, flexGrow: 1 },
+  roomControls: { display: "flex", flexDirection: "column", gap: space.s3, marginTop: space.s4 },
+  /** The transcription card stacks its "how far" choice under its own row. */
+  transcription: { flexDirection: "column", alignItems: "stretch" },
+  transcriptionRow: { display: "flex", alignItems: "center", gap: space.s3 },
+  choice: { display: "flex", flexDirection: "column", gap: space.s2, paddingInlineStart: 30 },
+  choiceButtons: { display: "flex", flexWrap: "wrap", gap: space.s2 },
+  inlineAction: {
+    padding: 0,
+    fontSize: "inherit",
+    fontWeight: weight.semibold,
+    color: accent.a600,
+    textDecorationLine: "underline",
+    textUnderlineOffset: 2,
+    cursor: "pointer",
+    backgroundColor: "transparent",
+  },
   lockTitle: { margin: 0, fontSize: text.sm, fontWeight: weight.semibold, color: neutral.n800 },
   lockNote: { margin: 0, fontSize: text.xs, color: ink.muted },
 });
@@ -200,6 +239,16 @@ export interface PanelTranscriptionControls {
   asked: boolean;
   onAsk: () => void;
   onTakeBack: () => void;
+  /**
+   * The viewer's own default for meetings they start, when they are signed
+   * in. Flipping the switch to the other side of that default asks whether the
+   * change is for this meeting alone or for their future meetings too.
+   */
+  future?: {
+    on: boolean;
+    pending: boolean;
+    set: (on: boolean) => Promise<void>;
+  };
 }
 
 export function ParticipantsPanel({
@@ -234,6 +283,15 @@ export function ParticipantsPanel({
   // whole meeting with every change.
   const speakers = useSpeakingParticipants();
   const speakingIds = React.useMemo(() => new Set(speakers.map((speaker) => speaker.identity)), [speakers]);
+  // Raised hands, read from the same participant attribute the tiles read, so
+  // the list a host manages the queue from shows who is waiting.
+  const connections = useParticipants({ updateOnlyOn: HAND_EVENTS });
+  const raisedAt = new Map<string, number>();
+  for (const connection of connections) {
+    const hand = parseRaisedHand(connection.attributes[PARTICIPANT_ATTRIBUTE.hand]);
+    if (hand) raisedAt.set(connection.identity, hand.raisedAt);
+  }
+
   const sortedParticipants = [...participants].sort((a, b) => {
     // Host first
     if (a.role === "host" && b.role !== "host") return -1;
@@ -242,6 +300,15 @@ export function ParticipantsPanel({
     // Then current user
     if (a.id === currentIdentity) return -1;
     if (b.id === currentIdentity) return 1;
+
+    // Then raised hands, in the order they went up
+    const aHand = raisedAt.get(a.id);
+    const bHand = raisedAt.get(b.id);
+    if (aHand !== undefined || bHand !== undefined) {
+      if (aHand === undefined) return 1;
+      if (bHand === undefined) return -1;
+      if (aHand !== bHand) return aHand - bHand;
+    }
 
     // Then alphabetically
     return a.name.localeCompare(b.name);
@@ -348,6 +415,12 @@ export function ParticipantsPanel({
                   ) : null}
                 </div>
 
+                {raisedAt.has(p.id) && (
+                  <span role="img" aria-label="Hand raised" title="Hand raised" {...stylex.props(styles.hand)}>
+                    <Hand size={13} aria-hidden="true" />
+                  </span>
+                )}
+
                 {/* Mic status */}
                 <div
                   role="img"
@@ -397,6 +470,32 @@ export function ParticipantsPanel({
             );
           })}
         </div>
+
+        {/* The room's switches follow the people in the same scroll. Pinned
+            under the list, they took a tablet's whole panel and left the list
+            itself a few pixels tall. */}
+        {(transcription || security?.onToggle) && (
+          <div {...stylex.props(styles.roomControls)}>
+            {transcription && <TranscriptionCard transcription={transcription} />}
+            {security?.onToggle && (
+              <div {...stylex.props(styles.lock)}>
+                {security.secured ? <Lock size={18} aria-hidden="true" /> : <LockOpen size={18} aria-hidden="true" />}
+                <div {...stylex.props(styles.lockText)}>
+                  <p id={lockLabelId} {...stylex.props(styles.lockTitle)}>Lock the meeting</p>
+                  <p {...stylex.props(styles.lockNote)}>
+                    {security.secured ? "New people wait for you to let them in." : "Open: anyone with the link can join."}
+                  </p>
+                </div>
+                <Switch
+                  checked={security.secured}
+                  pending={security.pending}
+                  onCheckedChange={security.onToggle}
+                  aria-labelledby={lockLabelId}
+                />
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* No footer note about moderation.
@@ -412,26 +511,6 @@ export function ParticipantsPanel({
        * If host moderation ships, this is the copy to restore — and only then.
        */}
 
-      {transcription && <TranscriptionCard transcription={transcription} />}
-
-      {security?.onToggle && (
-        <div {...stylex.props(styles.lock)}>
-          {security.secured ? <Lock size={18} aria-hidden="true" /> : <LockOpen size={18} aria-hidden="true" />}
-          <div {...stylex.props(styles.lockText)}>
-            <p id={lockLabelId} {...stylex.props(styles.lockTitle)}>Lock the meeting</p>
-            <p {...stylex.props(styles.lockNote)}>
-              {security.secured ? "New people wait for you to let them in." : "Open: anyone with the link can join."}
-            </p>
-          </div>
-          <Switch
-            checked={security.secured}
-            pending={security.pending}
-            onCheckedChange={security.onToggle}
-            aria-labelledby={lockLabelId}
-          />
-        </div>
-      )}
-
       {removal.dialog}
     </div>
   );
@@ -439,39 +518,87 @@ export function ParticipantsPanel({
 
 function TranscriptionCard({ transcription }: { transcription: PanelTranscriptionControls }) {
   const labelId = React.useId();
-  const { on } = transcription;
+  const { on, future } = transcription;
+  /** The side the switch was flipped to, while asking how far the change reaches. */
+  const [choosing, setChoosing] = React.useState<boolean | null>(null);
   const note = on
     ? "What people say is sent to Deepgram for captions, the transcript and the summary."
     : "Nothing anyone says is sent to Deepgram: no captions, transcript or summary.";
 
+  const flip = (next: boolean) => {
+    if (future && future.on !== next) {
+      setChoosing(next);
+      return;
+    }
+    transcription.onChange(next);
+  };
+  const apply = (alsoFuture: boolean) => {
+    if (choosing === null) return;
+    transcription.onChange(choosing);
+    if (alsoFuture) void future?.set(choosing);
+    setChoosing(null);
+  };
+
   return (
-    <div {...stylex.props(styles.lock)}>
-      <Captions size={18} aria-hidden="true" />
-      <div {...stylex.props(styles.lockText)}>
-        <p id={labelId} {...stylex.props(styles.lockTitle)}>
-          {transcription.canChange ? "Transcribe this meeting" : on ? "Transcription is on" : "Transcription is off"}
-        </p>
-        <p {...stylex.props(styles.lockNote)}>
-          {transcription.asked ? "You asked a host to turn it off." : note}
-        </p>
+    <div {...stylex.props(styles.lock, styles.transcription)}>
+      <div {...stylex.props(styles.transcriptionRow)}>
+        <Captions size={18} aria-hidden="true" />
+        <div {...stylex.props(styles.lockText)}>
+          <p id={labelId} {...stylex.props(styles.lockTitle)}>
+            {transcription.canChange ? "Transcribe this meeting" : on ? "Transcription is on" : "Transcription is off"}
+          </p>
+          <p {...stylex.props(styles.lockNote)}>
+            {transcription.asked ? "You asked a host to turn it off." : note}
+          </p>
+          {transcription.canChange && future && choosing === null && future.on !== on && (
+            <p {...stylex.props(styles.lockNote)}>
+              Meetings you start still begin with it {future.on ? "on" : "off"}.{" "}
+              <button
+                type="button"
+                disabled={future.pending}
+                onClick={() => void future.set(on)}
+                {...stylex.props(pressable.base, focus.ring, styles.inlineAction)}
+              >
+                Make that {on ? "on" : "off"} too
+              </button>
+            </p>
+          )}
+        </div>
+        {transcription.canChange ? (
+          <Switch
+            checked={choosing ?? on}
+            // Held while the "how far" choice below is open, so it is answered first.
+            pending={transcription.pending || (future?.pending ?? false) || choosing !== null}
+            onCheckedChange={flip}
+            aria-labelledby={labelId}
+          />
+        ) : on ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={transcription.asked ? transcription.onTakeBack : transcription.onAsk}
+            aria-describedby={labelId}
+          >
+            {transcription.asked ? "Take back" : "Ask to stop"}
+          </Button>
+        ) : null}
       </div>
-      {transcription.canChange ? (
-        <Switch
-          checked={on}
-          pending={transcription.pending}
-          onCheckedChange={transcription.onChange}
-          aria-labelledby={labelId}
-        />
-      ) : on ? (
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={transcription.asked ? transcription.onTakeBack : transcription.onAsk}
-          aria-describedby={labelId}
-        >
-          {transcription.asked ? "Take back" : "Ask to stop"}
-        </Button>
-      ) : null}
+      {choosing !== null && (
+        <div role="group" aria-label={`Turn transcription ${choosing ? "on" : "off"} for`} {...stylex.props(styles.choice)}>
+          <p {...stylex.props(styles.lockNote)}>Turn it {choosing ? "on" : "off"} for:</p>
+          <div {...stylex.props(styles.choiceButtons)}>
+            <Button size="sm" variant="secondary" onClick={() => apply(false)}>
+              This meeting
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => apply(true)}>
+              This and future meetings
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setChoosing(null)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

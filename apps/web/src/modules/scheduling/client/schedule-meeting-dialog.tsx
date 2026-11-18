@@ -598,7 +598,7 @@ function ScheduleMeetingDialogForm({
                     ? "Defaults to this Space’s time zone. This meeting can override it."
                     : homeTimeZone
                       ? "Defaults to your home time zone. This meeting can override it."
-                      : "Using this device’s time zone. Save a home time zone in Settings to keep it consistent across devices and the CLI."}
+                      : "Using this device’s time zone. Set a home time zone in Settings to keep it the same on every device."}
                 </p>
               </div>
 
@@ -678,7 +678,7 @@ function ScheduleMeetingDialogForm({
             {isSpaceMeeting
               ? "Can start 15 minutes early · the Space keeps the same permanent meeting link."
               : isReusablePersonalMeeting
-                ? "Can start 15 minutes early · your permanent link also remains available for unscheduled Meetings."
+                ? "Can start 15 minutes early · your permanent link still works for meetings you don’t schedule."
                 : "Can start 15 minutes early · if unused, the one-time link expires 24 hours after the scheduled end."}
           </p>
         </DialogBody>
@@ -691,11 +691,8 @@ function ScheduleMeetingDialogForm({
             disabled={!startsAt || !timeZone.trim() || (!isSpaceMeeting && attendeeCount > MAX_NOTIFICATIONS)}
             onClick={submit}
           >
-            {isRescheduling
-              ? "Save new time"
-              : isSpaceMeeting
-                ? "Schedule Space Meeting"
-                : "Schedule personal Meeting"}
+            {/* The dialog's title already says personal or Space. */}
+            {isRescheduling ? "Save new time" : "Schedule meeting"}
           </Button>
         </DialogFooter>
     </>

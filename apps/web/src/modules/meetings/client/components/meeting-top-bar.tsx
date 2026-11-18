@@ -2,9 +2,12 @@ import { BrandMark } from "@orbmeet/ui/react";
 import { surface } from "@orbmeet/ui/tokens/colors.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";
 import { shadows } from "@orbmeet/ui/tokens/shadows.stylex";
+import { topBar } from "@orbmeet/ui/tokens/markers.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import * as stylex from "@stylexjs/stylex";
-import type { ReactNode } from "react";
+import { useCallback, useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
+
+import { TOP_BAR_LABELS_ATTRIBUTE, type TopBarLabels } from "./dock-primitives";
 
 /**
  * A portrait tablet cannot hold the room's name and all its controls on one
@@ -29,9 +32,10 @@ const styles = stylex.create({
    * rather than letting two zones overlap.
    */
   bar: {
-    // DESKTOP_TOP_BAR_HEIGHT_PX in chrome.ts — the band the stage reserves.
-    // StyleX compiles this file statically, so the number is spelled out here
-    // and pinned to that constant by meeting-top-bar.test.ts.
+    // DESKTOP_TOP_BAR_HEIGHT_PX and DESKTOP_TOP_BAR_TWO_ROW_HEIGHT_PX in
+    // chrome.ts — the band the stage reserves (see MeetingShell). StyleX
+    // compiles this file statically, so the numbers are spelled out here and
+    // pinned to those constants by meeting-top-bar.test.ts.
     height: { default: 60, [TWO_ROWS]: 108 },
     boxSizing: "border-box",
     paddingTop: space.s2,
@@ -92,10 +96,14 @@ export function MeetingTopBar({
   /** Yours — mic, camera, hand — then the room's: timeline, more, leave. Omitted for egress/recorder renders. */
   actions?: ReactNode;
 }) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const leadRef = useRef<HTMLDivElement>(null);
+  useIdentityKeepsItsRoom(cardRef, leadRef);
+
   return (
     <header {...stylex.props(styles.bar)}>
-      <div {...stylex.props(styles.card)}>
-        <div {...stylex.props(styles.lead)}>
+      <div ref={cardRef} {...stylex.props(styles.card, topBar)}>
+        <div ref={leadRef} {...stylex.props(styles.lead)}>
           {/* The shared mark, drawn inline: the same one every other surface shows. */}
           <BrandMark size={32} />
           {identity}
@@ -105,4 +113,45 @@ export function MeetingTopBar({
       </div>
     </header>
   );
+}
+
+const LABEL_STEPS: readonly TopBarLabels[] = ["all", "few", "none"];
+
+/**
+ * Drops the controls' words, a step at a time, until the meeting's name and
+ * its status line fit beside them.
+ *
+ * The controls' column keeps its full width and the name's column gives way,
+ * so a guest's extra Raise hand button at 1280px cut the code to "gxf-szbs-"
+ * and pushed "Transcribing" out of sight. Words are what can go: every control
+ * keeps its icon and its tooltip. Measured on every render and on every resize,
+ * by writing the attribute directly, so stepping down costs no re-render.
+ */
+function useIdentityKeepsItsRoom(
+  cardRef: RefObject<HTMLDivElement | null>,
+  leadRef: RefObject<HTMLDivElement | null>,
+) {
+  const fit = useCallback(() => {
+    const card = cardRef.current;
+    const lead = leadRef.current;
+    if (!card || !lead) return;
+    for (const step of LABEL_STEPS) {
+      card.setAttribute(TOP_BAR_LABELS_ATTRIBUTE, step);
+      // The lead clips what does not fit; its scroll width is what it wanted.
+      if (lead.scrollWidth <= lead.clientWidth + 1) return;
+    }
+  }, [cardRef, leadRef]);
+
+  // What the bar holds changes with the meeting (a hand to raise, a room
+  // that starts transcribing), and every such change re-renders it.
+  useLayoutEffect(fit);
+
+  // The window changes without one.
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    if (!card || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(fit);
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [cardRef, fit]);
 }

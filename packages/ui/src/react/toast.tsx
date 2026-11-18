@@ -52,11 +52,19 @@ const FANNED =
 const exitTo = (axis: "X" | "Y", sign: "+" | "-") =>
   `translate${axis}(calc(var(--toast-swipe-movement-${axis.toLowerCase()}, 0px) ${sign} 150%))`;
 
+/**
+ * Width a page has docked along the right edge (a meeting's side panel),
+ * published on the document so the portalled toast stack stands beside it.
+ * A hand-raise toast landed on the People panel's own switches.
+ */
+export const TOAST_RIGHT_INSET_VAR = "--toast-right-inset";
+
 const styles = stylex.create({
   viewport: {
     position: "fixed",
     bottom: space.s4,
-    right: space.s4,
+    // Beside a docked side panel, not over its controls: see TOAST_RIGHT_INSET_VAR.
+    right: `calc(${space.s4} + var(--toast-right-inset, 0px))`,
     zIndex: zIndex.toast,
     display: "flex",
     width: 320,

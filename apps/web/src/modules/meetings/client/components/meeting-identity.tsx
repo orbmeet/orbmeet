@@ -81,8 +81,6 @@ const styles = stylex.create({
   transcribing: { fontWeight: weight.medium, color: live.l700 },
   /** The word gives way on a narrow bar; the padlock stays. */
   lockedWord: { display: { default: "inline", [SINGLE_ROW_TIGHT]: "none" } },
-  /** Likewise Orb's mark: a tablet in portrait clipped the word to "Transcrib". */
-  transcribingWord: { display: { default: "inline", [SINGLE_ROW_TIGHT]: "none" } },
   recordingDot: { height: 6, width: 6, flexShrink: 0, borderRadius: radii.pill, backgroundColor: "currentColor" },
 });
 import type { MeetingClockSync } from "@/modules/meetings/client/meeting-clock";
@@ -225,7 +223,10 @@ export function MeetingIdentity({
         >
           {/* Orb's mark, listening: the same mark that turns when Orb is asked something. */}
           <BrandMark size={12} state="listening" />
-          <span {...stylex.props(styles.transcribingWord)}>Transcribing</span>
+          {/* Always the word, never the mark alone: it is about everyone in the
+              room, and a tooltip cannot be hovered on a touch screen. The top
+              bar drops its controls' words before this one is cut off. */}
+          <span>Transcribing</span>
         </span>
       ),
     });

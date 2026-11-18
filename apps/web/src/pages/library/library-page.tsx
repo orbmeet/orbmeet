@@ -34,7 +34,7 @@ import * as stylex from "@stylexjs/stylex";
 const routeApi = getRouteApi("/_authed/library/");
 
 const TYPES: { value: LibraryType | undefined; label: string }[] = [
-  { value: undefined, label: "Everything" },
+  { value: undefined, label: "All" },
   { value: "meetings", label: "Meetings" },
   { value: "boards", label: "Boards" },
   { value: "recordings", label: "Recordings" },

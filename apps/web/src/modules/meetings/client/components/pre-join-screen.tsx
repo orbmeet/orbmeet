@@ -975,8 +975,9 @@ export function PreJoinScreen({
             <div {...stylex.props(styles.fineBody)}>
               <p {...stylex.props(styles.fineTitle)}>Orb only listens while transcription is on</p>
               <p {...stylex.props(styles.fineText)}>
-                Then your mic&rsquo;s audio goes to Deepgram for live captions, the transcript and the
-                summary. A host can turn transcription off, and anyone can ask them to.
+                When it is, the top of the meeting says &ldquo;Transcribing&rdquo; and your mic&rsquo;s audio
+                goes to Deepgram for live captions, the transcript and the summary. A host can turn it off, and anyone
+                can ask them to.
               </p>
             </div>
           </div>

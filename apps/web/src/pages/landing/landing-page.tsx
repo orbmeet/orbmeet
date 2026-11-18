@@ -18,7 +18,7 @@ import { MAIN_CONTENT_ID, SkipLink } from "@/app/shell/skip-link";
 import { BrandMark, Spinner } from "@orbmeet/ui/react";
 import { focus, layout, motion, pressable, touch } from "@orbmeet/ui/styles/atoms";
 import { accent, border, danger, ink, surface } from "@orbmeet/ui/tokens/colors.stylex";
-import { env } from "@orbmeet/ui/tokens/media.stylex";
+import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { fonts, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
@@ -108,6 +108,32 @@ const styles = stylex.create({
     borderRadius: 8,
   },
 
+  intro: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: space.s3,
+    marginTop: { default: space.s4, [bp.sm]: space.s8 },
+    marginBottom: space.s6,
+    textAlign: "center",
+  },
+  headline: {
+    margin: 0,
+    maxWidth: "18ch",
+    fontFamily: fonts.heading,
+    fontSize: "clamp(2rem, 5vw, 3.5rem)",
+    fontWeight: weight.semibold,
+    lineHeight: 1.05,
+    letterSpacing: "-0.035em",
+    color: ink.strong,
+  },
+  subhead: {
+    margin: 0,
+    maxWidth: "46ch",
+    fontSize: { default: text.base, [bp.sm]: "1.125rem" },
+    lineHeight: 1.5,
+    color: ink.muted,
+  },
   actions: {
     display: "flex",
     flexWrap: "wrap",
@@ -394,8 +420,16 @@ export function LandingPage() {
       </div>
 
       <main id={MAIN_CONTENT_ID}>
-        <h1 {...stylex.props(layout.srOnly)}>Orb Meet: video meetings with a whiteboard, notes and recording</h1>
         <section aria-label="A film of one meeting" {...stylex.props(styles.wrap)}>
+          {/* Said in words before the film: someone landing mid-loop, on the
+              screen share or the hang-up, could not tell what this was. */}
+          <div {...stylex.props(styles.intro)}>
+            <h1 {...stylex.props(styles.headline)}>Meet. Write together. Keep the work.</h1>
+            <p {...stylex.props(styles.subhead)}>
+              Video meetings with a shared whiteboard, live notes, and Orb, an assistant that can draw. Guests join from a
+              link, no account needed.
+            </p>
+          </div>
           <div {...stylex.props(styles.actions)}>
             {startMeeting()}
             <JoinWithCode onIntent={handleMeetingIntent} onError={setErrorMessage} />

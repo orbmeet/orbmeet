@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isOrbMentionPrefix, orbQuestion, recentlySaid, sharedOrbAnswer, withOrbMention } from "./orb";
+import { isOrbMentionPrefix, orbQuestion, recentConversation, sharedOrbAnswer, withOrbMention } from "./orb";
 
 describe("orbQuestion", () => {
   it("is what follows @Orb at the start of a message, in any case", () => {
@@ -30,23 +30,64 @@ describe("the @Orb mention", () => {
   });
 });
 
-describe("recentlySaid", () => {
+describe("recentConversation", () => {
   const segment = (userName: string, text: string, startedAt: number, isFinal = true) => ({ userName, text, startedAt, isFinal });
+  const chat = (userName: string, text: string, sentAt: number, to?: { id: string; name: string }) => ({ userName, text, sentAt, to });
 
   it("gives Orb one line per turn of the last ten minutes, final words only", () => {
     const now = 20 * 60_000;
     expect(
-      recentlySaid(
-        [
-          segment("Sam", "too long ago", now - 11 * 60_000),
-          segment("Maya", "absolute value is distance", now - 60_000),
-          segment("Maya", "from zero", now - 50_000),
-          segment("Alex", "does 8 count?", now - 40_000),
-          segment("Maya", "still saying", now - 1_000, false),
-        ],
+      recentConversation(
+        {
+          said: [
+            segment("Sam", "too long ago", now - 11 * 60_000),
+            segment("Maya", "absolute value is distance", now - 60_000),
+            segment("Maya", "from zero", now - 50_000),
+            segment("Alex", "does 8 count?", now - 40_000),
+            segment("Maya", "still saying", now - 1_000, false),
+          ],
+          chat: [],
+        },
         now,
       ),
     ).toBe("Maya: absolute value is distance from zero\nAlex: does 8 count?");
+  });
+
+  it("puts the room's chat in among what was said, and leaves private messages out", () => {
+    const now = 20 * 60_000;
+    expect(
+      recentConversation(
+        {
+          said: [segment("Maya", "let's plan the launch", now - 90_000)],
+          chat: [
+            chat("Atiq", "the steps are", now - 60_000),
+            chat("Atiq", "plan, build, test", now - 59_000),
+            chat("Sam", "just between us", now - 30_000, { id: "user:a", name: "Atiq" }),
+            chat("Sam", "old news", now - 11 * 60_000),
+          ],
+        },
+        now,
+      ),
+    ).toBe("Maya: let's plan the launch\nAtiq (in the chat): the steps are / plan, build, test");
+  });
+
+  it("includes what the room asked Orb and its answers, not private threads", () => {
+    const now = 20 * 60_000;
+    expect(
+      recentConversation(
+        {
+          said: [],
+          chat: [],
+          orb: [
+            { id: "1", at: now - 50_000, kind: "prompt", author: "Atiq", authorId: "user:a", text: "draw a flowchart" },
+            { id: "2", at: now - 40_000, audience: { kind: "room" }, kind: "reply", text: "I've drawn the flowchart.", done: true },
+            { id: "3", at: now - 30_000, kind: "reply", text: "still writing", done: false },
+            { id: "4", at: now - 20_000, kind: "prompt", author: "Sam", authorId: "user:s", text: "what did I miss?", audience: { kind: "private", members: ["user:s"] } },
+          ],
+        },
+        now,
+      ),
+    ).toBe("Atiq (in the chat): @Orb draw a flowchart\nOrb (in the chat): I've drawn the flowchart.");
   });
 });
 
