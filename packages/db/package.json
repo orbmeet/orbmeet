@@ -10,7 +10,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "check": "drizzle-kit check",
-    "generate": "drizzle-kit generate"
+    "generate": "drizzle-kit generate",
+    "rebuild-migration": "node scripts/rebuild-migration.mjs"
   },
   "dependencies": {
     "@orbmeet/domain-model": "workspace:*",

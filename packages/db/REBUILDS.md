@@ -28,7 +28,7 @@ drizzle-kit's generated rebuild for SQLite uses exactly this pattern, and the
 migration contract test rejects it for a referenced table. Generated SQL also
 needs two fixes before it ships: it omits `NOT NULL` on text primary keys
 (SQLite would then allow a NULL key), and it does not end with
-`PRAGMA optimize`.
+`PRAGMA optimize`. `scripts/rebuild-migration.mjs` (below) makes both fixes.
 
 ## Deploy order
 
@@ -80,33 +80,59 @@ rebuild `meetings`.
 
 ## Subtree rebuild
 
-One migration file, in this order:
+`pnpm rebuild-migration generate` (`scripts/rebuild-migration.mjs`) writes
+this for you. Change the Drizzle schema, run `pnpm generate`, then that, both
+from `packages/db`: it rewrites the migration drizzle-kit just generated into the steps below,
+works out the subtree from the foreign keys, and fixes both problems with
+generated SQL (it adds `NOT NULL` to text primary keys and ends with
+`PRAGMA optimize`). Add any notes the migration needs (see "Deploy order")
+at the top afterwards.
 
-1. `PRAGMA defer_foreign_keys = on;` so rows may reference tables that are
-   mid-copy.
-2. `CREATE TABLE x_new (…)` for the target and every dependent, with each
+What the migration does, in order:
+
+1. `CREATE TABLE x_new (…)` for the target and every dependent, with each
    foreign key pointing at the **`_new`** name of its parent.
+2. A temporary unique index for every foreign key that references columns
+   other than its parent's primary key (a composite key such as
+   `meetings(id, space_id)`). SQLite needs a unique index on the parent's
+   columns before it accepts a child row, and the real index's name still
+   belongs to the original table, so it is created on `x_new` as
+   `<index>_rebuild` and dropped in step 7.
 3. `INSERT INTO x_new (cols…) SELECT cols… FROM x;` parents first. Always name
-   columns; never `SELECT *`.
+   columns; never `SELECT *`. A self-referencing table is copied in `rowid`
+   order, which holds only if every row was inserted after the row it points
+   at.
 4. `DROP TABLE` the originals **leaves first**, so no drop has anything left to
    cascade into. Dropping a table also drops its indexes and triggers.
 5. `ALTER TABLE x_new RENAME TO x;` for each. A rename rewrites the references
    other `_new` tables hold, so the foreign keys end up pointing at the final
    names.
 6. Recreate every index (same names) and every trigger
-   (`packages/db/src/triggers.ts`) on the renamed tables.
+   (`packages/db/src/triggers.ts`) on the renamed tables, then create any new
+   tables.
+7. Drop the temporary `<index>_rebuild` indexes.
 
-At commit, D1 checks every deferred foreign key. An orphan makes it reject the
-whole batch and roll the database back to its last good state, so a wrong
-rebuild fails loudly instead of committing broken data (pinned by the test).
+Copying parents first means every row's parent already exists when it is
+inserted, so no foreign key needs deferring. A foreign-key cycle across tables
+would break that: the script refuses one, and such a rebuild would need
+`PRAGMA defer_foreign_keys = on;` first. With deferred keys, D1 checks every
+one at commit, and an orphan makes it reject the whole batch and roll the
+database back to its last good state (pinned by the test).
 
 ## Proving it before production
 
-1. Export production to a local file (`wrangler d1 export`). It contains user
-   data: keep it on an encrypted disk, delete it afterwards.
-2. Import it into a local D1, record `SELECT count(*)` for every table.
-3. Apply the migration. Compare counts table by table (only intended changes
-   may differ), run `PRAGMA foreign_key_check`, and time the migration.
+1. Export production to a local file and load it into SQLite:
+   `npx wrangler d1 export <database-id> --remote --output prod.sql`, then
+   `sqlite3 prod.sqlite < prod.sql`. It contains user data: keep it on an
+   encrypted disk, delete both files afterwards.
+2. Count the migrations production has applied (`SELECT count(*) FROM
+   d1_migrations`, or `cf d1 migrations list` shows the ones it has not).
+3. From `packages/db`, run
+   `pnpm rebuild-migration dry-run /path/to/prod.sqlite <applied count>`.
+   It applies the pending migrations to a copy as D1 does (foreign keys on,
+   one transaction per migration), then reports the time taken, every table
+   whose rows changed in any column they kept, and `PRAGMA foreign_key_check`.
+   It exits non-zero unless every row survived and no key is violated.
 4. If the copy of the largest table is too slow for one migration, plan a
    maintenance window: D1 serialises writes, so the app's writes wait or fail
    and retry while the migration runs.
