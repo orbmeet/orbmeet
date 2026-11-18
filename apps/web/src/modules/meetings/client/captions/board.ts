@@ -14,7 +14,7 @@
 export interface CaptionTranscriptEntry {
   /** The segment id: stable for the life of an utterance, so an update is not a remount. */
   id: string;
-  userId: string;
+  participant: string;
   userName: string;
   text: string;
   isFinal: boolean;
@@ -26,7 +26,7 @@ export interface CaptionTranscriptEntry {
 export interface CaptionUpdate {
   segmentId: string;
   revision: number;
-  userId: string;
+  participant: string;
   userName: string;
   /** The segment's whole text so far. A final with no text withdraws the segment. */
   text: string;
@@ -112,7 +112,7 @@ function applyUpdate(state: CaptionBoardState, update: CaptionUpdate): CaptionBo
 
   const entry: CaptionTranscriptEntry = {
     id: update.segmentId,
-    userId: update.userId,
+    participant: update.participant,
     userName: update.userName,
     text: update.text,
     isFinal: update.isFinal,

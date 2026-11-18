@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Database } from "@orbmeet/db";
 import { eq } from "drizzle-orm";
-import { meetings, meetingLinks, transcripts, users } from "@orbmeet/db/schema";
+import { meetingAdmissions, meetings, meetingLinks, transcripts, users } from "@orbmeet/db/schema";
 import { createTestDb } from "@/test/db";
 import { seedPersonalSpace } from "@/test/fixtures";
 import {
@@ -125,6 +125,44 @@ describe("Transcript Summary preparation", () => {
     expect(prepared.participantNames).toEqual(["Alex (1)", "Alex (2)"]);
     expect(prepared.chunks.join("\n")).toContain("[00:00 Alex (1)]");
     expect(prepared.chunks.join("\n")).toContain("[00:01 Alex (2)]");
+  });
+
+  it("keeps one person one speaker across their reconnects", async () => {
+    const db = await createTestDb();
+    const now = new Date("2026-06-12T12:00:00.000Z");
+    await seedMeeting(db, now);
+    await db.insert(meetingAdmissions).values({
+      id: "adm_alice",
+      meetingId: "meeting_1",
+      subjectType: "user",
+      subjectUserId: "host",
+      displayName: "Alice",
+      admissionStatus: "approved",
+      decidedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const line = (id: string, identity: string, text: string, offsetMs: number) => ({
+      id,
+      meetingId: "meeting_1",
+      admissionId: "adm_alice",
+      participantIdentity: identity,
+      participantName: "Alice",
+      text,
+      segmentId: id,
+      startedAt: new Date(now.getTime() + offsetMs),
+      updatedAt: new Date(now.getTime() + offsetMs),
+    });
+    // A reload between the two lines: a new connection, the same admission.
+    await db.insert(transcripts).values([
+      line("tr_1", "host_attempt1", "I will prepare the launch notes.", 0),
+      line("tr_2", "host_attempt2", "And send them tonight.", 1_000),
+    ]);
+
+    const prepared = await buildTranscriptChunks(db, "meeting_1", now);
+
+    expect(prepared.participantNames).toEqual(["Alice"]);
+    expect(prepared.chunks.join("\n")).toContain("[00:01 Alice]: And send them tonight.");
   });
 });
 

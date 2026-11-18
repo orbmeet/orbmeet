@@ -7,6 +7,7 @@ import {
 import { parsePdfImportPath } from "../pdf/pdf-import-contract.ts";
 import { WHITEBOARD_SYNC_ROUTES } from "@orbmeet/whiteboard-core/protocol";
 import { AssistantRequestSchema, MAX_ASSISTANT_REQUEST_BYTES } from "@orbmeet/whiteboard-core/assistant";
+import { whiteboardGrantPrincipalKey } from "@orbmeet/whiteboard-core/whiteboard-grant-principal";
 import * as v from "valibot";
 import { header, jsonBodyErrorReply, readBoundedJson } from "../http/http.ts";
 import { Reply } from "../http/reply.ts";
@@ -169,7 +170,7 @@ export function createHttpRequestHandler(deps: HttpRouterDeps) {
       const room = deps.roomManager.getRoomIfExists(result.claims.sid);
       if (!room) return cors.withCors(Reply.json({ error: "Room not found" }, 404), req);
       // Each person reads the room's conversation and their own private ones.
-      return cors.withCors(Reply.json(room.assistant.snapshot(result.claims.sub)), req);
+      return cors.withCors(Reply.json(room.assistant.snapshot(whiteboardGrantPrincipalKey(result.claims.grantPrincipal))), req);
     }
 
     if (req.method === "POST" && url.pathname === WHITEBOARD_SYNC_ROUTES.assistant) {
@@ -195,7 +196,12 @@ export function createHttpRequestHandler(deps: HttpRouterDeps) {
       }
       const room = deps.roomManager.getRoomIfExists(claims.sid);
       if (!room) return cors.withCors(Reply.json({ error: "Room not found" }, 404), req);
-      const sender = { userId: claims.sub, userName: claims.name, connectionId: claims.connectionId };
+      const sender = {
+        userId: claims.sub,
+        participant: whiteboardGrantPrincipalKey(claims.grantPrincipal),
+        userName: claims.name,
+        connectionId: claims.connectionId,
+      };
       return cors.withCors(room.assistant.handle(sender, request.output), req);
     }
 

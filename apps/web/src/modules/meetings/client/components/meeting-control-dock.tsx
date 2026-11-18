@@ -793,7 +793,9 @@ function MoreMenu({
                 hint={streamingPending ? "Stopping…" : "Streaming now"}
                 disabled={streamingPending}
                 onClick={() => {
-                  void onStopStream();
+                  // The meeting hook has already shown what went wrong; the
+                  // menu closes either way, so the refusal needs nothing more.
+                  onStopStream().catch(() => undefined);
                   setOpen(false);
                 }}
               />

@@ -673,7 +673,8 @@ function OrganizationMembers({
             <DialogDescription>
               Send an ownership request to {transferTarget?.name}. Ownership, including
               managing the Organization’s billing, moves to them once they accept. Its
-              subscription stays as it is. You will remain an administrator after they accept.
+              subscription stays as it is. You become a member once they accept; they can make
+              you an administrator again.
             </DialogDescription>
             <div {...stylex.props(row.x3, styles.dialogActions)}>
               <DialogClose render={<Button variant="secondary" />}>Cancel</DialogClose>

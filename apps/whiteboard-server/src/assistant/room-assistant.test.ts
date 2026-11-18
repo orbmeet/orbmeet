@@ -25,10 +25,12 @@ const PAGE: AssistantPageContext = {
   selectedShapeIds: [],
 };
 
-const alice: AssistantSender = { userId: "alice", userName: "Alice", connectionId: "conn-alice" };
-const bob: AssistantSender = { userId: "bob", userName: "Bob", connectionId: "conn-bob" };
-const carol: AssistantSender = { userId: "carol", userName: "Carol", connectionId: "conn-carol" };
-const NAMES: Record<string, string> = { alice: "Alice", bob: "Bob", carol: "Carol" };
+// A connection's identity (`userId`) is new on every reconnect; who someone is
+// in a conversation (`participant`) is not.
+const alice: AssistantSender = { userId: "alice_c1", participant: "user:alice", userName: "Alice", connectionId: "conn-alice" };
+const bob: AssistantSender = { userId: "bob_c1", participant: "user:bob", userName: "Bob", connectionId: "conn-bob" };
+const carol: AssistantSender = { userId: "carol_c1", participant: "user:carol", userName: "Carol", connectionId: "conn-carol" };
+const NAMES: Record<string, string> = { "user:alice": "Alice", "user:bob": "Bob", "user:carol": "Carol" };
 
 type ToolCallEvent = Extract<AssistantEvent, { type: typeof ASSISTANT_EVENTS.TOOL_CALL }>;
 
@@ -39,7 +41,7 @@ function setup(options: { responses: FauxResponseStep[]; editors?: string[]; man
   faux.setResponses(options.responses);
   const contexts: TranscriptContext[] = [];
   const broadcasts: AssistantEvent[] = [];
-  /** What each person received privately, by user id. */
+  /** What each person received privately, by participant key. */
   const privately = new Map<string, AssistantEvent[]>();
   const toolCalls: { connectionId: string; event: ToolCallEvent }[] = [];
   const connected = new Set(options.connected ?? [alice.connectionId, bob.connectionId]);
@@ -50,10 +52,10 @@ function setup(options: { responses: FauxResponseStep[]; editors?: string[]; man
     {
       whiteboardRoomId: "meet-test",
       broadcast: (event) => broadcasts.push(event),
-      sendToUsers: (userIds, event) => {
-        for (const userId of userIds) privately.set(userId, [...(privately.get(userId) ?? []), event]);
+      sendToParticipants: (participants, event) => {
+        for (const participant of participants) privately.set(participant, [...(privately.get(participant) ?? []), event]);
       },
-      presentName: (userId) => (connected.has(`conn-${userId}`) ? (NAMES[userId] ?? null) : null),
+      presentName: (participant) => (connected.has(`conn-${participant.slice("user:".length)}`) ? (NAMES[participant] ?? null) : null),
       sendToConnection: (connectionId, event) => {
         if (!connected.has(connectionId)) return 0;
         toolCalls.push({ connectionId, event: event as ToolCallEvent });
@@ -132,7 +134,7 @@ describe("RoomAssistant", () => {
 
     const entries = t.assistant.snapshot().entries;
     expect(entries.map((entry) => entry.kind)).toEqual(["prompt", "tool", "reply"]);
-    expect(entries[0]).toMatchObject({ kind: "prompt", author: "Alice", authorId: "alice", text: "Draw a box" });
+    expect(entries[0]).toMatchObject({ kind: "prompt", author: "Alice", authorId: "user:alice", text: "Draw a box" });
     expect(entries[1]).toMatchObject({
       kind: "tool",
       tool: "create_shapes",
@@ -298,7 +300,7 @@ describe("RoomAssistant", () => {
       {
         whiteboardRoomId: "meet-test",
         broadcast: () => {},
-        sendToUsers: () => {},
+        sendToParticipants: () => {},
         presentName: () => null,
         sendToConnection: () => 0,
         canEdit: () => true,
@@ -334,18 +336,18 @@ describe("RoomAssistant in private", () => {
       audience: { kind: "private" },
     });
     expect(response.status).toBe(200);
-    await until(() => privateRunEnded(t.privately.get(alice.userId)), "the private run to end");
+    await until(() => privateRunEnded(t.privately.get(alice.participant)), "the private run to end");
 
     // Nothing reached the room or anyone else.
     expect(t.broadcasts).toEqual([]);
-    expect([...t.privately.keys()]).toEqual([alice.userId]);
-    const audience = { kind: "private", members: ["alice"] };
-    expect(t.privately.get(alice.userId)?.find((event) => event.type === ASSISTANT_EVENTS.ENTRY)).toMatchObject({
+    expect([...t.privately.keys()]).toEqual([alice.participant]);
+    const audience = { kind: "private", members: ["user:alice"] };
+    expect(t.privately.get(alice.participant)?.find((event) => event.type === ASSISTANT_EVENTS.ENTRY)).toMatchObject({
       entry: { kind: "prompt", audience },
     });
 
-    expect(t.assistant.snapshot(alice.userId).entries.map((entry) => entry.kind)).toEqual(["prompt", "reply"]);
-    expect(t.assistant.snapshot(bob.userId).entries).toEqual([]);
+    expect(t.assistant.snapshot(alice.participant).entries.map((entry) => entry.kind)).toEqual(["prompt", "reply"]);
+    expect(t.assistant.snapshot(bob.participant).entries).toEqual([]);
     expect(t.assistant.snapshot().entries).toEqual([]);
 
     // It may look at the board but not draw on it, even for an editor.
@@ -357,21 +359,21 @@ describe("RoomAssistant in private", () => {
     const t = setup({ responses: [fauxAssistantMessage("For you two.")], connected: ["conn-alice", "conn-bob", "conn-carol"] });
     open.push(t.assistant);
 
-    const ask = { type: "prompt" as const, text: "Is it saved?", page: PAGE, audience: { kind: "private" as const, with: "bob" } };
+    const ask = { type: "prompt" as const, text: "Is it saved?", page: PAGE, audience: { kind: "private" as const, with: "user:bob" } };
     expect(t.assistant.handle(alice, ask).status).toBe(200);
-    await until(() => privateRunEnded(t.privately.get(bob.userId)), "the private run to end");
+    await until(() => privateRunEnded(t.privately.get(bob.participant)), "the private run to end");
 
     expect(t.broadcasts).toEqual([]);
-    expect([...t.privately.keys()].sort()).toEqual(["alice", "bob"]);
-    expect(t.assistant.snapshot(bob.userId).entries.map((entry) => entry.kind)).toEqual(["prompt", "reply"]);
-    expect(t.assistant.snapshot(carol.userId).entries).toEqual([]);
+    expect([...t.privately.keys()].sort()).toEqual(["user:alice", "user:bob"]);
+    expect(t.assistant.snapshot(bob.participant).entries.map((entry) => entry.kind)).toEqual(["prompt", "reply"]);
+    expect(t.assistant.snapshot(carol.participant).entries).toEqual([]);
     expect(promptText(t.contexts[0])).toContain("private between Alice and Bob");
   });
 
   it("refuses a private question with someone who is not on the board", () => {
     const t = setup({ responses: [fauxAssistantMessage("Hi.")] });
     open.push(t.assistant);
-    const ask = { type: "prompt" as const, text: "Hi", page: PAGE, audience: { kind: "private" as const, with: "carol" } };
+    const ask = { type: "prompt" as const, text: "Hi", page: PAGE, audience: { kind: "private" as const, with: "user:carol" } };
     expect(t.assistant.handle(alice, ask).status).toBe(409);
     expect(t.privately.size).toBe(0);
   });
@@ -393,7 +395,7 @@ describe("RoomAssistant in private", () => {
 
     expect(t.assistant.handle(alice, { type: "cancel", runId }).status).toBe(403);
     expect(t.assistant.handle(bob, { type: "cancel", runId }).status).toBe(200);
-    await until(() => privateRunEnded(t.privately.get(bob.userId)), "the private run to end");
+    await until(() => privateRunEnded(t.privately.get(bob.participant)), "the private run to end");
     expect(t.assistant.snapshot().run).not.toBeNull();
   });
 
@@ -403,16 +405,16 @@ describe("RoomAssistant in private", () => {
 
     const ask = { type: "prompt" as const, text: "Hi", page: PAGE, audience: { kind: "private" as const } };
     expect(t.assistant.handle(alice, ask).status).toBe(200);
-    await until(() => privateRunEnded(t.privately.get(alice.userId)), "alice's private run to end");
-    expect(t.assistant.snapshot(alice.userId).entries).not.toEqual([]);
+    await until(() => privateRunEnded(t.privately.get(alice.participant)), "alice's private run to end");
+    expect(t.assistant.snapshot(alice.participant).entries).not.toEqual([]);
 
     // Alice leaves; the next conversation started reclaims hers.
     t.connected.delete(alice.connectionId);
     expect(t.assistant.handle(bob, ask).status).toBe(200);
-    await until(() => privateRunEnded(t.privately.get(bob.userId)), "bob's private run to end");
+    await until(() => privateRunEnded(t.privately.get(bob.participant)), "bob's private run to end");
 
-    expect(t.assistant.snapshot(alice.userId).entries).toEqual([]);
-    expect(t.assistant.snapshot(bob.userId).entries.map((entry) => entry.kind)).toEqual(["prompt", "reply"]);
+    expect(t.assistant.snapshot(alice.participant).entries).toEqual([]);
+    expect(t.assistant.snapshot(bob.participant).entries.map((entry) => entry.kind)).toEqual(["prompt", "reply"]);
   });
 
   it("keeps a private conversation while one of its members is still here", async () => {
@@ -422,16 +424,40 @@ describe("RoomAssistant in private", () => {
     });
     open.push(t.assistant);
 
-    const pair = { type: "prompt" as const, text: "Is it saved?", page: PAGE, audience: { kind: "private" as const, with: "bob" } };
+    const pair = { type: "prompt" as const, text: "Is it saved?", page: PAGE, audience: { kind: "private" as const, with: "user:bob" } };
     expect(t.assistant.handle(alice, pair).status).toBe(200);
-    await until(() => privateRunEnded(t.privately.get(bob.userId)), "the pair's run to end");
+    await until(() => privateRunEnded(t.privately.get(bob.participant)), "the pair's run to end");
 
     t.connected.delete(alice.connectionId);
     const alone = { type: "prompt" as const, text: "Hi", page: PAGE, audience: { kind: "private" as const } };
     expect(t.assistant.handle(carol, alone).status).toBe(200);
-    await until(() => privateRunEnded(t.privately.get(carol.userId)), "carol's run to end");
+    await until(() => privateRunEnded(t.privately.get(carol.participant)), "carol's run to end");
 
-    expect(t.assistant.snapshot(bob.userId).entries.map((entry) => entry.kind)).toEqual(["prompt", "reply"]);
+    expect(t.assistant.snapshot(bob.participant).entries.map((entry) => entry.kind)).toEqual(["prompt", "reply"]);
+  });
+
+  it("keeps someone's private conversation across their reconnect", async () => {
+    const t = setup({
+      responses: [fauxAssistantMessage("Saved."), fauxAssistantMessage("Hello."), fauxAssistantMessage("Still saved.")],
+      connected: ["conn-alice", "conn-carol"],
+    });
+    open.push(t.assistant);
+    const alone = { type: "prompt" as const, text: "Is it saved?", page: PAGE, audience: { kind: "private" as const } };
+    expect(t.assistant.handle(alice, alone).status).toBe(200);
+    await until(() => privateRunEnded(t.privately.get(alice.participant)), "alice's run to end");
+
+    // Alice reconnects: a new connection identity, the same participant.
+    const rejoined: AssistantSender = { ...alice, userId: "alice_c2" };
+    // Someone else's new conversation sweeps abandoned ones; Alice's is not.
+    expect(t.assistant.handle(carol, alone).status).toBe(200);
+    await until(() => privateRunEnded(t.privately.get(carol.participant)), "carol's run to end");
+
+    expect(t.assistant.snapshot(rejoined.participant).entries.map((entry) => entry.kind)).toEqual(["prompt", "reply"]);
+    t.privately.clear();
+    expect(t.assistant.handle(rejoined, { ...alone, text: "And now?" }).status).toBe(200);
+    await until(() => privateRunEnded(t.privately.get(alice.participant)), "alice's second run to end");
+    expect(t.assistant.snapshot(rejoined.participant).entries.map((entry) => entry.kind))
+      .toEqual(["prompt", "reply", "prompt", "reply"]);
   });
 
   it("gives the model what was said lately", async () => {
@@ -444,7 +470,7 @@ describe("RoomAssistant in private", () => {
       audience: { kind: "private" },
       said: "Maya Kim: so we split it into two cases",
     });
-    await until(() => privateRunEnded(t.privately.get(alice.userId)), "the private run to end");
+    await until(() => privateRunEnded(t.privately.get(alice.participant)), "the private run to end");
     expect(promptText(t.contexts[0])).toContain("What was said in the meeting lately:\nMaya Kim: so we split it into two cases");
   });
 
@@ -458,8 +484,8 @@ describe("RoomAssistant in private", () => {
       audience: { kind: "private" },
       said: "Maya Kim: now the second case",
     });
-    await until(() => privateRunEnded(t.privately.get(alice.userId)), "the private run to end");
-    expect(t.privately.get(alice.userId)).toContainEqual(
+    await until(() => privateRunEnded(t.privately.get(alice.participant)), "the private run to end");
+    expect(t.privately.get(alice.participant)).toContainEqual(
       expect.objectContaining({
         type: ASSISTANT_EVENTS.ENTRY,
         entry: expect.objectContaining({

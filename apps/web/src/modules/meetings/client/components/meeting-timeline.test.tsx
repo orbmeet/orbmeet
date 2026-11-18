@@ -19,7 +19,7 @@ const marks = stylex.create({
 
 const said = (overrides: Partial<CaptionTranscriptEntry> = {}): CaptionTranscriptEntry => ({
   id: "s1",
-  userId: "rafi",
+  participant: "rafi",
   userName: "Rafi",
   text: "the discriminant is sixteen",
   isFinal: true,
@@ -32,7 +32,7 @@ function render(overrides: Partial<MeetingTimelineProps> = {}) {
   return renderToStaticMarkup(
     <MeetingTimeline
       messages={[]}
-      currentUserId="me"
+      self="me"
       onSendMessage={async () => true}
       speech={{ shown: true, entries: [], onToggle: () => {} }}
       embedded
@@ -44,7 +44,7 @@ function render(overrides: Partial<MeetingTimelineProps> = {}) {
 describe("MeetingTimeline", () => {
   it("is one stream: there is no filter to choose between chat and speech", () => {
     const markup = render({
-      messages: [{ id: "m1", userId: "rafi", userName: "Rafi", text: "a link", sentAt: 2_000, fromSelf: false }],
+      messages: [{ id: "m1", participant: "rafi", userName: "Rafi", text: "a link", sentAt: 2_000, fromSelf: false }],
       speech: { shown: true, entries: [said()], onToggle: () => {} },
     });
 
@@ -72,13 +72,13 @@ describe("MeetingTimeline", () => {
   it("sets your own messages apart from everyone else's", () => {
     const markup = render({
       messages: [
-        { id: "mine", userId: "me", userName: "Atiq", text: "from me", sentAt: 1_000, fromSelf: true },
+        { id: "mine", participant: "me", userName: "Atiq", text: "from me", sentAt: 1_000, fromSelf: true },
       ],
     });
     expect(hasStyle(markup, marks.mine)).toBe(true);
 
     const theirs = render({
-      messages: [{ id: "theirs", userId: "rafi", userName: "Rafi", text: "from Rafi", sentAt: 1_000, fromSelf: false }],
+      messages: [{ id: "theirs", participant: "rafi", userName: "Rafi", text: "from Rafi", sentAt: 1_000, fromSelf: false }],
     });
     expect(hasStyle(theirs, marks.mine)).toBe(false);
   });

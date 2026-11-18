@@ -478,8 +478,13 @@ static int prepare_run(const struct slot *slot, const struct language *language)
   return 0;
 }
 
+/*
+ * The kernel's values (include/uapi/linux/landlock.h), for headers that
+ * predate them: bind is bit 0 and connect bit 1. Handling connect is what
+ * denies it; naming bind's bit here would deny bind and leave connect free.
+ */
 #ifndef LANDLOCK_ACCESS_NET_CONNECT_TCP
-#define LANDLOCK_ACCESS_NET_CONNECT_TCP (1ULL << 0)
+#define LANDLOCK_ACCESS_NET_CONNECT_TCP (1ULL << 1)
 #endif
 #ifndef LANDLOCK_ACCESS_FS_REFER
 #define LANDLOCK_ACCESS_FS_REFER (1ULL << 13)

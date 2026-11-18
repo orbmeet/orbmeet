@@ -51,6 +51,12 @@ describe("page frame guard", () => {
       .toBe("page-frames");
   });
 
+  it("answers a patch that rewrites a record's identity as an invalid id, not a crash", () => {
+    expect(classify({ "shape:box-1": ["patch", { id: ["put", "shape:other"] }] })).toBe("invalid-record-id");
+    expect(classify({ "shape:box-1": ["patch", { typeName: ["put", "binding"] }] })).toBe("invalid-record-id");
+    expect(classify({ "shape:box-1": ["patch", { x: ["put", 2] }] })).toBe("allow");
+  });
+
   it("allows what touches no page frame", () => {
     expect(classify({ "shape:box-1": ["patch", { x: ["put", 100] }] })).toBe("allow");
     expect(classifyIncomingDiff({ type: "connect" }, pageFrameIds)).toBe("allow");

@@ -1,3 +1,36 @@
+/**
+ * The refusals that describe a condition expected to clear on its own, so a
+ * caller may ask again; every other code states a fact (denied, full, ended,
+ * closed, signed out) that repeating the request will not change. The server
+ * decides which is which by the code it throws, and a client reads it from
+ * the code it receives — never from an HTTP status.
+ *
+ * - `CONFLICT`: a concurrent change won a compare-and-set, or something is
+ *   mid-move (a meeting closing, a board moving between nodes).
+ * - `MEETING_CONNECTION_CLOSED`: the connection a reconnect was re-issuing
+ *   ended; the next attempt starts from the new state.
+ * - `MEETING_BUSY`, `BUSY`: the work queued ahead of this request ran past its
+ *   deadline; it was refused unapplied.
+ * - `MEDIA_UNAVAILABLE`: no healthy media node yet, typically just after one
+ *   was lost and before health checks move the meeting.
+ * - `RATE_LIMITED`: throttled; retry, but slowly.
+ * - `INTERNAL_ERROR`: an unexpected failure, surfaced without detail.
+ */
+const RETRYABLE_ERROR_CODES: ReadonlySet<string> = new Set([
+  "CONFLICT",
+  "MEETING_CONNECTION_CLOSED",
+  "MEETING_BUSY",
+  "BUSY",
+  "MEDIA_UNAVAILABLE",
+  "RATE_LIMITED",
+  "INTERNAL_ERROR",
+]);
+
+/** Whether a refusal with this code may succeed if asked again. */
+export function isRetryableErrorCode(code: string | null | undefined): boolean {
+  return code != null && RETRYABLE_ERROR_CODES.has(code);
+}
+
 export class AppError<Data = unknown> extends Error {
   constructor(
     public code: string,
@@ -7,6 +40,10 @@ export class AppError<Data = unknown> extends Error {
   ) {
     super(message);
     this.name = "AppError";
+  }
+
+  get retryable(): boolean {
+    return isRetryableErrorCode(this.code);
   }
 }
 

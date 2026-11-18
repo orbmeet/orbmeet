@@ -59,6 +59,21 @@ describe("d1UnicodeContains", () => {
     await expect(matches("Ä_lig")).resolves.toBe(0);
   });
 
+  it("finds a Greek word however its sigma is spelled", async () => {
+    const db = await createTestDb();
+    const matches = async (text: string, query: string) =>
+      (await db.all<{ n: number }>(
+        sql`select count(*) as n from (select ${text} as v) where ${d1UnicodeContains(sql.raw("v"), query)}`,
+      ))[0]?.n;
+
+    for (const text of ["Η ΟΔΟΣ ΜΑΣ", "η οδος μας", "Η Οδοσ μας"]) {
+      for (const query of ["ΟΔΟΣ", "οδος", "οδοσ", "Οδός".normalize("NFD").replace(/\p{M}/gu, "")]) {
+        await expect(matches(text, query), `${query} in ${text}`).resolves.toBe(1);
+      }
+    }
+    await expect(matches("ΣΟΦΙΑ", "σοφια")).resolves.toBe(1);
+  });
+
   it("matches exactly what the in-memory recheck matches, for a letter whose capital is two", async () => {
     const db = await createTestDb();
     for (const value of ["Straße", "STRASSE", "strasse"]) {

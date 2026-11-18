@@ -65,11 +65,17 @@ export class CaptionPublisher {
     // A final is a segment's last update; nothing more will be numbered for it.
     if (update.isFinal) this.revisions.delete(update.segmentId);
     else this.revisions.set(update.segmentId, revision);
+    // Re-inserted, not overwritten: a Map keeps a key where it was first set,
+    // and the slot's place must say how long its update has waited. Otherwise
+    // a segment first offered long ago would sit at the front holding its
+    // newest update — its final, often — and be the one dropped below.
+    this.pending.delete(update.segmentId);
     this.pending.set(update.segmentId, { update, revision });
 
     const maxPending = this.options.maxPendingSegments ?? MAX_PENDING_SEGMENTS;
-    // Only the waiting update is dropped. Its segment keeps counting: receivers
-    // may already hold one of its earlier revisions, and keep only a higher one.
+    // The update that has waited longest is dropped. Its segment keeps
+    // counting: receivers may already hold one of its earlier revisions, and
+    // keep only a higher one.
     while (this.pending.size > maxPending) {
       this.pending.delete(this.pending.keys().next().value!);
     }

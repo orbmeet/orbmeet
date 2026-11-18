@@ -88,7 +88,10 @@ export interface LiveMeetingState {
   // ── Core lifecycle ──
   roomInstance: ReturnType<typeof useMeetingLifecycle>["roomInstance"];
   mediaScope: ReturnType<typeof useMeetingLifecycle>["mediaScope"];
-  currentUserId: string;
+  /** This connection's LiveKit identity: what media, moderation and removal act on. */
+  currentIdentity: string;
+  /** Who this viewer is in the conversation, across reconnects (`participantKeyOf`). */
+  participantKey: string;
   currentUserName: string;
   connectionQuality: "excellent" | "good" | "poor" | "disconnected";
   handleLiveKitRoomUpdate: ReturnType<typeof useMeetingLifecycle>["handleLiveKitRoomUpdate"];
@@ -110,7 +113,10 @@ export interface LiveMeetingState {
   // ── Connections & participants ──
   connectedParticipants: ParticipantConnection[];
   participantsList: Array<{
+    /** The connection's identity. */
     id: string;
+    /** Their participant key: what a private thread with them is keyed by. */
+    key: string;
     name: string;
     role: ParticipantConnection["role"];
     isGuest: boolean;
@@ -254,7 +260,8 @@ export function useLiveMeeting(
     disconnectMeetingNow,
   } = useMeetingLifecycle();
   const { localParticipant } = useLocalParticipant();
-  const currentUserId = localParticipant.identity;
+  const currentIdentity = localParticipant.identity;
+  const participantKey = joinResult.participantKey;
   const currentUserName = localParticipant.name || localParticipant.identity;
   const connectionQuality = useLocalConnectionQuality(localParticipant);
 
@@ -541,6 +548,7 @@ export function useLiveMeeting(
     () =>
       connectedParticipants.map((p) => ({
         id: p.identity,
+        key: p.participantKey,
         name: p.userName,
         role: p.role,
         isGuest: p.isGuest,
@@ -581,7 +589,8 @@ export function useLiveMeeting(
     // Core lifecycle
     roomInstance,
     mediaScope,
-    currentUserId,
+    currentIdentity,
+    participantKey,
     currentUserName,
     connectionQuality,
     handleLiveKitRoomUpdate,

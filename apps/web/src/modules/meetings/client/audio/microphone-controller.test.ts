@@ -127,6 +127,29 @@ describe("MicrophoneController", () => {
     expect(port.isMicrophoneEnabled).toBe(false);
   });
 
+  it("waits for a change rather than retrying a mute that cannot be applied", async () => {
+    const { port } = createPort({ startOn: true });
+    const onFailure = vi.fn();
+    const controller = new MicrophoneController(port, "on", { recover: healthy, onFailure });
+    const setEnabled = vi.mocked(port.setMicrophoneEnabled);
+    const apply = setEnabled.getMockImplementation()!;
+    setEnabled.mockRejectedValue(new Error("mute refused"));
+
+    controller.setIntent("off");
+    // A retry loop on microtasks would never let this timer run.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(controller.pending).toBe(false);
+    expect(setEnabled).toHaveBeenCalledTimes(1);
+    expect(onFailure).toHaveBeenCalledWith("disable", expect.any(Error));
+
+    // A reconnect asks for intent again; this time the mute lands.
+    setEnabled.mockImplementation(apply);
+    controller.driveToIntent();
+    await vi.waitFor(() => expect(controller.pending).toBe(false));
+    expect(setEnabled).toHaveBeenCalledTimes(2);
+    expect(port.isMicrophoneEnabled).toBe(false);
+  });
+
   it("falls back to muted when the repair ladder gives up", async () => {
     const { port } = createPort();
     const onFailure = vi.fn();

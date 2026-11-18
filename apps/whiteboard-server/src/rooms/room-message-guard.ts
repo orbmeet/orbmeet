@@ -10,12 +10,12 @@ import {
   classifyIncomingDiff,
   classifyIncomingDiffSizeEffect,
   getPageFrameIdsFromSnapshot,
-  hasUnsafeObjectKeyDeep,
   JsonMessageAssembler,
   type IncomingDiffSizeEffect,
 } from "./page-frame-guard.ts";
 import type { PresenceOp } from "./room-presence-lane.ts";
 import { ROOM_NAVIGATION_ID } from "@orbmeet/whiteboard-core/room-navigation";
+import { hasUnsafeObjectKeyDeep } from "@orbmeet/whiteboard-core/room-snapshot-validation";
 import { isRecord } from "@orbmeet/primitives";
 import { isPageFrameRecord } from "./record-rules.ts";
 import type { WhiteboardRoomId } from "@orbmeet/whiteboard-core/whiteboard-room-id";

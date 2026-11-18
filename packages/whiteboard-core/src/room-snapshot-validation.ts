@@ -24,6 +24,29 @@ function isClock(value: unknown): value is number {
 const MAX_SNAPSHOT_TOMBSTONES = 100_000;
 const MAX_TLDRAW_RECORD_ID_LENGTH = 512;
 
+const UNSAFE_OBJECT_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+/**
+ * Whether a value carries a prototype-polluting key (`__proto__`,
+ * `constructor`, `prototype`) anywhere within it. sync-core applies a patch
+ * with `applyObjectDiff`, whose `newObject[key] = value` sets a record's
+ * prototype from a `__proto__` key before any authorizer sees the result, and
+ * its validator accepts the key inside a record's free-form JSON (`meta`). So
+ * it is refused at both boundaries a record crosses: a client's push (the
+ * sync service's message guard) and a stored snapshot (below), which is
+ * broadcast to every client as puts and copied into later captures.
+ * `Object.entries` sees a JSON-parsed `__proto__` because it is an own
+ * enumerable property, not the real prototype.
+ */
+export function hasUnsafeObjectKeyDeep(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasUnsafeObjectKeyDeep);
+  if (!isRecord(value)) return false;
+  for (const [key, child] of Object.entries(value)) {
+    if (UNSAFE_OBJECT_KEYS.has(key) || hasUnsafeObjectKeyDeep(child)) return true;
+  }
+  return false;
+}
+
 /**
  * The one predicate for "what is a legal document record id", shared by every
  * boundary that names one: the persistence validator (tombstones, below) and
@@ -85,6 +108,9 @@ export function validateWhiteboardRoomSnapshot(
       const { id, typeName } = document.state;
       if (typeof id !== "string" || !id || typeof typeName !== "string" || !typeName) {
         return { ok: false, error: "Snapshot record identity is invalid" };
+      }
+      if (hasUnsafeObjectKeyDeep(document.state)) {
+        return { ok: false, error: `Snapshot record ${id} contains a prototype-polluting key` };
       }
       if (recordIds.has(id)) return { ok: false, error: `Snapshot contains duplicate record ${id}` };
       recordIds.add(id);

@@ -262,16 +262,16 @@ export function OrbEntry({
 
 export function OrbRunBar({
   run,
-  currentUserId,
+  self,
   canCancel,
   onCancel,
 }: {
   run: AssistantRun;
-  currentUserId: string;
+  self: string;
   canCancel: boolean;
   onCancel: () => void;
 }) {
-  const asker = run.requesterUserId === currentUserId ? "you" : run.requesterName;
+  const asker = run.requesterUserId === self ? "you" : run.requesterName;
   return (
     <div role="status" {...stylex.props(styles.runBar)}>
       <OrbMark sizePx={18} working />

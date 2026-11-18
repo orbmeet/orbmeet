@@ -4,7 +4,7 @@ import {
   getServerErrorStatusCode,
   isServerError,
 } from "@/lib/error-inspection";
-import { isRetryableJoinCode } from "@/modules/meetings/contract/join-outcome";
+import { isRetryableErrorCode } from "@/lib/app-errors";
 import type { JoinMeetingResult, JoinResult } from "@/modules/meetings/contract/types";
 
 export type MeetingWaitingReason = "meeting-start" | "approval";
@@ -84,7 +84,7 @@ export function classifyJoinError(error: unknown): JoinOutcome {
   const code = getServerErrorCode(error) ?? null;
   const message = getJoinFailureMessage(code, getErrorMessage(error, ""));
   if (!isServerError(error)) return { kind: "retry", code: null, message: GENERIC_FAILURE };
-  if (isRetryableJoinCode(code)) return { kind: "retry", code, message };
+  if (isRetryableErrorCode(code)) return { kind: "retry", code, message };
   if ((getServerErrorStatusCode(error) ?? 0) >= 500) return { kind: "retry", code, message };
   return { kind: "final", code, message };
 }

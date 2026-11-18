@@ -209,9 +209,10 @@ export class Room {
       {
         whiteboardRoomId,
         broadcast: (event) => this.broadcaster.broadcastToLiveConnections(event),
-        sendToUsers: (userIds, event) => this.sendToUsers(userIds, event),
+        sendToParticipants: (participants, event) => this.sendToParticipants(participants, event),
         sendToConnection: (connectionId, event) => this.sendToConnection(connectionId, event),
-        presentName: (userId) => this.connections.live().find(({ meta }) => meta.userId === userId)?.meta.userName ?? null,
+        presentName: (participant) =>
+          this.connections.live().find(({ meta }) => meta.grantPrincipalKey === participant)?.meta.userName ?? null,
         canEdit: (userId) => this.authority.canUserEditWhiteboard(userId),
         canManage: (userId) => this.authority.canManageWhiteboard(userId),
       },
@@ -283,9 +284,9 @@ export class Room {
     this.navigation.clearLegacyNavigation();
   }
 
-  private sendToUsers(userIds: readonly string[], event: AssistantEvent): void {
+  private sendToParticipants(participants: readonly string[], event: AssistantEvent): void {
     for (const { tldrawSessionId, meta } of this.connections.live()) {
-      if (userIds.includes(meta.userId)) this.connections.send(tldrawSessionId, event);
+      if (participants.includes(meta.grantPrincipalKey)) this.connections.send(tldrawSessionId, event);
     }
   }
 

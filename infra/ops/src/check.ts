@@ -151,7 +151,10 @@ async function publicPortsClosed(shell: Shell, inv: Inventory, name: string, own
   const { ipv4, ipv6 } = inv.nodes[name];
   let reachable: number[];
   if (!own.has(ipv4)) {
-    reachable = (await openPorts(ipv4, INTERNAL_PORTS)) ?? [];
+    const probed = await openPorts(ipv4, INTERNAL_PORTS);
+    // Unreachable proves nothing about the firewall: the check did not run.
+    if (probed === null) throw new OpsError(`Could not reach ${name} at ${ipv4} to check its internal ports`);
+    reachable = probed;
   } else {
     const other = Object.keys(inv.nodes).find((n) => n !== name);
     if (!other) {

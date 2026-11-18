@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { AppError } from "@/lib/app-errors";
+import { AppError, Errors } from "@/lib/app-errors";
+import { appErrorToJoinMeetingResult } from "@/modules/meetings/server/lifecycle/join-results";
 import type { JoinResult } from "@/modules/meetings/contract/types";
 import {
   classifyJoinError,
@@ -58,6 +59,13 @@ describe("classifyJoinResponse", () => {
         retryable: false,
       }),
     ).toEqual({ kind: "final", code: "PLAN_LIMIT_REACHED", message: "Meeting is full." });
+  });
+
+  it("retries a meeting too busy to answer, as the server's refusal says", () => {
+    expect(classifyJoinResponse(appErrorToJoinMeetingResult(Errors.MEETING_BUSY())))
+      .toMatchObject({ kind: "retry", code: "MEETING_BUSY" });
+    expect(classifyJoinResponse(appErrorToJoinMeetingResult(Errors.MEETING_CLOSED())))
+      .toMatchObject({ kind: "final", code: "MEETING_CLOSED" });
   });
 
   it("keeps the server's words when the plan's one running meeting is taken", () => {

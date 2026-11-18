@@ -53,14 +53,25 @@ export async function handleBillingWebhookRequest(request: Request): Promise<Res
     return new Response("Unauthorized", { status: 401 });
   }
 
-  let parsedBody: unknown;
+  // Past the signature the event is Polar's. One this build cannot read is
+  // acknowledged rather than refused: a redelivery carries the same bytes and
+  // reads no better, and refusing would keep Polar retrying and mark the
+  // endpoint unhealthy. The daily reconciliation reads the subscription from
+  // Polar's API, so its state still lands; the error says it was late.
+  let parsedBody: unknown = null;
   try {
     parsedBody = JSON.parse(body) as unknown;
   } catch {
-    return new Response("Invalid JSON", { status: 400 });
+    // Read as unreadable below.
   }
   const event = parsePolarWebhookEvent(parsedBody);
-  if (!event) return new Response("Invalid Polar event", { status: 400 });
+  if (event.kind === "unreadable") {
+    logError("[billing-webhook] Acknowledged a signed event this build cannot read", {
+      webhookId,
+      eventType: event.eventType,
+    });
+    return new Response("OK", { status: 200 });
+  }
   if (event.kind === "ignored") return new Response("OK", { status: 200 });
 
   const db = createDb(env.DB);

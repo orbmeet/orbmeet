@@ -1,6 +1,5 @@
 import { AppError, Errors } from "@/lib/app-errors";
 import type { JoinMeetingResult } from "@/modules/meetings/contract/types";
-import { isRetryableJoinCode } from "@/modules/meetings/contract/join-outcome";
 
 /**
  * The closed-door error for an admission status, or null while it is still
@@ -51,7 +50,7 @@ export function appErrorToJoinMeetingResult(error: AppError): JoinMeetingResult 
     state: "blocked",
     code: error.code,
     message: error.message,
-    retryable: isRetryableJoinCode(error.code),
+    retryable: error.retryable,
   };
 }
 

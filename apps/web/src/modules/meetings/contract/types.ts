@@ -63,6 +63,8 @@ export interface JoinResult {
   canManageMeeting: boolean;
   participantName: string;
   participantIdentity: string;
+  /** Who this is across reconnects: see `participantKeyOf`. */
+  participantKey: string;
   meetingTitle: string | null;
   /** The shared Space this meeting belongs to; absent for a personal link. */
   spaceName?: string | null;

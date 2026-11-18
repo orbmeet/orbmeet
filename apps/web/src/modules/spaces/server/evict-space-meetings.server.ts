@@ -1,6 +1,6 @@
 import "@tanstack/react-start/server-only";
 
-import { spaces, spaceMembers, meetingScheduleAttendees, meetingSchedules, users } from "@orbmeet/db/schema";
+import { spaces, spaceMembers, spaceMemberRemovals, meetingScheduleAttendees, meetingSchedules, users } from "@orbmeet/db/schema";
 import { eq, and, inArray, or, sql } from "drizzle-orm";
 import type { Database } from "@orbmeet/db";
 
@@ -34,6 +34,11 @@ export async function evictUserFromSpaceMeetings(
      * the delete observe the same row.
      */
     removableRoles?: readonly ("admin" | "member")[];
+    /**
+     * An admin removing someone: recorded, so the Space's invite link no
+     * longer lets them back in (`space_member_removals`). A leave passes none.
+     */
+    removedBy?: { userId: string; at: Date };
   } = {},
 ): Promise<boolean> {
   // Never delete the space owner, nor the final admin of an Organization space
@@ -81,9 +86,30 @@ export async function evictUserFromSpaceMeetings(
       )`,
     ));
 
+  const recordRemoval = options.removedBy
+    ? db
+      .insert(spaceMemberRemovals)
+      .select(
+        db
+          .select({
+            spaceId: sql`${spaceId}`.as("space_id"),
+            userId: sql`${userId}`.as("user_id"),
+            removedByUserId: sql`${options.removedBy.userId}`.as("removed_by_id"),
+            removedAt: sql`${Math.floor(options.removedBy.at.getTime() / 1000)}`.as("removed_at"),
+          })
+          .from(sql`(select 1)`)
+          .where(membershipGone),
+      )
+      .onConflictDoUpdate({
+        target: [spaceMemberRemovals.spaceId, spaceMemberRemovals.userId],
+        set: { removedByUserId: sql`excluded.removed_by_id`, removedAt: sql`excluded.removed_at` },
+      })
+    : null;
+
   const [deleteResult] = await db.batch([
       db.delete(spaceMembers).where(deletableMembership),
       removeScheduleAttendees,
+      ...(recordRemoval ? [recordRemoval] : []),
   ]);
   if (getRunChanges(deleteResult) === 0) return false;
 

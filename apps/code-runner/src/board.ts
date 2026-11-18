@@ -11,6 +11,7 @@ import {
   CELLRUN_PROBE,
   CELLRUN_SLOTS,
   CellrunExit,
+  cellrunLeftContainerInDoubt,
   MAX_REPORT_BYTES,
   cellrunArgv,
   parseReport,
@@ -209,8 +210,11 @@ export class Board {
     const state = { exited: false };
     const settled = withDeadline(process.exitCode, REPORT_DEADLINE_MS + CLEANUP_DEADLINE_MS)
       .then(async (code) => {
-        if (code === CellrunExit.ReplaceContainer && generation === this.#table.generation) {
-          await this.#replaceContainer("cellrun could not reset its slot", await afterExit(diagnostics));
+        if (cellrunLeftContainerInDoubt(code) && generation === this.#table.generation) {
+          await this.#replaceContainer(
+            code === CellrunExit.ReplaceContainer ? "cellrun could not reset its slot" : `cellrun exited with ${code ?? "no status"}`,
+            await afterExit(diagnostics),
+          );
         }
       }, async (error: unknown) => {
         if (generation === this.#table.generation) await this.#replaceContainer("cellrun never exited", error);

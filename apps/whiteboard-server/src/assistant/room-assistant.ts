@@ -39,7 +39,10 @@ const MAX_MESSAGES_IN_CONTEXT = 80;
 const REPLY_FLUSH_MS = 120;
 
 export interface AssistantSender {
+  /** The connection's identity: what the room's edit and manage authority is decided for. */
   userId: string;
+  /** Who they are in a conversation, across reconnects (see `AssistantAudience`). */
+  participant: string;
   userName: string;
   connectionId: string;
 }
@@ -49,18 +52,20 @@ export interface RoomAssistantHost {
   whiteboardRoomId: string;
   /** Deliver to everyone on the board. */
   broadcast(event: AssistantEvent): void;
-  /** Deliver to every session of these people, and to nobody else. */
-  sendToUsers(userIds: readonly string[], event: AssistantEvent): void;
+  /** Deliver to every session of these participants, and to nobody else. */
+  sendToParticipants(participants: readonly string[], event: AssistantEvent): void;
   /** Deliver to the sessions of one browser connection; returns how many were sent. */
   sendToConnection(connectionId: string, event: AssistantEvent): number;
-  /** The name of someone on the board now, or null when they are not. */
-  presentName(userId: string): string | null;
+  /** The name of a participant on the board now, or null when they are not. */
+  presentName(participant: string): string | null;
   canEdit(userId: string): boolean;
   canManage(userId: string): boolean;
 }
 
 interface ActiveRun extends AssistantRun {
   connectionId: string;
+  /** The asking connection's identity, whose edit authority its drawing is held to. */
+  requesterIdentity: string;
   pageId: string;
   canEdit: boolean;
   turns: number;
@@ -108,9 +113,9 @@ export class RoomAssistant {
     this.conversations.set(audienceKey(ROOM_AUDIENCE), this.room);
   }
 
-  /** What `viewerId` may see: the room's conversation and their own private ones. Without a viewer, the room's alone. */
-  snapshot(viewerId?: string): AssistantSnapshot {
-    const visible = [...this.conversations.values()].filter((conversation) => conversation.includes(viewerId));
+  /** What `viewer` (a participant key) may see: the room's conversation and their own private ones. Without a viewer, the room's alone. */
+  snapshot(viewer?: string): AssistantSnapshot {
+    const visible = [...this.conversations.values()].filter((conversation) => conversation.includes(viewer));
     const entries = visible.flatMap((conversation) => conversation.entries);
     // Each conversation is in order already; the sort is stable, so ties keep it.
     entries.sort((a, b) => a.at - b.at);
@@ -138,8 +143,8 @@ export class RoomAssistant {
         if (!conversation?.runId) return Reply.json({ ok: true });
         // In the room, the asker or a whiteboard manager; in private, anyone in it.
         const allowed = conversation.isPrivate
-          ? conversation.includes(sender.userId)
-          : conversation.requesterUserId === sender.userId || this.host.canManage(sender.userId);
+          ? conversation.includes(sender.participant)
+          : conversation.requesterUserId === sender.participant || this.host.canManage(sender.userId);
         if (!allowed) {
           return Reply.json({ error: "Only the person who asked or a whiteboard manager can stop the assistant" }, 403);
         }
@@ -173,13 +178,13 @@ export class RoomAssistant {
     let audience = ROOM_AUDIENCE;
     let partnerName: string | null = null;
     if (wanted.kind === "private") {
-      if (wanted.with !== undefined && wanted.with !== sender.userId) {
+      if (wanted.with !== undefined && wanted.with !== sender.participant) {
         partnerName = this.host.presentName(wanted.with);
         if (partnerName === null) {
           return Reply.json({ error: "That person is not on the board" }, 409);
         }
       }
-      audience = privateAudience(partnerName === null ? [sender.userId] : [sender.userId, wanted.with!]);
+      audience = privateAudience(partnerName === null ? [sender.participant] : [sender.participant, wanted.with!]);
     }
 
     const key = audienceKey(audience);
@@ -191,7 +196,7 @@ export class RoomAssistant {
     if (!conversation && this.conversations.size > MAX_PRIVATE_CONVERSATIONS) {
       return Reply.json({ error: "Too many private conversations in this room" }, 429);
     }
-    if (!this.prompts.check(sender.userId)) {
+    if (!this.prompts.check(sender.participant)) {
       return Reply.json({ error: "Too many requests to the assistant; try again in a few minutes" }, 429);
     }
     if (!conversation) {
@@ -213,7 +218,7 @@ export class RoomAssistant {
    * the room stays open.
    */
   private dropAbandonedConversations(): void {
-    const isPresent = (userId: string) => this.host.presentName(userId) !== null;
+    const isPresent = (participant: string) => this.host.presentName(participant) !== null;
     for (const [key, conversation] of this.conversations) {
       if (!conversation.isAbandoned(isPresent)) continue;
       conversation.close();
@@ -267,14 +272,14 @@ class AssistantConversation {
     return this.run?.requesterUserId ?? null;
   }
 
-  /** Whether `userId` sees this conversation. Without a user, only the room's is anyone's. */
-  includes(userId: string | undefined): boolean {
+  /** Whether `participant` sees this conversation. Without one, only the room's is anyone's. */
+  includes(participant: string | undefined): boolean {
     if (this.audience.kind === "room") return true;
-    return userId !== undefined && this.audience.members.includes(userId);
+    return participant !== undefined && this.audience.members.includes(participant);
   }
 
   /** A private conversation with nothing running whose members have all left. The room's never is. */
-  isAbandoned(isPresent: (userId: string) => boolean): boolean {
+  isAbandoned(isPresent: (participant: string) => boolean): boolean {
     return this.audience.kind === "private" && !this.run && !this.audience.members.some(isPresent);
   }
 
@@ -299,9 +304,10 @@ class AssistantConversation {
     const canEdit = !this.isPrivate && this.host.canEdit(sender.userId);
     const run: ActiveRun = {
       id: crypto.randomUUID(),
-      requesterUserId: sender.userId,
+      requesterUserId: sender.participant,
       requesterName: sender.userName,
       connectionId: sender.connectionId,
+      requesterIdentity: sender.userId,
       pageId: page.pageId,
       canEdit,
       turns: 0,
@@ -311,7 +317,7 @@ class AssistantConversation {
       id: `${run.id}-prompt`,
       kind: "prompt",
       author: sender.userName,
-      authorId: sender.userId,
+      authorId: sender.participant,
       text,
       lookedAt: lookedAtFromRequest(page, context.said),
     });
@@ -366,7 +372,7 @@ class AssistantConversation {
   private deliver(event: AssistantEvent): void {
     if (this.closed) return;
     if (this.audience.kind === "room") this.host.broadcast(event);
-    else this.host.sendToUsers(this.audience.members, event);
+    else this.host.sendToParticipants(this.audience.members, event);
   }
 
   private deliverRun(): void {
@@ -542,7 +548,7 @@ class AssistantConversation {
     signal: AbortSignal | undefined,
   ): Promise<AgentToolResult<undefined>> {
     if (this.run !== run) return failed("Stopped.");
-    if (CANVAS_TOOLS[tool].edits && (!run.canEdit || !this.host.canEdit(run.requesterUserId))) {
+    if (CANVAS_TOOLS[tool].edits && (!run.canEdit || !this.host.canEdit(run.requesterIdentity))) {
       return failed(`${run.requesterName} can no longer edit this whiteboard.`);
     }
 

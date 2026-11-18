@@ -643,7 +643,7 @@ function RaisedHands({
 export interface MeetingTimelineProps {
   /** Room messages and this viewer's private ones; `to` marks a private one. */
   messages: readonly TimelineChatInput[];
-  currentUserId: string;
+  self: string;
   /** Sends to the room, or privately to one person when `to` is given. */
   onSendMessage: (text: string, to: { id: string; name: string } | undefined) => Promise<boolean>;
   /**
@@ -703,7 +703,7 @@ export interface MeetingTimelineProps {
  */
 export function MeetingTimeline({
   messages,
-  currentUserId,
+  self,
   onSendMessage,
   orb,
   orbHistory,
@@ -747,13 +747,13 @@ export function MeetingTimeline({
         chat: messages,
         speech: speech.shown ? speech.entries : [],
         orb: orbEntries ?? [],
-        currentUserId,
+        self,
         thread,
       }),
-    [messages, speech.shown, speech.entries, orbEntries, currentUserId, thread],
+    [messages, speech.shown, speech.entries, orbEntries, self, thread],
   );
   // Orb works on one question per thread at a time; this thread's, if any.
-  const audience = threadAudience(thread, currentUserId);
+  const audience = threadAudience(thread, self);
   const orbRun = orb?.runs.find((run) => audienceKey(run.audience) === audienceKey(audience)) ?? null;
   // The newest of Orb's entries is the one it is working on while a run lasts.
   const workingOrbItemId = orbRun ? lastOrbWorkId(items) : undefined;
@@ -836,9 +836,9 @@ export function MeetingTimeline({
     }
     if (!orb.available) return `${ORB_NAME} isn't set up on this server.`;
     if (!orb.live) return `${ORB_NAME} can't be reached right now. Try again in a moment.`;
-    const busy = orb.runs.find((run) => audienceKey(run.audience) === audienceKey(threadAudience(target, currentUserId)));
+    const busy = orb.runs.find((run) => audienceKey(run.audience) === audienceKey(threadAudience(target, self)));
     if (busy) {
-      return `${ORB_NAME} is answering ${busy.requesterUserId === currentUserId ? "you" : busy.requesterName}. Ask again in a moment.`;
+      return `${ORB_NAME} is answering ${busy.requesterUserId === self ? "you" : busy.requesterName}. Ask again in a moment.`;
     }
     const request: AssistantAudienceRequest =
       target.kind === "room"
@@ -935,7 +935,7 @@ export function MeetingTimeline({
       : !inRoom
         ? "just you two"
         : item.askedBy
-          ? `replying to ${item.askedBy.userId === currentUserId ? "you" : firstName(item.askedBy.userName)}`
+          ? `replying to ${item.askedBy.participant === self ? "you" : firstName(item.askedBy.userName)}`
           : undefined;
 
   // What Orb drew: anyone can look at it; whoever asked can take it back, once.
@@ -947,7 +947,7 @@ export function MeetingTimeline({
     return {
       onShow: () => orb.showShapes(pageId, drawn),
       onUndo:
-        created.length > 0 && item.askedBy?.userId === currentUserId && !undone.has(item.id)
+        created.length > 0 && item.askedBy?.participant === self && !undone.has(item.id)
           ? () => {
               const error = orb.removeShapes(created);
               setSendError(error);
@@ -1141,7 +1141,7 @@ export function MeetingTimeline({
       {orbRun && orb && (
         <OrbRunBar
           run={orbRun}
-          currentUserId={currentUserId}
+          self={self}
           canCancel={orb.mayCancel(orbRun)}
           onCancel={() => orb.cancel(orbRun.id)}
         />

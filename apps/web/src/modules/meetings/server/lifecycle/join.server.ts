@@ -32,6 +32,7 @@ import { callCoordinator, userSubject } from "../runtime/client.server";
 import { egressFields } from "../runtime/live.server";
 import { acquireMeetingOccurrence } from "./meeting-occurrence";
 import { appErrorToJoinMeetingResult, endedOccurrenceJoinError, waitingForApproval } from "./join-results";
+import { participantKeyOf } from "@/modules/meetings/contract/live-state";
 
 function joined(result: JoinResult): JoinMeetingResult {
   return { state: "joined", result };
@@ -271,6 +272,7 @@ export async function joinMeetingImpl({
       canManageMeeting: participant.canManageMeeting,
       participantName: participant.displayName,
       participantIdentity: participant.identity,
+      participantKey: participantKeyOf(participant),
       meetingTitle: meeting.title,
       // Only a shared Space is named. Every link lives in a Space, and a
       // personal one is named after its owner, so reporting it made every

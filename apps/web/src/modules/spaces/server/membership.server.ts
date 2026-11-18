@@ -5,7 +5,7 @@
  */
 
 import type { Database } from "@orbmeet/db";
-import { organizationMembers, spaces, spaceMembers, users } from "@orbmeet/db/schema";
+import { organizationMembers, spaces, spaceMemberRemovals, spaceMembers, users } from "@orbmeet/db/schema";
 import { eq, and, asc, count, gt, or, sql, type SQL } from "drizzle-orm";
 import {
   addMemberByEmailSchema,
@@ -124,6 +124,16 @@ export async function insertSpaceMemberWithinCap(
         .where(
           and(
             eq(spaces.id, spaceId),
+            sql`exists (select 1 from ${spaceMembers} where ${spaceMembers.id} = ${memberId})`,
+          ),
+        ),
+      // An admin adding someone back is what lifts a removal.
+      db
+        .delete(spaceMemberRemovals)
+        .where(
+          and(
+            eq(spaceMemberRemovals.spaceId, spaceId),
+            eq(spaceMemberRemovals.userId, userId),
             sql`exists (select 1 from ${spaceMembers} where ${spaceMembers.id} = ${memberId})`,
           ),
         ),
@@ -340,6 +350,7 @@ export async function removeMemberImpl({
   const removed = await evictUserFromSpaceMeetings(db, env, data.spaceId, data.userId, {
     authorizedByUserId: user.id,
     removableRoles: access.capabilities.canGrantAdmins ? SPACE_MEMBERSHIP_ROLES : ["member"],
+    removedBy: { userId: user.id, at: new Date() },
   });
   if (!removed) {
     throw Errors.VALIDATION("This member's role changed before removal completed. Please retry.");

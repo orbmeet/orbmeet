@@ -303,6 +303,29 @@ describe("presence", () => {
     expect(m.state.attempts[a.attemptId].endReason).toBe("participant_left");
   });
 
+  it("does not let a listing asked for before a departure undo it", () => {
+    const m = new Meeting();
+    const a = m.admitted(ada);
+    m.joined(a.identity);
+    const listingAskedAt = m.now;
+    m.now += 1_000;
+    m.apply({ kind: "participantLeft", identity: a.identity, sid: `sid-${a.identity}`, at: m.now });
+    const absentSince = m.state.attempts[a.attemptId].absentSince;
+    expect(absentSince).not.toBeNull();
+
+    // The listing lands after the departure, still showing the same session.
+    m.now += 1_000;
+    m.listed([{ identity: a.identity, sid: `sid-${a.identity}`, joinedAt: null, standard: true }], listingAskedAt);
+    expect(m.state.attempts[a.attemptId].absentSince).toBe(absentSince);
+    // A look requested after the departure is still owed.
+    expect(m.state.room.lastPresenceCheckAt).toBeNull();
+
+    // One asked for after the departure decides.
+    m.listed([{ identity: a.identity, sid: `sid-${a.identity}`, joinedAt: null, standard: true }]);
+    expect(m.state.attempts[a.attemptId].absentSince).toBeNull();
+    expect(m.state.room.lastPresenceCheckAt).toBe(m.now);
+  });
+
   it("removes standard participants it does not know, and leaves agents alone", () => {
     const m = new Meeting();
     const a = m.admitted(ada);

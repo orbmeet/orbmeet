@@ -37,14 +37,19 @@ export const MAX_ASSISTANT_REQUEST_BYTES = 1024 * 1024;
  * members' alone — one person and Orb, or two people and Orb — and nothing of
  * it reaches anyone else, the recording included. Orb answers to the same
  * people who could see the question.
+ *
+ * People are named by participant key — the board's grant principal key,
+ * `user:<id>` or `guest_admission:<id>` — which stays the same across their
+ * reconnects, tabs and devices. A connection's own identity is new on every
+ * reconnect, and a conversation keyed by it would be lost with it.
  */
-export type AssistantAudience = { kind: "room" } | { kind: "private"; /** User ids, sorted; one or two. */ members: string[] };
+export type AssistantAudience = { kind: "room" } | { kind: "private"; /** Participant keys, sorted; one or two. */ members: string[] };
 
 export const ROOM_AUDIENCE: AssistantAudience = { kind: "room" };
 
 /** A private audience of these people, in its one canonical form. */
-export function privateAudience(userIds: readonly string[]): AssistantAudience {
-  return { kind: "private", members: [...new Set(userIds)].sort() };
+export function privateAudience(participants: readonly string[]): AssistantAudience {
+  return { kind: "private", members: [...new Set(participants)].sort() };
 }
 
 /** A stable key for an audience. An entry or run without one is the room's. */
@@ -61,7 +66,7 @@ export type AssistantEntry = { id: string; at: number; /** Absent: the room's. *
   | {
       kind: "prompt";
       author: string;
-      /** The asker's whiteboard identity. */
+      /** The asker's participant key (see {@link AssistantAudience}). */
       authorId: string;
       text: string;
       /** What went with the question, shown under its answer. */
@@ -83,6 +88,7 @@ export type AssistantEntry = { id: string; at: number; /** Absent: the room's. *
 
 export interface AssistantRun {
   id: string;
+  /** The asker's participant key (see {@link AssistantAudience}). */
   requesterUserId: string;
   requesterName: string;
   /** Absent: the room's. */
@@ -178,12 +184,13 @@ export type AssistantPageOutline = v.InferOutput<typeof PageOutlineSchema>;
 /** What was said in the meeting lately, as "Name: words" lines; enough for "catch me up". */
 export const MAX_ASSISTANT_SAID_LENGTH = 24_000;
 
-const userId = v.pipe(v.string(), v.minLength(1), v.maxLength(128));
+/** A participant key (see {@link AssistantAudience}): a grant principal type, `:`, and an id of up to 192 characters. */
+const participantKey = v.pipe(v.string(), v.minLength(1), v.maxLength(256));
 
 /** Who will see the question and the answer: the room, just the asker, or the asker and one other person. */
 const AudienceRequestSchema = v.variant("kind", [
   v.object({ kind: v.literal("room") }),
-  v.object({ kind: v.literal("private"), with: v.optional(userId) }),
+  v.object({ kind: v.literal("private"), with: v.optional(participantKey) }),
 ]);
 export type AssistantAudienceRequest = v.InferOutput<typeof AudienceRequestSchema>;
 

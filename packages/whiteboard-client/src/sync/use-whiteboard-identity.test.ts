@@ -13,12 +13,20 @@ describe("decodeWhiteboardJwt", () => {
     expect(
       decodeWhiteboardJwt(
         tokenFor({
-          sub: "user_1",
+          sub: "user_1_attempt_7",
           name: "Ada",
           capabilities: { canManageWhiteboard: true },
+          grantPrincipal: { type: "user", id: "user_1" },
         }),
       ),
-    ).toEqual({ userId: "user_1", userName: "Ada", isHost: true, error: null });
+    ).toEqual({ userId: "user_1_attempt_7", participant: "user:user_1", userName: "Ada", isHost: true, error: null });
+  });
+
+  it("names a guest's participant by their admission, and none without a grant principal", () => {
+    const guest = tokenFor({ sub: "guest_attempt_3", name: "G", grantPrincipal: { type: "guest_admission", id: "adm_1" } });
+    expect(decodeWhiteboardJwt(guest).participant).toBe("guest_admission:adm_1");
+    expect(decodeWhiteboardJwt(tokenFor({ sub: "u", name: "n", grantPrincipal: { type: "admin", id: "x" } })).participant)
+      .toBeNull();
   });
 
   // The payload is UTF-8, so a byte-per-char decode (atob alone) turns every
@@ -43,6 +51,7 @@ describe("decodeWhiteboardJwt", () => {
   it("reports malformed tokens instead of throwing", () => {
     expect(decodeWhiteboardJwt("not-a-jwt")).toEqual({
       userId: null,
+      participant: null,
       userName: "",
       isHost: false,
       error: "Whiteboard token is invalid.",

@@ -3,15 +3,21 @@ import type { Participant, Room } from "livekit-client";
 import { ParticipantKind, RoomEvent } from "livekit-client";
 import { useParticipants } from "@livekit/components-react";
 import { isGuestIdentity, type MeetingRole } from "@/modules/meetings/contract/constants";
-import { PARTICIPANT_ATTRIBUTE, parseParticipantRole } from "@/modules/meetings/contract/live-state";
+import {
+  PARTICIPANT_ATTRIBUTE,
+  parseParticipantRole,
+  participantKeyOfAttributes,
+} from "@/modules/meetings/contract/live-state";
 
 /**
  * Connections state for a participant. `role` is the privilege axis
  * (host|moderator|attendee); `isGuest` is the orthogonal auth axis.
  */
 export interface ParticipantConnection {
+  /** This connection's LiveKit identity: what media, moderation and removal act on. */
   identity: string;
-  userId: string;
+  /** Who they are across reconnects: what the conversation names them by. */
+  participantKey: string;
   userName: string;
   role: MeetingRole;
   isGuest: boolean;
@@ -40,7 +46,7 @@ function toConnection(participant: Participant): ParticipantConnection {
   const name = participant.name?.trim() || "";
   return {
     identity,
-    userId: identity,
+    participantKey: participantKeyOfAttributes(participant.attributes) ?? identity,
     userName: name || identity || "Unknown",
     role: parseParticipantRole(participant.attributes[PARTICIPANT_ATTRIBUTE.role]) ?? "attendee",
     isGuest: isGuestIdentity(identity),

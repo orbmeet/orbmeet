@@ -4,6 +4,7 @@ import { ConnectionState, DataPacket_Kind, RoomEvent } from "livekit-client";
 import { logError, logInfo } from "@/lib/logger";
 import { MESSAGE_LIMITS, LIVEKIT_TOPICS } from "@/modules/meetings/contract/constants";
 import { isExpectedClosedPublishError } from "@/modules/meetings/contract/livekit-helpers";
+import { participantKeyOfAttributes } from "@/modules/meetings/contract/live-state";
 import { ReceiverRateLimiter } from "@/platform/realtime/receiver-rate-limiter";
 import { useTokenBucket } from "./use-token-bucket";
 import type { MeetingConversation } from "./meeting-conversation";
@@ -15,16 +16,17 @@ const CHAT_BUCKET_REFILL_RATE = 1;
 export interface LiveKitChatMessage {
   type: "chat";
   id: string;
-  userId: string;
+  /** The sender's participant key (`participantKeyOf`), not their connection's identity. */
+  participant: string;
   userName: string;
   text: string;
   /** This browser's clock: when it was sent from here or arrived here. */
   sentAt: number;
-  /** Sent from this browser; a participant's identity changes with every connection. */
+  /** Sent from this browser. */
   fromSelf: boolean;
   /**
-   * A private message: the one other person it was for. On a message you sent
-   * that is the recipient; on one you received, it is you.
+   * A private message: the one other person it was for, by participant key.
+   * On a message you sent that is the recipient; on one you received, it is you.
    */
   to?: { id: string; name: string };
 }
@@ -33,7 +35,10 @@ interface ChatPacket {
   type: "chat";
   id: string;
   text: string;
-  /** Present on a private message: the one identity it was sent to. */
+  /**
+   * Present on a private message: the participant key it was written to. Keys
+   * outlive connections, so a thread survives either side reconnecting.
+   */
   to?: string;
 }
 
@@ -63,7 +68,7 @@ export function decodeBoundedPacket(payload: Uint8Array, maxBytes: number, maxLe
  * The name is checked anyway: a sender who addressed someone else but sent it
  * to the whole room must not have it shown to everyone as if it were private.
  */
-export function parseChatPacket(text: string, localIdentity: string): ChatPacket | null {
+export function parseChatPacket(text: string, localKey: string): ChatPacket | null {
   let packet: unknown;
   try {
     packet = JSON.parse(text);
@@ -84,7 +89,7 @@ export function parseChatPacket(text: string, localIdentity: string): ChatPacket
     return null;
   }
   if (to === undefined) return { type, id, text: body };
-  if (typeof to !== "string" || !localIdentity || to !== localIdentity) return null;
+  if (typeof to !== "string" || !localKey || to !== localKey) return null;
   return { type, id, text: body, to };
 }
 
@@ -97,10 +102,12 @@ export function parseChatPacket(text: string, localIdentity: string): ChatPacket
  * - Sender-side token bucket rate limiting
  * - Receiver-side per-identity rate limiting
  * - Sender-generated message IDs, namespaced by the sender's LiveKit identity
- * - Sender identity and name from LiveKit, never from the payload
+ * - Sender and name from LiveKit (the key the coordinator set on their grant),
+ *   never from the payload
  * - Local receive time (not sender timestamp)
- * - Private messages addressed to one identity and delivered only to it, so
- *   nobody else in the room — the recorder included — ever receives them
+ * - Private messages addressed to one participant and delivered only to their
+ *   connections, so nobody else in the room — the recorder included — ever
+ *   receives them
  *
  * Messages are kept in the stay's `conversation`, so a new connection picks
  * up where the last one left off. One sent while this participant was
@@ -121,14 +128,18 @@ export function useLiveKitChat(
 
   const receive = useEffectEvent((senderIdentity: string, text: string) => {
     const local = room?.localParticipant;
-    const packet = parseChatPacket(text, local?.identity ?? "");
+    const sender = room?.remoteParticipants.get(senderIdentity);
+    // Only people the coordinator admitted carry a key; agents do not chat.
+    const senderKey = participantKeyOfAttributes(sender?.attributes);
+    if (!senderKey) return;
+    const packet = parseChatPacket(text, participantKeyOfAttributes(local?.attributes) ?? "");
     if (!packet) return;
     conversation.add({
       type: "chat",
       id: `${senderIdentity}:${packet.id}`,
-      userId: senderIdentity,
+      participant: senderKey,
       // Never the raw identity, which encodes internal ids.
-      userName: room?.remoteParticipants.get(senderIdentity)?.name?.trim() || "Participant",
+      userName: sender?.name?.trim() || "Participant",
       text: packet.text.trim(),
       sentAt: Date.now(), // local receive time, not sender timestamp
       fromSelf: false,
@@ -162,7 +173,8 @@ export function useLiveKitChat(
       if (!room || room.state !== ConnectionState.Connected) return false;
 
       const lp = room.localParticipant;
-      if (!lp.identity) {
+      const localKey = participantKeyOfAttributes(lp.attributes);
+      if (!lp.identity || !localKey) {
         logInfo("[LiveKitChat] Cannot send: identity not available yet");
         return false;
       }
@@ -173,8 +185,14 @@ export function useLiveKitChat(
       }
 
       // Someone who has left cannot be written to; a private message must
-      // never fall back to the room.
-      if (to && (to.id === lp.identity || !room.remoteParticipants.has(to.id))) {
+      // never fall back to the room. It goes to every connection the
+      // recipient has here, which is one but for the moment a rejoin overlaps.
+      const recipients = to
+        ? [...room.remoteParticipants.values()]
+          .filter((participant) => participantKeyOfAttributes(participant.attributes) === to.id)
+          .map((participant) => participant.identity)
+        : [];
+      if (to && (to.id === localKey || recipients.length === 0)) {
         return false;
       }
 
@@ -190,7 +208,7 @@ export function useLiveKitChat(
         await lp.publishData(bytes, {
           reliable: true,
           topic: LIVEKIT_TOPICS.CHAT,
-          ...(to ? { destinationIdentities: [to.id] } : {}),
+          ...(to ? { destinationIdentities: recipients } : {}),
         });
       } catch (error) {
         if (!isExpectedClosedPublishError(error)) {
@@ -202,7 +220,7 @@ export function useLiveKitChat(
       conversation.add({
         type: "chat",
         id: `local:${id}`,
-        userId: lp.identity,
+        participant: localKey,
         userName: lp.name || lp.identity,
         text: trimmedText,
         sentAt: Date.now(),

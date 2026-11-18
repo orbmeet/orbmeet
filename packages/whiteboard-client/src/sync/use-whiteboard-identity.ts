@@ -3,10 +3,20 @@ import { type TLStore, type TLUserStore } from "tldraw";
 import { atom, computed, type Atom } from "@tldraw/state";
 import { createCachedUserResolve, createUserId, UserRecordType } from "@tldraw/tlschema";
 import { base64urlDecode } from "@orbmeet/whiteboard-core/crypto-utils";
+import {
+  isWhiteboardGrantPrincipal,
+  whiteboardGrantPrincipalKey,
+} from "@orbmeet/whiteboard-core/whiteboard-grant-principal";
 import { userColorForId } from "../editor/whiteboard-editor-internals";
 
 export interface WhiteboardIdentity {
+  /** This connection's identity: new on every reconnect in a meeting. */
   userId: string | null;
+  /**
+   * Who this is across reconnects, tabs and devices: the token's grant
+   * principal key. What the assistant's conversations name people by.
+   */
+  participant: string | null;
   userName: string;
   isHost: boolean;
   error: string | null;
@@ -28,6 +38,9 @@ export function decodeWhiteboardJwt(token: string): WhiteboardIdentity {
         : null;
       return {
         userId: typeof payload.sub === "string" ? payload.sub : null,
+        participant: isWhiteboardGrantPrincipal(payload.grantPrincipal)
+          ? whiteboardGrantPrincipalKey(payload.grantPrincipal)
+          : null,
         userName: typeof payload.name === "string" ? payload.name : "",
         isHost: capabilities?.canManageWhiteboard === true,
         error: null,
@@ -38,6 +51,7 @@ export function decodeWhiteboardJwt(token: string): WhiteboardIdentity {
   }
   return {
     userId: null,
+    participant: null,
     userName: "",
     isHost: false,
     error: "Whiteboard token is invalid.",

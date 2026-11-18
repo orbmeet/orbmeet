@@ -49,6 +49,11 @@ interface StepUpDialogProps {
   title: string;
   description: string;
   confirming?: boolean;
+  /**
+   * Why the confirmed action failed. Shown only for a confirm made since the
+   * dialog last opened: the caller's mutation keeps its error after the
+   * dialog closes, and the next opening must not start with it.
+   */
   actionError?: string;
   onOpenChange: (open: boolean) => void;
   onConfirm: (credential: StepUpCredentialInput) => void;
@@ -67,6 +72,7 @@ export function StepUpDialog({
 }: StepUpDialogProps) {
   const [flowToken, setFlowToken] = useState("");
   const [otp, setOtp] = useState("");
+  const [confirmedThisOpening, setConfirmedThisOpening] = useState(false);
   const requestedKeyRef = useRef<string | null>(null);
   const requestMutation = useMutation({
     mutationFn: () => requestStepUp({ data: { action, targetId } }),
@@ -80,6 +86,7 @@ export function StepUpDialog({
       requestedKeyRef.current = null;
       setFlowToken("");
       setOtp("");
+      setConfirmedThisOpening(false);
       resetRequest();
       return;
     }
@@ -95,6 +102,7 @@ export function StepUpDialog({
   const requestError = requestMutation.isError
     ? getErrorMessage(requestMutation.error, "Could not send a security code.")
     : "";
+  const shownActionError = confirmedThisOpening ? actionError : undefined;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -133,8 +141,8 @@ export function StepUpDialog({
             </div>
           ) : null}
 
-          {(requestError || actionError) && (
-            <Alert variant="error">{requestError || actionError}</Alert>
+          {(requestError || shownActionError) && (
+            <Alert variant="error">{requestError || shownActionError}</Alert>
           )}
         </DialogBody>
 
@@ -153,7 +161,10 @@ export function StepUpDialog({
           ) : (
             <Button
               type="button"
-              onClick={() => onConfirm({ flowToken, otp })}
+              onClick={() => {
+                setConfirmedThisOpening(true);
+                onConfirm({ flowToken, otp });
+              }}
               loading={confirming}
               disabled={!flowToken || otp.length !== EMAIL_CODE_LENGTH}
             >

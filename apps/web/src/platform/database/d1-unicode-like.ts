@@ -19,6 +19,29 @@ function charLiteral(value: string): SQL {
 }
 
 /**
+ * Case folds that lowercasing alone does not perform, as Unicode's CaseFolding
+ * table states them: the final sigma folds to the medial one, so "ΟΔΟΣ",
+ * "οδος" and "οδοσ" are one word.
+ */
+const FOLD_OVERRIDES: ReadonlyMap<string, string> = new Map([["ς", "σ"]]);
+
+/**
+ * One character's case fold. Folded one character at a time on both sides of
+ * the comparison: lowercasing a whole string is context-sensitive (a word-final
+ * Σ becomes ς), while the column can only be folded character by character.
+ */
+function foldCharacter(character: string): string {
+  const lower = character.toLowerCase();
+  return FOLD_OVERRIDES.get(lower) ?? lower;
+}
+
+/** The spellings of a character that fold to `target`. */
+function variantsOf(character: string, target: string): string[] {
+  const sources = [character, ...[...FOLD_OVERRIDES].filter(([, to]) => to === target).map(([from]) => from)];
+  return sources.flatMap((source) => [source, source.toUpperCase(), source.toLowerCase()]);
+}
+
+/**
  * D1's built-in lower() only folds ASCII. Extend it with the concrete Unicode
  * case pairs present in the query, keeping filtering in SQL and wildcard-safe.
  *
@@ -26,13 +49,13 @@ function charLiteral(value: string): SQL {
  * caller can compose folds without tracking a per-character parameter budget.
  */
 export function d1UnicodeContains(column: SQLWrapper, query: string): SQL {
-  const foldedQuery = query.toLowerCase();
+  const foldedQuery = Array.from(query, foldCharacter).join("");
   let foldedColumn: SQL = sql`lower(${column})`;
   const replacements = new Map<string, string>();
 
   for (const character of query) {
-    const target = character.toLowerCase();
-    for (const variant of [character, character.toUpperCase(), target]) {
+    const target = foldCharacter(character);
+    for (const variant of variantsOf(character, target)) {
       if (variant === target || variant.length === 0) continue;
       // The replacements run on lower()'s output, in which no ASCII capital is
       // left: a variant spelled with one (A for a, or SS for ß) can never be

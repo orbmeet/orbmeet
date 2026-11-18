@@ -120,6 +120,12 @@ export async function queryMediaPermission(name: "camera" | "microphone"): Promi
  * browser that cannot say what is stored — is left alone, so nobody is
  * prompted twice.
  */
+async function bothKindsGranted(queryPermission: MediaPermissionQuery | undefined): Promise<boolean> {
+  if (!queryPermission) return false;
+  const [camera, microphone] = await Promise.all([queryPermission("camera"), queryPermission("microphone")]);
+  return camera === "granted" && microphone === "granted";
+}
+
 async function kindsWorthRetrying(
   error: unknown,
   queryPermission: MediaPermissionQuery | undefined,
@@ -155,14 +161,21 @@ export async function acquirePreJoinMedia(
         usedSeparateProbes: false,
       };
     }
-    return {
-      streams: [],
-      audioStream: null,
-      videoStream: null,
-      audioError: null,
-      videoError: null,
-      usedSeparateProbes: false,
-    };
+    // No answer in time. With both kinds already granted no prompt is open,
+    // so a device hung (a wedged camera holds the microphone asked for with
+    // it): ask for each alone. Otherwise the person may still be answering
+    // the prompt, and a second request would only queue behind it; their
+    // answer arrives late and is handled there.
+    if (!(await bothKindsGranted(queryPermission))) {
+      return {
+        streams: [],
+        audioStream: null,
+        videoStream: null,
+        audioError: null,
+        videoError: null,
+        usedSeparateProbes: false,
+      };
+    }
   } catch (error) {
     if (!shouldRetryMediaKindsSeparately(error)) {
       retry = await kindsWorthRetrying(error, queryPermission);

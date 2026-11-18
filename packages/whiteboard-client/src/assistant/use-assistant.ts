@@ -28,12 +28,12 @@ export interface UseAssistantOptions {
   whiteboardUrl: string;
   /** Latest whiteboard JWT. */
   tokenRef: RefObject<string>;
-  userId: string | null;
+  /** This viewer's participant key: what the conversation names them by. */
+  participant: string | null;
   editor: Editor | null;
   pageManagerRef: RefObject<PageManager | null>;
   /** Clearing the conversation is a whiteboard-manager action on the server too. */
   canManageWhiteboard: boolean;
-  syncReady: boolean;
   syncOnline: boolean;
   /**
    * The presenter this participant is following and the page they are on,
@@ -112,11 +112,10 @@ export function useAssistant({
   enabled,
   whiteboardUrl,
   tokenRef,
-  userId,
+  participant,
   editor,
   pageManagerRef,
   canManageWhiteboard,
-  syncReady,
   syncOnline,
   followingRef,
 }: UseAssistantOptions): Assistant {
@@ -139,10 +138,13 @@ export function useAssistant({
     [tokenRef, whiteboardUrl],
   );
 
-  // The conversation as of now, on mount and after every reconnect; live
-  // events keep it current from there.
+  // The conversation as of now, each time the socket comes online: on mount
+  // and after every reconnect, since what was posted while it was down is not
+  // replayed (live events reach only connected sockets). `syncReady` cannot
+  // drive this: tldraw reports it once per client, and a reconnect flips only
+  // the connection status.
   useEffect(() => {
-    if (!enabled || !syncReady) return;
+    if (!enabled || !syncOnline) return;
     const controller = new AbortController();
     fetch(whiteboardSyncUrl(whiteboardUrl, WHITEBOARD_SYNC_ROUTES.assistant), {
       headers: { Authorization: `Bearer ${tokenRef.current}` },
@@ -156,7 +158,7 @@ export function useAssistant({
         // Live events still arrive; the next reconnect retries.
       });
     return () => controller.abort();
-  }, [enabled, syncReady, tokenRef, whiteboardUrl]);
+  }, [enabled, syncOnline, tokenRef, whiteboardUrl]);
 
   const handleServerEvent = useCallback(
     (message: AssistantEvent) => {
@@ -262,10 +264,10 @@ export function useAssistant({
   const cancel = useCallback((runId?: string) => void send({ type: "cancel", runId }).catch(() => {}), [send]);
   const clear = useCallback(() => void send({ type: "clear" }).catch(() => {}), [send]);
 
-  const live = enabled && syncReady && syncOnline && snapshot.available;
+  const live = enabled && syncOnline && snapshot.available;
   const mayCancel = useCallback(
-    (run: AssistantRun) => live && (!isRoom(run.audience) || run.requesterUserId === userId || canManageWhiteboard),
-    [canManageWhiteboard, live, userId],
+    (run: AssistantRun) => live && (!isRoom(run.audience) || run.requesterUserId === participant || canManageWhiteboard),
+    [canManageWhiteboard, live, participant],
   );
   const roomEntries = useMemo(() => snapshot.entries.filter((entry) => isRoom(entry.audience)), [snapshot.entries]);
   const run = snapshot.runs.find((candidate) => isRoom(candidate.audience)) ?? null;

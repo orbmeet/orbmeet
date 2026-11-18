@@ -1,4 +1,4 @@
-import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { check, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import {
   SPACE_AUDIT_ACTIONS as SPACE_AUDIT_ACTION_VALUES,
@@ -127,6 +127,32 @@ export const spaceMembers = sqliteTable(
   ]
 );
 
+/**
+ * A member a Space admin removed. The Space's invite link no longer lets them
+ * back in — it is durable and shared, so whoever joined with it still holds
+ * it — until an admin adds them again directly, which deletes the row. Leaving
+ * by choice records nothing.
+ */
+export const spaceMemberRemovals = sqliteTable(
+  "space_member_removals",
+  {
+    spaceId: text("space_id")
+      .notNull()
+      .references(() => spaces.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    removedByUserId: text("removed_by_id").references(() => users.id, { onDelete: "set null" }),
+    removedAt: integer("removed_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.spaceId, table.userId] }),
+    // Back the user_id cascade and the removed_by_id set-null on account deletion.
+    index("space_member_removals_user_id_idx").on(table.userId),
+    index("space_member_removals_removed_by_id_idx").on(table.removedByUserId),
+  ]
+);
+
 /** A Space's one durable invitation link for joining as a member. */
 export const spaceInvites = sqliteTable(
   "space_invites",
@@ -194,4 +220,5 @@ export const spaceAuditEvents = sqliteTable(
 export type Space = typeof spaces.$inferSelect;
 export type SpaceMember = typeof spaceMembers.$inferSelect;
 export type SpaceInvite = typeof spaceInvites.$inferSelect;
+export type SpaceMemberRemoval = typeof spaceMemberRemovals.$inferSelect;
 export type SpaceAuditEvent = typeof spaceAuditEvents.$inferSelect;

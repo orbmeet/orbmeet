@@ -170,7 +170,8 @@ interface Episode {
   kind: "join" | "lobby" | "recover" | "removal";
   /** Requests sent so far; indexes the schedule for the next one. */
   step: number;
-  latestAttempt: number;
+  /** The one request whose answer counts; null when none does. */
+  latestAttempt: number | null;
   /** Whether the latest request is still unanswered, as far as the episode has heard. */
   awaitingAnswer: boolean;
   /** When the next request is due, while one is scheduled. */
@@ -180,8 +181,18 @@ interface Episode {
   unreachableMediaUrl?: string;
   /** For a recovery or removal recheck: the connection that was lost. */
   replacesConnectionId?: string;
-  /** A recovery request came due while offline and waits for the network. */
+  /** A recovery or removal recheck came due while offline and waits for the network. */
   heldOffline: boolean;
+}
+
+/**
+ * A recovery and a removal recheck are both about a meeting the participant
+ * was in, on a schedule meant for a server that is busy, not a network that is
+ * down: neither spends a request while the browser knows it is offline, and
+ * both send the next one at once when the person comes back to the page.
+ */
+function waitsOutTheNetwork(episode: Episode): boolean {
+  return episode.kind === "recover" || episode.kind === "removal";
 }
 
 interface LinkState extends MeetingEntryLink {
@@ -262,6 +273,11 @@ export class MeetingEntrySession {
     const episode = this.episode;
     if (!episode || episode.won) return;
     if (episode.awaitingAnswer) {
+      // The unanswered request is given up and asked again in its place: it
+      // was one step, not two. Given up even when this one is held for the
+      // network, so a pause while offline cannot take the step back twice.
+      episode.awaitingAnswer = false;
+      episode.latestAttempt = null;
       episode.step -= 1;
       this.sendOrHold(episode);
     } else if (episode.nextStepAt !== null) {
@@ -293,13 +309,13 @@ export class MeetingEntrySession {
   pageShown(): void {
     if (!this.active) return;
     const episode = this.episode;
-    if (!episode || episode.won || episode.kind !== "recover") return;
+    if (!episode || episode.won || !waitsOutTheNetwork(episode)) return;
     if (episode.awaitingAnswer || episode.nextStepAt === null) return;
     if (episode.nextStepAt <= this.now()) return;
     this.scheduleStep(episode, 0);
   }
 
-  /** The browser has a network again: send a recovery request held for it. */
+  /** The browser has a network again: send the request held for it. */
   networkRestored(): void {
     if (!this.active) return;
     const episode = this.episode;
@@ -493,7 +509,7 @@ export class MeetingEntrySession {
       id: ++this.episodeSeq,
       kind,
       step: carryStep,
-      latestAttempt: 0,
+      latestAttempt: null,
       awaitingAnswer: false,
       nextStepAt: null,
       won: false,
@@ -552,7 +568,7 @@ export class MeetingEntrySession {
 
   /** Sends the episode's next request, unless it is a recovery that would spend it on no network. */
   private sendOrHold(episode: Episode): void {
-    episode.heldOffline = episode.kind === "recover" && this.deps.isOnline?.() === false;
+    episode.heldOffline = waitsOutTheNetwork(episode) && this.deps.isOnline?.() === false;
     if (!episode.heldOffline) this.sendAttempt(episode);
   }
 

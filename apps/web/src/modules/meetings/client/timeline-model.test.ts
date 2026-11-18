@@ -14,15 +14,15 @@ import {
   type TimelineThread,
 } from "./timeline-model";
 
-function chat(id: string, sentAt: number, userId = "rafi", text = id): TimelineChatInput {
-  return { id, userId, userName: userId === "me" ? "Atiq" : "Rafi", text, sentAt, fromSelf: userId === "me" };
+function chat(id: string, sentAt: number, participant = "rafi", text = id): TimelineChatInput {
+  return { id, participant, userName: participant === "me" ? "Atiq" : "Rafi", text, sentAt, fromSelf: participant === "me" };
 }
 
-function said(id: string, startedAt: number, userId = "rafi", updatedAt = startedAt + 2_000): TimelineSpeechInput {
+function said(id: string, startedAt: number, participant = "rafi", updatedAt = startedAt + 2_000): TimelineSpeechInput {
   return {
     id,
-    userId,
-    userName: userId === "me" ? "Atiq" : userId === "rafi" ? "Rafi" : "Yousuf",
+    participant,
+    userName: participant === "me" ? "Atiq" : participant === "rafi" ? "Rafi" : "Yousuf",
     text: id,
     isFinal: true,
     startedAt,
@@ -35,7 +35,7 @@ describe("buildTimeline", () => {
     const items = buildTimeline({
       chat: [chat("link", 5_000, "yousuf")],
       speech: [said("roots", 1_000), said("after", 9_000, "yousuf")],
-      currentUserId: "me",
+      self: "me",
     });
     expect(items.map((item) => item.id)).toEqual(["roots", "link", "after"]);
   });
@@ -44,7 +44,7 @@ describe("buildTimeline", () => {
     const items = buildTimeline({
       chat: [],
       speech: [said("a", 1_000), said("b", 4_000), said("c", 8_000)],
-      currentUserId: "me",
+      self: "me",
     });
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ kind: "speech", id: "a", at: 1_000 });
@@ -61,7 +61,7 @@ describe("buildTimeline", () => {
         said("rafi-3", 12_000),
         said("rafi-4", 12_000 + 2_000 + SPEECH_RUN_GAP_MS + 1),
       ],
-      currentUserId: "me",
+      self: "me",
     });
     expect(items.map((item) => item.id)).toEqual(["rafi-1", "yousuf-1", "rafi-2", "msg", "rafi-3", "rafi-4"]);
   });
@@ -71,7 +71,7 @@ describe("buildTimeline", () => {
     const items = buildTimeline({
       chat: [],
       speech: [said("long", 0, "rafi", 60_000), said("next", 70_000)],
-      currentUserId: "me",
+      self: "me",
     });
     expect(items).toHaveLength(1);
   });
@@ -80,7 +80,7 @@ describe("buildTimeline", () => {
     const items = buildTimeline({
       chat: [chat("mine", 2_000, "me")],
       speech: [said("spoken", 1_000, "me")],
-      currentUserId: "me",
+      self: "me",
     });
     expect(items.every((item) => "mine" in item && item.mine)).toBe(true);
   });
@@ -89,7 +89,7 @@ describe("buildTimeline", () => {
     const items = buildTimeline({
       chat: [chat("first", 1_000), chat("second", 1_000)],
       speech: [said("spoken", 1_000, "yousuf")],
-      currentUserId: "me",
+      self: "me",
     });
     expect(items.map((item) => item.id)).toEqual(["spoken", "first", "second"]);
   });
@@ -97,7 +97,7 @@ describe("buildTimeline", () => {
 
 function whisper(id: string, sentAt: number, from: string, to: string): TimelineChatInput {
   const names: Record<string, string> = { me: "Atiq", fayaz: "Fayaz", rafi: "Rafi" };
-  return { id, userId: from, userName: names[from], text: id, sentAt, fromSelf: from === "me", to: { id: to, name: names[to] } };
+  return { id, participant: from, userName: names[from], text: id, sentAt, fromSelf: from === "me", to: { id: to, name: names[to] } };
 }
 
 describe("private threads", () => {
@@ -109,7 +109,7 @@ describe("private threads", () => {
   ];
 
   it("keeps private messages out of the room", () => {
-    const items = buildTimeline({ chat: messages, speech: [said("spoken", 500)], currentUserId: "me" });
+    const items = buildTimeline({ chat: messages, speech: [said("spoken", 500)], self: "me" });
     expect(items.map((item) => item.id)).toEqual(["spoken", "to-room"]);
   });
 
@@ -118,7 +118,7 @@ describe("private threads", () => {
       chat: messages,
       speech: [said("spoken", 2_500)],
       orb: [{ id: "ask", at: 2_600, kind: "prompt", author: "Rafi", authorId: "rafi", text: "?" }],
-      currentUserId: "me",
+      self: "me",
       thread: { kind: "private", withId: "fayaz" },
     });
     expect(items.map((item) => item.id)).toEqual(["fayaz-asks", "i-answer"]);
@@ -150,21 +150,21 @@ describe("Orb in the timeline", () => {
       chat: [chat("before", 1_000), chat("after", 3_000)],
       speech: [],
       orb,
-      currentUserId: "me",
+      self: "me",
     });
     expect(items.map((item) => item.kind)).toEqual(["chat", "orb-ask", "orb-steps", "orb-reply", "chat"]);
     expect(items[1]).toMatchObject({ kind: "orb-ask", userName: "Atiq", mine: true, text: "is the arithmetic right?" });
   });
 
   it("gathers one run's steps on the board into one entry", () => {
-    const items = buildTimeline({ chat: [], speech: [], orb, currentUserId: "me" });
+    const items = buildTimeline({ chat: [], speech: [], orb, self: "me" });
     const steps = items.find((item) => item.kind === "orb-steps");
     expect(steps?.kind === "orb-steps" && steps.steps.map((step) => step.status)).toEqual(["done", "running"]);
   });
 
   it("keeps an entry with no time after the one before it", () => {
     const untimed = { id: "late", kind: "notice", text: "Stopped." } as unknown as AssistantEntry;
-    const items = buildTimeline({ chat: [chat("between", 2_050)], speech: [], orb: [orb[0], untimed], currentUserId: "me" });
+    const items = buildTimeline({ chat: [chat("between", 2_050)], speech: [], orb: [orb[0], untimed], self: "me" });
     expect(items.map((item) => item.id)).toEqual(["ask", "late", "between"]);
   });
 });
@@ -181,7 +181,7 @@ describe("Orb's entries by audience", () => {
     { id: "o2", at: 3_100, kind: "reply" as const, text: "my answer", done: true, audience: mine },
   ];
   const texts = (thread: TimelineThread) =>
-    buildTimeline({ chat: [], speech: [], orb, currentUserId: "me", thread }).map((item) =>
+    buildTimeline({ chat: [], speech: [], orb, self: "me", thread }).map((item) =>
       "text" in item ? item.text : item.kind,
     );
 
@@ -192,8 +192,8 @@ describe("Orb's entries by audience", () => {
   });
 
   it("says whom an answer is for", () => {
-    const [, reply] = buildTimeline({ chat: [], speech: [], orb, currentUserId: "me" });
-    expect(reply).toMatchObject({ kind: "orb-reply", askedBy: { userId: "sam", userName: "Sam" } });
+    const [, reply] = buildTimeline({ chat: [], speech: [], orb, self: "me" });
+    expect(reply).toMatchObject({ kind: "orb-reply", askedBy: { participant: "sam", userName: "Sam" } });
   });
 
   it("says what Orb looked at under the question's first answer only", () => {
@@ -213,7 +213,7 @@ describe("Orb's entries by audience", () => {
         { id: "a1", at: 1_100, kind: "reply", text: "On the second case.", done: true },
         { id: "a2", at: 1_200, kind: "reply", text: "And the board shows it.", done: true },
       ],
-      currentUserId: "me",
+      self: "me",
     });
     expect(items.map((item) => ("lookedAt" in item ? item.lookedAt : undefined))).toEqual([
       undefined,

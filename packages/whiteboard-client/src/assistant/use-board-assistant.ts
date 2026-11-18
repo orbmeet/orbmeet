@@ -13,12 +13,11 @@ interface BoardAssistantOptions {
   enabled: boolean;
   whiteboardUrl: string;
   tokenRef: RefObject<string>;
-  userId: string | null;
+  participant: string | null;
   editor: Editor | null;
   pages: UseWhiteboardPagesReturn;
   pageManagerRef: RefObject<PageManager | null>;
   canManageWhiteboard: boolean;
-  syncReady: boolean;
   syncOnline: boolean;
   /** Whether this participant may write on the board now: what Orb may draw for them. */
   canDraw: boolean;
@@ -38,12 +37,11 @@ export function useBoardAssistant({
   enabled,
   whiteboardUrl,
   tokenRef,
-  userId,
+  participant,
   editor,
   pages: wb,
   pageManagerRef,
   canManageWhiteboard,
-  syncReady,
   syncOnline,
   canDraw,
   followedPresenterRef,
@@ -55,11 +53,10 @@ export function useBoardAssistant({
     enabled,
     whiteboardUrl,
     tokenRef,
-    userId,
+    participant,
     editor,
     pageManagerRef,
     canManageWhiteboard,
-    syncReady,
     syncOnline,
     followingRef: followedPresenterRef,
   });

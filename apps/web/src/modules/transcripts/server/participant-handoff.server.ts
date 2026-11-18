@@ -5,12 +5,12 @@
  */
 
 import type { Database } from "@orbmeet/db";
-import { meetingSummaries, meetingWhiteboardPages, meetingWhiteboards, whiteboardRevisions, whiteboards } from "@orbmeet/db/schema";
+import { meetingAdmissions, meetingSummaries, meetingWhiteboardPages, meetingWhiteboards, whiteboardRevisions, whiteboards } from "@orbmeet/db/schema";
 import { filterCapturedHandoutPageIds } from "@/modules/whiteboards/server/handout-pages";
 import { Errors } from "@/lib/app-errors";
 import { verifyGuestSecret } from "@/platform/crypto/tokens.server";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
-import { canAccessMeetingHistory } from "@/modules/meetings/server/access/resource-access";
+import { admissionAttended, canAccessMeetingHistory } from "@/modules/meetings/server/access/resource-access";
 import { getTranscriptSnapshot, summaryMatchesTranscriptSnapshot } from "@/modules/transcripts/server/generate-summary.server";
 import type { RequestFnContext } from "@/app/bootstrap/middleware";
 import { getGuestCookieSecret } from "@/modules/meetings/server/access/guest-cookie.server";
@@ -83,19 +83,22 @@ export async function assertParticipantHandoffAccess(
   const guestSecret = getGuestCookieSecret(admissionId);
   if (!guestSecret) throw user ? Errors.FORBIDDEN() : Errors.UNAUTHORIZED();
 
-  const admission = await db.query.meetingAdmissions.findFirst({
-    where: {
-      RAW: (row) =>
-        and(
-          eq(row.id, admissionId),
-          eq(row.meetingId, meetingId),
-          eq(row.subjectType, "guest"),
-          eq(row.admissionStatus, "approved"),
-          isNull(row.subjectUserId),
-        )!,
-    },
-    columns: { guestSecretHash: true },
-  });
+  // The guest's claim is the history policy's for an invited user: they
+  // attended. A guest admitted to an open meeting who never reached the room
+  // holds an approved admission and its cookie, and is owed nothing.
+  const [admission] = await db
+    .select({ guestSecretHash: meetingAdmissions.guestSecretHash })
+    .from(meetingAdmissions)
+    .where(
+      and(
+        eq(meetingAdmissions.id, admissionId),
+        eq(meetingAdmissions.meetingId, meetingId),
+        eq(meetingAdmissions.subjectType, "guest"),
+        isNull(meetingAdmissions.subjectUserId),
+        admissionAttended(db),
+      ),
+    )
+    .limit(1);
 
   if (!admission?.guestSecretHash) throw Errors.FORBIDDEN();
   if (!(await verifyGuestSecret(admission.guestSecretHash, guestSecret))) throw Errors.FORBIDDEN();

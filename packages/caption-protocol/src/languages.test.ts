@@ -38,6 +38,23 @@ describe("normalizeSpeechLanguageTag", () => {
     expect(normalizeSpeechLanguageTag("en_US")).toBe("en-US");
   });
 
+  it("keeps the region a tag names, however it is spelled", () => {
+    expect(normalizeSpeechLanguageTag("en_GB")).toBe("en-GB");
+    expect(normalizeSpeechLanguageTag("en_AU")).toBe("en-AU");
+    expect(normalizeSpeechLanguageTag("en-GB-oxendict")).toBe("en-GB");
+    expect(normalizeSpeechLanguageTag("pt_PT")).toBe("pt-PT");
+    expect(normalizeSpeechLanguageTag("fr_CA")).toBe("fr-CA");
+    expect(normalizeSpeechLanguageTag("nl_BE")).toBe("nl-BE");
+    expect(normalizeSpeechLanguageTag("de_CH")).toBe("de-CH");
+    expect(normalizeSpeechLanguageTag("es_419")).toBe("es-419");
+  });
+
+  it("falls back to the language when its region is not supported", () => {
+    expect(normalizeSpeechLanguageTag("en-ZZ")).toBe("en-US");
+    expect(normalizeSpeechLanguageTag("pt_AO")).toBe("pt-BR");
+    expect(normalizeSpeechLanguageTag("sr-Latn-RS")).toBe("sr");
+  });
+
   it("maps Chinese dialect families deliberately", () => {
     expect(normalizeSpeechLanguageTag("zh")).toBe("zh-CN");
     expect(normalizeSpeechLanguageTag("zh-CN")).toBe("zh-CN");

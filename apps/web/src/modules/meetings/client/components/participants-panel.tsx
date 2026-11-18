@@ -27,7 +27,7 @@ interface Participant {
 
 interface ParticipantsPanelProps {
   participants: Participant[];
-  currentUserId?: string;
+  currentIdentity?: string;
   onClose: () => void;
   canManageModerators?: boolean;
   moderatorUpdatePending?: ReadonlySet<string>;
@@ -204,7 +204,7 @@ export interface PanelTranscriptionControls {
 
 export function ParticipantsPanel({
   participants,
-  currentUserId,
+  currentIdentity,
   onClose,
   canManageModerators = false,
   moderatorUpdatePending,
@@ -222,7 +222,7 @@ export function ParticipantsPanel({
   const removal = useRemovalConfirmation(onRemoveParticipant);
   const lockLabelId = React.useId();
   const management = {
-    currentUserId,
+    currentIdentity,
     canManageModerators,
     onSetModerator,
     canRemoveParticipants,
@@ -240,8 +240,8 @@ export function ParticipantsPanel({
     if (a.role !== "host" && b.role === "host") return 1;
 
     // Then current user
-    if (a.id === currentUserId) return -1;
-    if (b.id === currentUserId) return 1;
+    if (a.id === currentIdentity) return -1;
+    if (b.id === currentIdentity) return 1;
 
     // Then alphabetically
     return a.name.localeCompare(b.name);
@@ -290,7 +290,7 @@ export function ParticipantsPanel({
       <div {...stylex.props(sidePanel.body, sidePanel.bodyTinted)}>
         <div {...stylex.props(stack.x1)}>
           {sortedParticipants.map((p) => {
-            const isYou = p.id === currentUserId;
+            const isYou = p.id === currentIdentity;
             const isHost = p.role === "host";
             const isModerator = p.role === "moderator";
             const isMicOn = p.isMicOn ?? true;

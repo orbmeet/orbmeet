@@ -18,6 +18,7 @@ import {
   type CaptionBoardEvent,
   type CaptionBoardState,
 } from "./board";
+import { participantKeyOfAttributes } from "@/modules/meetings/contract/live-state";
 
 export interface ValidatedCaptionStream {
   speaker: Participant;
@@ -119,7 +120,9 @@ export function useLiveTranscriptions({ room }: { room: Room | undefined }) {
           update: {
             segmentId: caption.segmentId,
             revision: caption.revision,
-            userId: validated.speaker.identity,
+            // Who spoke across their reconnects; a connection without a key
+            // (none is expected to speak) is still shown, as itself.
+            participant: participantKeyOfAttributes(validated.speaker.attributes) ?? validated.speaker.identity,
             userName: validated.speaker.name?.trim() || "Participant",
             text,
             isFinal: caption.isFinal,

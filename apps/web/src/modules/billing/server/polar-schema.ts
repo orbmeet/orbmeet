@@ -108,18 +108,20 @@ const polarEventEnvelopeSchema = v.object({
 
 export type PolarWebhookEvent =
   | { kind: "subscription"; eventType: string; subscription: PolarSubscription }
-  | { kind: "ignored"; eventType: string };
+  | { kind: "ignored"; eventType: string }
+  /** Signed by Polar, but not in a shape this build reads. */
+  | { kind: "unreadable"; eventType: string | null };
 
 /**
  * Every `subscription.*` event (created, active, updated, canceled, revoked,
  * past_due, migrated, …) carries the whole subscription, so they all reduce
  * to storing its current state. Everything else is acknowledged and ignored.
  */
-export function parsePolarWebhookEvent(value: unknown): PolarWebhookEvent | null {
+export function parsePolarWebhookEvent(value: unknown): PolarWebhookEvent {
   const envelope = v.safeParse(polarEventEnvelopeSchema, value);
-  if (!envelope.success) return null;
+  if (!envelope.success) return { kind: "unreadable", eventType: null };
   const { type: eventType, data } = envelope.output;
   if (!eventType.startsWith("subscription.")) return { kind: "ignored", eventType };
   const subscription = parsePolarSubscription(data);
-  return subscription ? { kind: "subscription", eventType, subscription } : null;
+  return subscription ? { kind: "subscription", eventType, subscription } : { kind: "unreadable", eventType };
 }

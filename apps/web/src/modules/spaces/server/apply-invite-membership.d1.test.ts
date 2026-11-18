@@ -3,6 +3,8 @@ import { organizationMembers, organizations, spaces, spaceInvites, spaceMembers,
 import { PLAN_LIMITS } from "@/modules/billing/contract/plan-limits";
 import { createTestDb, type TestDb } from "@/test/db";
 import {applyInviteMembership, replaceSpaceInviteRecord} from "@/modules/spaces/server/invites.server";
+import { evictUserFromSpaceMeetings } from "@/modules/spaces/server/evict-space-meetings.server";
+import { insertSpaceMemberWithinCap } from "@/modules/spaces/server/membership.server";
 import { seedSubscription } from "@/test/billing";
 
 let db: TestDb;
@@ -182,5 +184,45 @@ describe("applyInviteMembership", () => {
     ).resolves.toMatchObject({ token: replacement!.token });
     // The replacement code is a freshly generated 8-letter invite code.
     expect(replacement!.token).toMatch(/^[a-zA-Z]{8}$/);
+  });
+});
+
+describe("a member a Space admin removed", () => {
+  async function seedSpaceWithMember() {
+    await insertUser("owner");
+    await insertUser("joiner");
+    await insertSpace();
+    await insertInvite();
+    const now = new Date();
+    await db.insert(spaceMembers).values([
+      { id: "mbr_owner", spaceId: "spc_1", userId: "owner", role: "admin", joinedAt: now },
+      { id: "mbr_first", spaceId: "spc_1", userId: "joiner", role: "member", joinedAt: now },
+    ]);
+  }
+  const env = {} as Env;
+  const removal = () => db.query.spaceMemberRemovals.findFirst({ where: { spaceId: "spc_1", userId: "joiner" } });
+
+  it("cannot rejoin with the invite link until an admin adds them back", async () => {
+    await seedSpaceWithMember();
+    await expect(evictUserFromSpaceMeetings(appDb(), env, "spc_1", "joiner", {
+      authorizedByUserId: "owner",
+      removedBy: { userId: "owner", at: new Date() },
+    })).resolves.toBe(true);
+    await expect(removal()).resolves.toMatchObject({ removedByUserId: "owner" });
+
+    await expect(join()).resolves.toBe(false);
+    await expect(db.query.spaceMembers.findFirst({ where: { spaceId: "spc_1", userId: "joiner" } })).resolves.toBeUndefined();
+
+    await expect(insertSpaceMemberWithinCap(appDb(), {
+      spaceId: "spc_1", userId: "joiner", memberId: "mbr_again", role: "member", now: new Date(), actorUserId: "owner",
+    })).resolves.toBe("inserted");
+    await expect(removal()).resolves.toBeUndefined();
+  });
+
+  it("can rejoin with the invite link after leaving by choice", async () => {
+    await seedSpaceWithMember();
+    await expect(evictUserFromSpaceMeetings(appDb(), env, "spc_1", "joiner")).resolves.toBe(true);
+    await expect(removal()).resolves.toBeUndefined();
+    await expect(join()).resolves.toBe(true);
   });
 });

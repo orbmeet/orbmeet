@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestDb, type TestDb } from "@/test/db";
 import { hashSessionToken } from "@/platform/crypto/tokens.server";
 import { eq } from "drizzle-orm";
-import { meetingAdmissions, meetingSummaries, meetings, meetingLinks, users } from "@orbmeet/db/schema";
+import { meetingAdmissions, meetingConnections, meetingSummaries, meetings, meetingLinks, users } from "@orbmeet/db/schema";
 import {
   assertParticipantHandoffAccess,
   getParticipantHandoffSummaryImpl,
@@ -67,10 +67,30 @@ async function insertHostAndMeeting(meetingId: string) {
   });
 }
 
+/** The guest's connection reached the room (`connectedAt`), or was only issued a token. */
+async function insertGuestConnection(meetingId: string, admissionId: string, reachedRoom: boolean) {
+  const now = new Date();
+  await db.insert(meetingConnections).values({
+    id: `conn_${admissionId}`,
+    meetingId,
+    admissionId,
+    livekitIdentity: `guest_${admissionId}`,
+    userId: null,
+    role: "attendee",
+    connectionStatus: reachedRoom ? "ended" : "pending",
+    tokenIssuedAt: now,
+    connectedAt: reachedRoom ? now : null,
+    disconnectedAt: reachedRoom ? now : null,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 async function insertGuestAdmission(
   meetingId: string,
   admissionStatus: "approved" | "pending" | "denied" | "revoked",
   secret = "guest-secret",
+  { reachedRoom = true }: { reachedRoom?: boolean } = {},
 ) {
   const now = new Date();
   await db.insert(meetingAdmissions).values({
@@ -85,6 +105,7 @@ async function insertGuestAdmission(
     createdAt: now,
     updatedAt: now,
   });
+  await insertGuestConnection(meetingId, `admission_${admissionStatus}`, reachedRoom);
   return `admission_${admissionStatus}`;
 }
 
@@ -97,6 +118,17 @@ describe("participant handoff access", () => {
     await expect(
       assertParticipantHandoffAccess(getAppDb(), null, "meeting_1", admissionId),
     ).resolves.toBeUndefined();
+  });
+
+  it("refuses an approved guest whose connection never reached the room", async () => {
+    await insertHostAndMeeting("meeting_1");
+    // An open meeting approves on Join; the guest closed the tab before connecting.
+    const admissionId = await insertGuestAdmission("meeting_1", "approved", "guest-secret", { reachedRoom: false });
+    authMocks.getGuestCookieSecret.mockReturnValue("guest-secret");
+
+    await expect(
+      assertParticipantHandoffAccess(getAppDb(), null, "meeting_1", admissionId),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("allows an approved guest only through the occurrence-specific HttpOnly cookie", async () => {

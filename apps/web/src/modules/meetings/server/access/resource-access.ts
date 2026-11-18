@@ -50,6 +50,32 @@ export function myMeetingUniverse(db: Database, userId: string) {
 }
 
 /**
+ * Whether the admission in the enclosing query (over `meeting_admissions`)
+ * attended its Meeting: it was approved, and at least one of its connections
+ * reached the room. Approval alone is not attendance — in an open Meeting it is
+ * granted the moment someone asks to join, before their connection reaches the
+ * room, so it would hand the whole history to anyone who clicked Join and left.
+ * The one definition for users and guests alike.
+ */
+export function admissionAttended(db: Database) {
+  return and(
+    eq(meetingAdmissions.admissionStatus, "approved"),
+    exists(
+      db
+        .select({ id: meetingConnections.id })
+        .from(meetingConnections)
+        .where(
+          and(
+            eq(meetingConnections.admissionId, meetingAdmissions.id),
+            eq(meetingConnections.meetingId, meetingAdmissions.meetingId),
+            isNotNull(meetingConnections.connectedAt),
+          ),
+        ),
+    ),
+  )!;
+}
+
+/**
  * Correlated SQL form of the ended-Meeting access policy. Queries that list or
  * resolve Meetings must use this predicate so discovery cannot disagree with
  * direct resource access.
@@ -68,11 +94,7 @@ export function myMeetingUniverse(db: Database, userId: string) {
  *   former members indefinitely.
  * - Personal Space: the owner is its only member, so attendance is the only
  *   record that an invited user was there, and it is the whole policy for
- *   them. Attending means reaching the room: an approved admission with at
- *   least one connection that went live. Approval alone is not enough — in an
- *   open Meeting it is granted the moment someone asks to join, before their
- *   connection reaches the room, so it would hand the whole history to anyone
- *   who clicked Join and left.
+ *   them, as {@link admissionAttended} defines it.
  */
 export function meetingHistoryAccessPredicate(db: Database, userId: string) {
   const isCurrentSpaceMember = exists(
@@ -94,19 +116,11 @@ export function meetingHistoryAccessPredicate(db: Database, userId: string) {
     db
       .select({ id: meetingAdmissions.id })
       .from(meetingAdmissions)
-      .innerJoin(
-        meetingConnections,
-        and(
-          eq(meetingConnections.admissionId, meetingAdmissions.id),
-          eq(meetingConnections.meetingId, meetingAdmissions.meetingId),
-          isNotNull(meetingConnections.connectedAt),
-        ),
-      )
       .where(
         and(
           eq(meetingAdmissions.meetingId, meetings.id),
           eq(meetingAdmissions.subjectUserId, userId),
-          eq(meetingAdmissions.admissionStatus, "approved"),
+          admissionAttended(db),
         ),
       ),
   );

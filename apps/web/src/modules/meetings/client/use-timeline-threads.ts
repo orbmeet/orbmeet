@@ -32,7 +32,7 @@ interface Person {
 export function useTimelineThreads({
   messages,
   orb,
-  currentUserId,
+  self,
   participants,
   timelineOpen,
   readUpTo,
@@ -41,7 +41,7 @@ export function useTimelineThreads({
   messages: readonly TimelineChatInput[];
   /** Orb's entries this viewer can see; undefined where Orb has no part in the room. */
   orb: readonly AssistantEntry[] | undefined;
-  currentUserId: string;
+  self: string;
   participants: readonly Person[];
   timelineOpen: boolean;
   readUpTo: Readonly<Record<string, number>>;
@@ -53,32 +53,32 @@ export function useTimelineThreads({
   const orbEntries = orb ?? NO_ENTRIES;
   const threads = React.useMemo(() => {
     const nameOf = (userId: string) => participants.find((person) => person.id === userId)?.name;
-    const fromMessages = privateThreads(messages, currentUserId, orbEntries, nameOf);
+    const fromMessages = privateThreads(messages, self, orbEntries, nameOf);
     const known = new Set(fromMessages.map((thread) => thread.withId));
     return [...fromMessages, ...started.filter((thread) => !known.has(thread.withId))];
-  }, [currentUserId, messages, orbEntries, participants, started]);
+  }, [self, messages, orbEntries, participants, started]);
 
   const unread = React.useMemo(
-    () => unreadByThread(messages, currentUserId, readUpTo, orbEntries),
-    [currentUserId, messages, orbEntries, readUpTo],
+    () => unreadByThread(messages, self, readUpTo, orbEntries),
+    [self, messages, orbEntries, readUpTo],
   );
 
   // What is on screen is read.
   const activeKey = threadKey(active);
   React.useEffect(() => {
     if (!timelineOpen) return;
-    markRead(activeKey, newestInThread(messages, orbEntries, active, currentUserId));
-  }, [active, activeKey, currentUserId, markRead, messages, orbEntries, timelineOpen]);
+    markRead(activeKey, newestInThread(messages, orbEntries, active, self));
+  }, [active, activeKey, self, markRead, messages, orbEntries, timelineOpen]);
 
   const presentIds = React.useMemo(() => new Set(participants.map((person) => person.id)), [participants]);
   const others = React.useMemo(
-    () => participants.filter((person) => person.id !== currentUserId),
-    [currentUserId, participants],
+    () => participants.filter((person) => person.id !== self),
+    [self, participants],
   );
 
   const openPrivate = React.useCallback(
     (person: Person) => {
-      if (person.id === currentUserId) return;
+      if (person.id === self) return;
       setStarted((current) =>
         current.some((thread) => thread.withId === person.id)
           ? current
@@ -86,7 +86,7 @@ export function useTimelineThreads({
       );
       setActive({ kind: "private", withId: person.id });
     },
-    [currentUserId],
+    [self],
   );
   const showRoom = React.useCallback(() => setActive(ROOM_THREAD), []);
   const showOrb = React.useCallback(() => setActive(ORB_THREAD), []);

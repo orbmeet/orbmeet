@@ -5,7 +5,7 @@
  */
 
 import type { Database } from "@orbmeet/db";
-import { meetingConnections, meetingFollowUps, meetingSummaries, meetings, type MeetingMoment } from "@orbmeet/db/schema";
+import { meetingConnections, meetingFollowUps, meetingSummaries, meetings, transcripts, type MeetingMoment } from "@orbmeet/db/schema";
 import { and, countDistinct, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import * as v from "valibot";
 import { toStandardJsonSchema } from "@valibot/to-json-schema";
@@ -209,12 +209,31 @@ function formatTranscriptLine(row: ResolvedTranscriptRow, origin: Date): string 
   return `[${mm}:${ss} ${row.speakerLabel}]: ${row.text.trim()}`;
 }
 
+/**
+ * The speaker each transcription identity belongs to. A LiveKit identity is
+ * one connection's, new on every reload, rejoin or node move; the admission is
+ * the person for the whole meeting (a signed-in user keeps theirs across tabs
+ * and rejoins). Grouping by it keeps someone who reconnected one speaker
+ * rather than "Alice (1)" and "Alice (2)", which the prompt would read as two
+ * people. A line whose admission is gone keeps its identity.
+ */
+async function speakersByIdentity(db: Database, meetingId: string): Promise<Map<string, string>> {
+  const rows = await db
+    .selectDistinct({ identity: transcripts.participantIdentity, admissionId: transcripts.admissionId })
+    .from(transcripts)
+    .where(eq(transcripts.meetingId, meetingId));
+  return new Map(rows.map((row) => [row.identity, row.admissionId ?? row.identity]));
+}
+
 export async function buildTranscriptChunks(
   db: Database,
   meetingId: string,
   meetingStartedAt: Date | null,
 ): Promise<TranscriptChunkBuild> {
   const rows: TranscriptListRow[] = [];
+  const speakers = await speakersByIdentity(db, meetingId);
+  const speakerOf = (row: TranscriptListRow) => speakers.get(row.participantIdentity) ?? row.participantIdentity;
+  /** Each speaker's name, as their latest line gives it. */
   const participants = new Map<string, string>();
   let cursor: TranscriptCursor | null = null;
   let segmentCount = 0;
@@ -234,7 +253,7 @@ export async function buildTranscriptChunks(
       rows.push(row);
       segmentCount += 1;
       if (!lastUpdatedAt || row.updatedAt > lastUpdatedAt) lastUpdatedAt = row.updatedAt;
-      participants.set(row.participantIdentity, row.participantName);
+      participants.set(speakerOf(row), row.participantName);
       estimatedChars += text.length + row.participantName.length + 16;
       if (estimatedChars > TRANSCRIPT_TOTAL_MAX_CHARS) {
         return {
@@ -253,7 +272,7 @@ export async function buildTranscriptChunks(
   }
 
   const speakerLabels = buildSpeakerLabels(participants);
-  const participantNames = [...participants.keys()].map((identity) => speakerLabels.get(identity)!);
+  const participantNames = [...participants.keys()].map((speaker) => speakerLabels.get(speaker)!);
   const chunks: string[] = [];
   let current = "";
   let origin = meetingStartedAt;
@@ -263,7 +282,7 @@ export async function buildTranscriptChunks(
     origin ??= row.startedAt;
     const line = formatTranscriptLine(
       {
-        speakerLabel: speakerLabels.get(row.participantIdentity)!,
+        speakerLabel: speakerLabels.get(speakerOf(row))!,
         text: row.text,
         startedAt: row.startedAt,
       },
@@ -298,18 +317,19 @@ export async function buildTranscriptChunks(
   };
 }
 
+/** Each speaker's label: their name, numbered only where two different people share one. */
 function buildSpeakerLabels(participants: ReadonlyMap<string, string>): Map<string, string> {
-  const identitiesByName = new Map<string, string[]>();
-  for (const [identity, name] of participants) {
-    const identities = identitiesByName.get(name) ?? [];
-    identities.push(identity);
-    identitiesByName.set(name, identities);
+  const speakersByName = new Map<string, string[]>();
+  for (const [speaker, name] of participants) {
+    const speakers = speakersByName.get(name) ?? [];
+    speakers.push(speaker);
+    speakersByName.set(name, speakers);
   }
 
   const labels = new Map<string, string>();
-  for (const [name, identities] of identitiesByName) {
-    identities.forEach((identity, index) => {
-      labels.set(identity, identities.length === 1 ? name : `${name} (${index + 1})`);
+  for (const [name, speakers] of speakersByName) {
+    speakers.forEach((speaker, index) => {
+      labels.set(speaker, speakers.length === 1 ? name : `${name} (${index + 1})`);
     });
   }
   return labels;

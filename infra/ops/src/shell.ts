@@ -25,13 +25,17 @@ export const shell: Shell = (args, { cwd = ROOT, capture = false, input, quiet =
       stdio: [input !== undefined ? "pipe" : quiet ? "ignore" : "inherit",
         capture || quiet ? "pipe" : "inherit", quiet ? "pipe" : "inherit"],
     });
+    // Decoded as streams, not chunk by chunk: a character split across two
+    // chunks would otherwise come out as two replacement characters.
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
     let stdout = "";
     let held = "";
-    child.stdout?.on("data", (chunk: Buffer) => {
+    child.stdout?.on("data", (chunk: string) => {
       if (capture) stdout += chunk;
       if (quiet) held += chunk;
     });
-    child.stderr?.on("data", (chunk: Buffer) => {
+    child.stderr?.on("data", (chunk: string) => {
       held += chunk;
     });
     if (input !== undefined) child.stdin?.end(input);

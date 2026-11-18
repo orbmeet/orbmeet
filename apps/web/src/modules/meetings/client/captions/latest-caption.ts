@@ -6,7 +6,7 @@ export const CAPTION_LINGER_MS = 6_000;
 const CAPTION_MAX_CHARS = 160;
 
 export interface LatestCaption {
-  userId: string;
+  participant: string;
   userName: string;
   /** Words already settled. */
   settled: string;
@@ -25,7 +25,7 @@ export function latestCaption(entries: readonly CaptionTranscriptEntry[], now: n
   const last = entries.at(-1);
   if (!last) return null;
   const turn: CaptionTranscriptEntry[] = [];
-  for (let index = entries.length - 1; index >= 0 && entries[index].userId === last.userId; index--) {
+  for (let index = entries.length - 1; index >= 0 && entries[index].participant === last.participant; index--) {
     turn.unshift(entries[index]);
   }
   const updatedAt = Math.max(...turn.map((entry) => entry.updatedAt));
@@ -43,5 +43,5 @@ export function latestCaption(entries: readonly CaptionTranscriptEntry[], now: n
     const space = head.indexOf(" ");
     head = `…${space === -1 ? head : head.slice(space + 1)}`;
   }
-  return { userId: last.userId, userName: last.userName, settled: head, saying, updatedAt };
+  return { participant: last.participant, userName: last.userName, settled: head, saying, updatedAt };
 }

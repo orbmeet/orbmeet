@@ -16,14 +16,14 @@ const LIVE_QUESTION_MS = 60_000;
 export function newRoomQuestions(
   entries: readonly AssistantEntry[],
   seen: ReadonlySet<string>,
-  currentUserId: string | null,
+  self: string | null,
   now: number,
 ): AssistantEntry[] {
   return entries.filter(
     (entry) =>
       entry.kind === "prompt" &&
       (!entry.audience || entry.audience.kind === "room") &&
-      entry.authorId !== currentUserId &&
+      entry.authorId !== self &&
       !seen.has(entry.id) &&
       now - entry.at <= LIVE_QUESTION_MS,
   );
@@ -37,13 +37,13 @@ export function newRoomQuestions(
  */
 export function useOpenOnRoomQuestion({
   entries,
-  currentUserId,
+  self,
   enabled,
   open,
 }: {
   /** Orb's entries this viewer can see; undefined where Orb has no part in the room. */
   entries: readonly AssistantEntry[] | undefined;
-  currentUserId: string | null;
+  self: string | null;
   /** False for a recording, which has no panels to open. */
   enabled: boolean;
   /** Shows the room's thread in the Conversation, opening it if it is closed. */
@@ -54,8 +54,8 @@ export function useOpenOnRoomQuestion({
 
   React.useEffect(() => {
     if (!entries) return;
-    const fresh = newRoomQuestions(entries, seenRef.current, currentUserId, Date.now());
+    const fresh = newRoomQuestions(entries, seenRef.current, self, Date.now());
     for (const entry of entries) seenRef.current.add(entry.id);
     if (enabled && fresh.length > 0) openRef.current();
-  }, [currentUserId, enabled, entries, openRef]);
+  }, [self, enabled, entries, openRef]);
 }

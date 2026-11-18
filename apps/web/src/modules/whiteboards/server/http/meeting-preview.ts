@@ -6,8 +6,10 @@ import { MEETING_PREVIEW_PATH, sniffPreviewImageType } from "@/modules/whiteboar
 import { RequestBodyTooLargeError, readRequestBodyBytes } from "@/platform/http/request-body";
 import { enforceWhiteboardAssetRateLimit } from "@/platform/http/rate-limit.server";
 import { meetingPreviewKey } from "@/platform/storage/r2-keys";
+import { hasBody } from "./wb-assets";
 
 const MAX_PREVIEW_BYTES = 512 * 1024;
+const PREVIEW_CACHE_CONTROL = "private, max-age=3600, must-revalidate";
 const MEETING_ID_RE = /^[a-zA-Z0-9_-]+$/;
 
 /**
@@ -35,13 +37,29 @@ export async function handleMeetingPreview(request: Request, env: Env, pathname:
     if (!(await canAccessMeetingHistory(db, meetingId, session.userId))) {
       return new Response("Forbidden", { status: 403 });
     }
-    const object = await env.R2_BUCKET.get(key);
+    // A revalidation asks whether the browser's copy is current; R2 answers
+    // that without the body when given the one strong ETag a browser sends.
+    const ifNoneMatch = request.headers.get("If-None-Match")?.trim() ?? "";
+    const etag = /^"[^"\r\n]*"$/.test(ifNoneMatch) ? ifNoneMatch.slice(1, -1) : null;
+    const object = etag === null
+      ? await env.R2_BUCKET.get(key)
+      : await env.R2_BUCKET.get(key, { onlyIf: { etagDoesNotMatch: etag } });
     // Briefly cached: most boards have one soon after their recap is opened.
     if (!object) return new Response(null, { status: 404, headers: { "Cache-Control": "private, max-age=30" } });
+    const headers = {
+      // Kept no longer than access is checked: past the hour the browser
+      // asks again, and the check above runs, so someone removed from the
+      // Space stops seeing the board within the hour (as with board assets).
+      "Cache-Control": PREVIEW_CACHE_CONTROL,
+      ETag: object.httpEtag,
+      Vary: "Cookie",
+    };
+    // No body: the ETag matched, and the browser's copy is current.
+    if (!hasBody(object)) return new Response(null, { status: 304, headers });
     return new Response(object.body, {
       headers: {
+        ...headers,
         "Content-Type": object.httpMetadata?.contentType ?? "image/webp",
-        "Cache-Control": "private, max-age=86400",
         "X-Content-Type-Options": "nosniff",
       },
     });

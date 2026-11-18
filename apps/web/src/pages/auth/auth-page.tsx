@@ -120,6 +120,8 @@ export function AuthPage() {
   const [step, setStep] = useState<FlowStep>("method");
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  /** The name field's own error: shown on that field, not on the form's. */
+  const [nameError, setNameError] = useState("");
   const [error, setError] = useState(
     oauthError ? (OAUTH_ERROR_MESSAGES[oauthError] ?? "Something went wrong. Please try again.") : ""
   );
@@ -195,6 +197,7 @@ export function AuthPage() {
   function resetToMethod() {
     setStep("method");
     setName("");
+    setNameError("");
     setError("");
   }
 
@@ -217,9 +220,10 @@ export function AuthPage() {
   function handleCreateAccountSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) {
-      setError("Enter your full name.");
+      setNameError("Enter your full name.");
       return;
     }
+    setNameError("");
     setError("");
     if (!isPending) emailMutation.mutate({ name, email });
   }
@@ -329,8 +333,12 @@ export function AuthPage() {
               type="text"
               placeholder="Your full name"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                if (nameError) setNameError("");
+              }}
               leftIcon={<User size={18} {...stylex.props(styles.fieldIcon)} />}
+              error={nameError || undefined}
               required
               maxLength={100}
               disabled={isPending}

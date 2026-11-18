@@ -142,13 +142,29 @@ describe("pre-join media probe policy", () => {
     expect(result.usedSeparateProbes).toBe(true);
   });
 
-  it("does not start fallback requests after a combined timeout", async () => {
+  it("waits for the prompt's answer after a combined timeout while one may be open", async () => {
     const request = vi.fn(async () => null);
 
-    const result = await acquirePreJoinMedia(request);
+    for (const queryPermission of [undefined, async () => "prompt" as const]) {
+      request.mockClear();
+      const result = await acquirePreJoinMedia(request, queryPermission);
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(result.streams).toEqual([]);
+    }
+  });
 
-    expect(request).toHaveBeenCalledTimes(1);
-    expect(result.streams).toEqual([]);
+  it("asks for each kind alone when a granted combined request hangs", async () => {
+    const microphone = {} as MediaStream;
+    // A wedged camera: anything asking for video never answers in time.
+    const request = vi.fn(async (_constraints: MediaStreamConstraints, kind: string) =>
+      kind === "audio" ? microphone : null);
+
+    const result = await acquirePreJoinMedia(request, async () => "granted");
+
+    expect(request.mock.calls.map(([, kind]) => kind)).toEqual(["audio_video", "video", "audio"]);
+    expect(result.audioStream).toBe(microphone);
+    expect(result.videoStream).toBeNull();
+    expect(result.usedSeparateProbes).toBe(true);
   });
 });
 

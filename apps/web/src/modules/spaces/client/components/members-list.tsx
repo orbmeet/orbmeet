@@ -643,7 +643,8 @@ function MemberRow({
             <DialogTitle>Remove {member.user?.name || "this member"}?</DialogTitle>
             <DialogDescription>
               They lose access to this Space’s Meetings, Whiteboards and Files. They keep only the past
-              Meetings they joined themselves.
+              Meetings they joined themselves. The invite link won’t let them back in; only adding them
+              again here will.
             </DialogDescription>
             <div {...stylex.props(dialogLayout.actions)}>
               <DialogClose render={<Button variant="secondary" />}>Cancel</DialogClose>

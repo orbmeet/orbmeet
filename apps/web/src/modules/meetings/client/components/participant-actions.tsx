@@ -30,7 +30,7 @@ export interface ManagedParticipant {
 
 /** What the viewer may do to other people, and the actions that do it. */
 export interface ParticipantManagement {
-  currentUserId?: string;
+  currentIdentity?: string;
   /** A host: may make and unmake moderators. */
   canManageModerators?: boolean;
   moderatorUpdatePending?: ReadonlySet<string>;
@@ -44,7 +44,7 @@ export interface ParticipantManagement {
 }
 
 export function canMessagePrivately(participant: ManagedParticipant, management: ParticipantManagement): boolean {
-  return Boolean(management.onMessagePrivately) && participant.id !== management.currentUserId;
+  return Boolean(management.onMessagePrivately) && participant.id !== management.currentIdentity;
 }
 
 /** The room enforces the same rules: nobody removes a host, and only a host removes a moderator. */
@@ -52,7 +52,7 @@ export function canRemoveParticipant(participant: ManagedParticipant, management
   return (
     Boolean(management.canRemoveParticipants) &&
     Boolean(management.onRemoveParticipant) &&
-    participant.id !== management.currentUserId &&
+    participant.id !== management.currentIdentity &&
     participant.role !== "host" &&
     (participant.role !== "moderator" || Boolean(management.canManageModerators))
   );
@@ -62,7 +62,7 @@ export function canChangeModerator(participant: ManagedParticipant, management: 
   return (
     Boolean(management.canManageModerators) &&
     Boolean(management.onSetModerator) &&
-    participant.id !== management.currentUserId &&
+    participant.id !== management.currentIdentity &&
     participant.role !== "host"
   );
 }

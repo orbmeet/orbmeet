@@ -6,7 +6,7 @@ import { LiveCaption } from "./live-caption";
 const NOW = 1_000_000;
 
 function said(text: string, isFinal = true, at = NOW - 1_000): CaptionTranscriptEntry {
-  return { id: text, userId: "maya", userName: "Maya Kim", text, isFinal, startedAt: at, updatedAt: at };
+  return { id: text, participant: "maya", userName: "Maya Kim", text, isFinal, startedAt: at, updatedAt: at };
 }
 
 beforeEach(() => {

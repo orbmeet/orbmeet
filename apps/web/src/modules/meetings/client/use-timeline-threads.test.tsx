@@ -17,14 +17,14 @@ const people = [
 
 const fromFayaz: TimelineChatInput = {
   id: "dm",
-  userId: "fayaz",
+  participant: "fayaz",
   userName: "Fayaz",
   text: "saved?",
   sentAt: 2_000,
   fromSelf: false,
   to: { id: "me", name: "Atiq" },
 };
-const toRoom: TimelineChatInput = { id: "room", userId: "sam", userName: "Sam", text: "hi all", sentAt: 1_000, fromSelf: false };
+const toRoom: TimelineChatInput = { id: "room", participant: "sam", userName: "Sam", text: "hi all", sentAt: 1_000, fromSelf: false };
 
 /** `conversation`: the stay's, which outlives any one view of it. */
 function harness(
@@ -37,7 +37,7 @@ function harness(
     latest = useTimelineThreads({
       ...props,
       orb: undefined,
-      currentUserId: "me",
+      self: "me",
       participants: people,
       readUpTo,
       markRead: (key, upTo) => conversation.markRead(key, upTo),

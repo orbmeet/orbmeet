@@ -70,4 +70,43 @@ describe("nameUntitledMeeting", () => {
     // A rename is a change like any other: lists sorted by it see it.
     expect(boards.find((board) => board.id === "board_dated")?.updatedAt.getTime()).toBeGreaterThan(now.getTime());
   });
+
+  it("leaves a board someone named, and an older board the meeting opened", async () => {
+    const { db } = await seedMeeting("ended");
+    await db.update(meetings).set({ title: null }).where(eq(meetings.id, "meeting_1"));
+    const started = new Date("2026-07-19T00:00:00.000Z");
+    const earlier = new Date("2026-07-18T09:00:00.000Z");
+    const boards = [
+      // Made in this meeting by someone east of UTC, where it was already the 20th.
+      { id: "board_east", title: "Whiteboard · Jul 20, 2026", createdAt: started },
+      // Made in this meeting, and named by hand in the generated style.
+      { id: "board_chapter", title: "Whiteboard · Chapter 4 plan", createdAt: started },
+      // Made for yesterday's untitled meeting, opened again in this one.
+      { id: "board_yesterday", title: "Whiteboard · Jul 18, 2026", createdAt: earlier },
+    ];
+    for (const board of boards) {
+      await db.insert(whiteboards).values({
+        ...board,
+        syncRoomId: `room_${board.id}`,
+        spaceId: "user_host_space",
+        updatedAt: board.createdAt,
+      });
+      await db.insert(meetingWhiteboards).values({
+        id: `usage_${board.id}`,
+        meetingId: "meeting_1",
+        spaceId: "user_host_space",
+        whiteboardId: board.id,
+        attachedAt: started,
+      });
+    }
+
+    await nameUntitledMeeting(db, "meeting_1", "Solving two-step equations");
+
+    const rows = await db.query.whiteboards.findMany({ columns: { id: true, title: true } });
+    expect(Object.fromEntries(rows.map((board) => [board.id, board.title]))).toEqual({
+      board_east: "Solving two-step equations",
+      board_chapter: "Whiteboard · Chapter 4 plan",
+      board_yesterday: "Whiteboard · Jul 18, 2026",
+    });
+  });
 });

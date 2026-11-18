@@ -296,6 +296,12 @@ export async function createSpaceImpl({
     if (organizationId) {
       throw Errors.FORBIDDEN("Your Organization role changed before the Space was created.");
     }
+    // The insert refuses for one of two reasons; say which.
+    const account = await db.query.users.findFirst({ where: { id: user.id }, columns: { deletionStartedAt: true } });
+    if (!account || account.deletionStartedAt !== null) {
+      throw Errors.FORBIDDEN("This account is being deleted.");
+    }
+    if (maxSpaces === null) throw Errors.CONFLICT("The Space could not be created. Please try again.");
     throw Errors.PLAN_LIMIT_REACHED(`Maximum ${maxSpaces} space(s) on your plan`);
   }
 

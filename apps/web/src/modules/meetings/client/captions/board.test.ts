@@ -13,7 +13,7 @@ function update(overrides: Partial<CaptionUpdate> = {}): CaptionUpdate {
   return {
     segmentId: "job:u0",
     revision: 1,
-    userId: "user-1",
+    participant: "user-1",
     userName: "Ada",
     text: "hello",
     isFinal: false,
@@ -38,7 +38,7 @@ describe("reduceCaptionBoard", () => {
     );
     // It keeps its place in time from the first word, and its last update.
     expect(state.transcript).toEqual([
-      { id: "job:u0", userId: "user-1", userName: "Ada", text: "hello there.", isFinal: true, startedAt: 1_000, updatedAt: 1_900 },
+      { id: "job:u0", participant: "user-1", userName: "Ada", text: "hello there.", isFinal: true, startedAt: 1_000, updatedAt: 1_900 },
     ]);
   });
 
@@ -69,9 +69,9 @@ describe("reduceCaptionBoard", () => {
 
   it("keeps interleaved speakers in the order they started", () => {
     const state = apply(
-      update({ segmentId: "a:u0", userId: "a", text: "a starts" }),
-      update({ segmentId: "b:u0", userId: "b", text: "b starts" }),
-      update({ segmentId: "a:u0", userId: "a", revision: 2, text: "a starts and finishes", isFinal: true }),
+      update({ segmentId: "a:u0", participant: "a", text: "a starts" }),
+      update({ segmentId: "b:u0", participant: "b", text: "b starts" }),
+      update({ segmentId: "a:u0", participant: "a", revision: 2, text: "a starts and finishes", isFinal: true }),
     );
     expect(state.transcript.map((entry) => entry.id)).toEqual(["a:u0", "b:u0"]);
     expect(state.transcript[0].text).toBe("a starts and finishes");

@@ -34,6 +34,20 @@ export const CellrunExit = {
   SlotBusy: 75,
 } as const;
 
+const KNOWN_EXITS: ReadonlySet<number> = new Set(Object.values(CellrunExit));
+
+/**
+ * Whether cellrun's exit leaves the container in doubt: it said so
+ * (`ReplaceContainer`), or it ended in a way it never chooses — killed by a
+ * signal (the kernel's OOM killer, in practice: the board's memory is shared
+ * by its slots) or with a status it does not use. Either way its own
+ * cleanup did not run: the slot's processes may still be alive, with no
+ * deadline, no disk floor and nobody reading their output.
+ */
+export function cellrunLeftContainerInDoubt(code: number | null): boolean {
+  return code === null || code === CellrunExit.ReplaceContainer || !KNOWN_EXITS.has(code);
+}
+
 /** Reports what the kernel and runtime provide, for the runner's logs. */
 export const CELLRUN_PROBE: [string, ...string[]] = [CELLRUN, "--probe"];
 

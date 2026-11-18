@@ -56,7 +56,12 @@ function meetingWhiteboardTitle(
   // "Meeting on September 14". One session, two dates, side by side.
   // Written as the app writes dates ("Oct 12, 2026"), not ISO: it is a name
   // people read in every list, beside "Last used today".
-  return `Whiteboard · ${formatCalendarDayLabel(now, timeZone)}`.slice(0, 200);
+  return datedWhiteboardTitle(now, timeZone);
+}
+
+/** The name a board made for an untitled meeting is given: the day, as the people in it lived it. */
+export function datedWhiteboardTitle(instant: Date, timeZone: string | null): string {
+  return `Whiteboard · ${formatCalendarDayLabel(instant, timeZone)}`.slice(0, 200);
 }
 
 

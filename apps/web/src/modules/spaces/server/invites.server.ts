@@ -5,7 +5,7 @@
  */
 
 import type { Database } from "@orbmeet/db";
-import { organizationMembers, spaces, spaceMembers, spaceInvites } from "@orbmeet/db/schema";
+import { organizationMembers, spaces, spaceMemberRemovals, spaceMembers, spaceInvites } from "@orbmeet/db/schema";
 import { and, count, eq, isNull, sql } from "drizzle-orm";
 import {
   getSpaceInviteSchema,
@@ -80,6 +80,19 @@ export async function replaceSpaceInviteRecord(
   return null;
 }
 
+/** Whether a Space admin removed this person, and nobody has added them back since. */
+async function wasRemovedFromSpace(db: Database, spaceId: string, userId: string): Promise<boolean> {
+  const row = await db.query.spaceMemberRemovals.findFirst({
+    where: { spaceId, userId },
+    columns: { removedAt: true },
+  });
+  return row !== undefined;
+}
+
+function removedFromSpace() {
+  return Errors.FORBIDDEN("You were removed from this Space. Ask a Space admin to add you back.");
+}
+
 /** Add a member only while the exact invitation and active Space still exist. */
 export async function applyInviteMembership(
   db: Database,
@@ -111,6 +124,11 @@ export async function applyInviteMembership(
             and exists (
               select 1 from ${spaces}
               where ${spaces.id} = ${invite.spaceId} and ${spaces.archivedAt} is null
+            )
+            and not exists (
+              select 1 from ${spaceMemberRemovals}
+              where ${spaceMemberRemovals.spaceId} = ${invite.spaceId}
+                and ${spaceMemberRemovals.userId} = ${userId}
             )
             and (
               not exists (
@@ -254,6 +272,7 @@ export async function joinViaInviteImpl({
   const slug = requireSpaceSlug(inviteSpace.slug);
   const existing = await findSpaceMembership(db, invite.spaceId, user.id);
   if (existing) return { spaceId: invite.spaceId, slug, alreadyMember: true };
+  if (await wasRemovedFromSpace(db, invite.spaceId, user.id)) throw removedFromSpace();
 
   if (inviteSpace.organizationId) {
     if (!(await hasOrganizationLicense(db, inviteSpace.organizationId, user.id))) {
@@ -298,6 +317,8 @@ export async function joinViaInviteImpl({
       if (currentInvite && !room?.hasRoom) {
         throw Errors.PLAN_LIMIT_REACHED("This Space is full");
       }
+      // Removed while this request was on its way.
+      if (await wasRemovedFromSpace(db, invite.spaceId, user.id)) throw removedFromSpace();
       throw Errors.VALIDATION("This invitation URL is no longer valid");
     }
   } catch (error) {

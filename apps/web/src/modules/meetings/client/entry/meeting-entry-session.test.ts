@@ -542,7 +542,7 @@ describe("recovery after losing an established connection", () => {
     const h = createHarness();
     const link = await joinAndConnect(h);
     h.session.conversation.add({
-      type: "chat", id: "m1", userId: "rafi_1", userName: "Rafi", text: "the dial-in is 4417", sentAt: 1, fromSelf: false,
+      type: "chat", id: "m1", participant: "user:rafi", userName: "Rafi", text: "the dial-in is 4417", sentAt: 1, fromSelf: false,
     });
     h.session.linkDisconnected(link.id, undefined);
     await vi.advanceTimersByTimeAsync(0);
@@ -665,6 +665,50 @@ describe("recovery after losing an established connection", () => {
     expect(h.requests).toHaveLength(1);
     await h.answer(joined());
     expect(h.snapshot().phase).toBe("connecting");
+  });
+
+  it("spends no removal recheck while offline, and asks when the network returns", async () => {
+    const h = createHarness();
+    const link = await joinAndConnect(h);
+    h.setOnline(false);
+    h.session.linkDisconnected(link.id, DisconnectReason.PARTICIPANT_REMOVED);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(h.requests).toHaveLength(0);
+    expect(h.snapshot().phase).not.toBe("failed");
+
+    h.setOnline(true);
+    h.session.networkRestored();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.requests).toHaveLength(1);
+  });
+
+  it("keeps a recovery's whole schedule through pauses while offline", async () => {
+    const h = createHarness();
+    const link = await joinAndConnect(h);
+    h.session.linkDisconnected(link.id, undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.requests).toHaveLength(1);
+
+    // The network goes, and the view is paused and resumed while it is gone.
+    h.setOnline(false);
+    for (let pause = 0; pause < 10; pause++) {
+      h.session.deactivate();
+      h.session.activate();
+    }
+    h.requests.length = 0;
+    h.setOnline(true);
+    h.session.networkRestored();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Every rejoin of the schedule is still there to be spent.
+    let sent = 0;
+    while (h.requests.length > 0 && sent < 20) {
+      sent += 1;
+      await h.answer(blocked("MEDIA_UNAVAILABLE", true));
+      await vi.advanceTimersByTimeAsync(Math.max(...AUTO_REJOIN_DELAYS_MS));
+    }
+    expect(sent).toBe(AUTO_REJOIN_DELAYS_MS.length);
   });
 
   it("gives up after the whole schedule and releases the unused access", async () => {

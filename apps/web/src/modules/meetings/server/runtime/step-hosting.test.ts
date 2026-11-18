@@ -186,6 +186,31 @@ describe("letting the host in", () => {
 });
 
 describe("a Space admin outside the meeting", () => {
+  it("records the stand-in's connections as the host's, though the end unseats them", () => {
+    const m = sharedMeeting();
+    const c = m.admitted(chen);
+    m.joined(c.identity);
+    const d = m.admitted(dana);
+    m.joined(d.identity);
+
+    m.apply({ kind: "end", subject: chen, reason: "host" });
+
+    expect(m.state.attempts[c.attemptId]).toMatchObject({ endReason: "meeting_finalized", endedRole: "host" });
+    expect(m.state.attempts[d.attemptId]).toMatchObject({ endReason: "meeting_finalized", endedRole: "attendee" });
+  });
+
+  it("records a stand-in who leaves as the host they were", () => {
+    const m = sharedMeeting();
+    const c = m.admitted(chen);
+    m.joined(c.identity);
+    m.joined(m.admitted(dana).identity);
+
+    m.apply({ kind: "leave", subject: chen, attemptId: c.attemptId });
+
+    expect(m.state.attempts[c.attemptId].endedRole).toBe("host");
+    expect(roleIn(m, c.admissionId)).toBe("attendee");
+  });
+
   it("may end or rename it, but runs it only from a seat", () => {
     const m = sharedMeeting();
     const c = m.admitted(chen);

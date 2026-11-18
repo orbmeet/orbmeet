@@ -36,7 +36,7 @@ afterEach(() => {
 async function mount(overrides: Partial<MeetingTimelineProps> = {}) {
   const props: MeetingTimelineProps = {
     messages: [],
-    currentUserId: "me",
+    self: "me",
     onSendMessage: vi.fn(async () => true),
     speech: { shown: true, entries: [], onToggle: () => {} },
     embedded: true,
@@ -212,8 +212,8 @@ describe("private threads in the Timeline", () => {
     await mount({
       threads: privateWithFayaz(),
       messages: [
-        { id: "room", userId: "sam", userName: "Sam", text: "for everyone", sentAt: 1_000, fromSelf: false },
-        { id: "dm", userId: "fayaz", userName: "Fayaz", text: "just for you", sentAt: 2_000, fromSelf: false, to: { id: "me", name: "Atiq" } },
+        { id: "room", participant: "sam", userName: "Sam", text: "for everyone", sentAt: 1_000, fromSelf: false },
+        { id: "dm", participant: "fayaz", userName: "Fayaz", text: "just for you", sentAt: 2_000, fromSelf: false, to: { id: "me", name: "Atiq" } },
       ],
     });
     expect(container.textContent).toContain("just for you");
@@ -278,7 +278,7 @@ describe("your own thread with Orb", () => {
         shown: false,
         onToggle: () => {},
         entries: [
-          { id: "s1", userId: "maya", userName: "Maya", text: "so we split it", isFinal: true, startedAt: Date.now(), updatedAt: Date.now() },
+          { id: "s1", participant: "maya", userName: "Maya", text: "so we split it", isFinal: true, startedAt: Date.now(), updatedAt: Date.now() },
         ],
       },
     });

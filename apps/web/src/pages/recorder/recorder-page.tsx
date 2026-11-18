@@ -362,7 +362,9 @@ function RecorderMeetingContent({
         isEgress: true,
         roomInstance: room,
         mediaScope: noop,
-        currentUserId: localParticipant.identity,
+        currentIdentity: localParticipant.identity,
+        // A recording has no conversation of its own; it reads the room's.
+        participantKey: localParticipant.identity,
         currentUserName: localParticipant.name || localParticipant.identity,
         connectionQuality:
           connectionState === ConnectionState.Connected ? "excellent" : "poor",
@@ -383,6 +385,7 @@ function RecorderMeetingContent({
           .filter((participant) => participant.identity !== localParticipant.identity)
           .map((participant) => ({
             id: participant.identity,
+            key: participant.participantKey,
             name: participant.userName,
             role: participant.role,
             isGuest: participant.isGuest,

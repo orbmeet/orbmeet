@@ -94,6 +94,22 @@ describe("CaptionPublisher", () => {
     expect(sent.map((caption) => caption.segmentId)).toEqual(["s0", "s2", "s3"]);
   });
 
+  it("drops the update that waited longest, not a segment's newest one", async () => {
+    const { fake, sent, stall } = transport();
+    const publisher = new CaptionPublisher({ transport: () => fake, senderIdentity: "p", maxPendingSegments: 2 });
+    const release = stall();
+    publisher.offer(update("s0", "blocking"));
+    await vi.waitFor(() => expect(fake.streamText).toHaveBeenCalledOnce());
+    publisher.offer(update("s1", "hel"));
+    publisher.offer(update("s2", "two"));
+    publisher.offer(update("s1", "hello", true));
+    publisher.offer(update("s3", "three"));
+    release();
+
+    await vi.waitFor(() => expect(sent).toHaveLength(3));
+    expect(sent.map((caption) => `${caption.segmentId}:${caption.text}`)).toEqual(["s0:blocking", "s1:hello", "s3:three"]);
+  });
+
   it("numbers a dropped segment's later updates above what receivers already have", async () => {
     const { fake, sent, stall } = transport();
     const publisher = new CaptionPublisher({ transport: () => fake, senderIdentity: "p", maxPendingSegments: 2 });

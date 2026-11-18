@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { CaptionTranscriptEntry } from "./board";
 import { CAPTION_LINGER_MS, latestCaption } from "./latest-caption";
 
-function said(id: string, userId: string, text: string, at: number, isFinal = true): CaptionTranscriptEntry {
-  return { id, userId, userName: userId === "maya" ? "Maya Kim" : "Alex Lin", text, isFinal, startedAt: at, updatedAt: at };
+function said(id: string, participant: string, text: string, at: number, isFinal = true): CaptionTranscriptEntry {
+  return { id, participant, userName: participant === "maya" ? "Maya Kim" : "Alex Lin", text, isFinal, startedAt: at, updatedAt: at };
 }
 
 describe("latestCaption", () => {

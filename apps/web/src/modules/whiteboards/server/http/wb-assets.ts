@@ -112,7 +112,7 @@ async function canGuestReadWhiteboardRevisionAsset(
  * metadata. `onlyIf` yields a bodyless `R2Object` when the condition fails,
  * which is the hit this endpoint answers with a 304.
  */
-function hasBody(object: R2ObjectBody | R2Object): object is R2ObjectBody {
+export function hasBody(object: R2ObjectBody | R2Object): object is R2ObjectBody {
   return "body" in object;
 }
 

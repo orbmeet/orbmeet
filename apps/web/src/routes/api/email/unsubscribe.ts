@@ -5,6 +5,8 @@ import { escapeHtml } from "@/platform/email/html";
 import { recordEmailSuppression } from "@/platform/email/suppression.server";
 import { readUnsubscribeToken } from "@/platform/email/unsubscribe-token";
 import { getOptionalEnv } from "@/platform/runtime/server-runtime.server";
+import { enforceIpRateLimit } from "@/platform/http/rate-limit.server";
+import { logError } from "@/lib/logger";
 import {
   RequestBodyTimeoutError,
   RequestBodyTooLargeError,
@@ -58,6 +60,24 @@ function invalidLink(): Response {
   );
 }
 
+/**
+ * The address's budget, spent before the token is read. This route takes no
+ * credential but the token, and reading one costs a key import and an HMAC;
+ * like every other unauthenticated route it is throttled first.
+ */
+async function throttle(env: Env): Promise<Response | null> {
+  try {
+    await enforceIpRateLimit(env, "email-unsubscribe");
+    return null;
+  } catch (error) {
+    if ((error as { code?: unknown } | null)?.code === "RATE_LIMITED") {
+      return page("Too many requests", `<p style="color:#555">Please wait a minute and try the link again.</p>`, 429);
+    }
+    logError("[unsubscribe] Rate limiter failed", error);
+    return page("Unsubscribe is unavailable", "", 503);
+  }
+}
+
 export async function handleUnsubscribePost(request: Request, env: Env): Promise<Response> {
   if (!env.AUTH_SECRET || !env.DB) return page("Unsubscribe is unavailable", "", 503);
   // One-click senders put the token in the query string they were given; our
@@ -93,6 +113,8 @@ export const Route = createFileRoute("/api/email/unsubscribe")({
       GET: async ({ request }) => {
         const env = await getOptionalEnv();
         if (!env?.AUTH_SECRET) return page("Unsubscribe is unavailable", "", 503);
+        const throttled = await throttle(env);
+        if (throttled) return throttled;
         const token = new URL(request.url).searchParams.get("token") ?? "";
         const email = await readUnsubscribeToken(token, env.AUTH_SECRET);
         if (!email) return invalidLink();
@@ -111,7 +133,7 @@ export const Route = createFileRoute("/api/email/unsubscribe")({
       POST: async ({ request }) => {
         const env = await getOptionalEnv();
         if (!env) return page("Unsubscribe is unavailable", "", 503);
-        return handleUnsubscribePost(request, env);
+        return (await throttle(env)) ?? handleUnsubscribePost(request, env);
       },
     },
   },

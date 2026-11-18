@@ -571,13 +571,13 @@ export function MeetingWhiteboardPanel({
   );
   const [localPdfState, setLocalPdfState] = useState(() => ({
     meetingId: meeting.meetingId,
-    hasGeneratedPdf: meeting.hasWhiteboardPdf,
+    hasGeneratedPdf: false,
   }));
-  const hasGeneratedPdf = whiteboards.some((item) => item.hasPdf) || (
-    localPdfState.meetingId === meeting.meetingId
-      ? localPdfState.hasGeneratedPdf || meeting.hasWhiteboardPdf
-      : false
-  );
+  // What this view generated counts only for the meeting it generated it for;
+  // after moving to another meeting, the server's word is all there is.
+  const hasGeneratedPdf = whiteboards.some((item) => item.hasPdf)
+    || meeting.hasWhiteboardPdf
+    || (localPdfState.meetingId === meeting.meetingId && localPdfState.hasGeneratedPdf);
   const actions = useWhiteboardPdfActions(meeting.meetingId, whiteboards.length > 0, () => {
     setLocalPdfState({ meetingId: meeting.meetingId, hasGeneratedPdf: true });
     setWhiteboards((current) => current.map((item) => ({ ...item, hasPdf: true })));

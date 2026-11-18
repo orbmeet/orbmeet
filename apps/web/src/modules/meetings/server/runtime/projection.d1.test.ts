@@ -81,6 +81,23 @@ const admissionRow = (id: string) => db.query.meetingAdmissions.findFirst({ wher
 const connectionRow = (id: string) => db.query.meetingConnections.findFirst({ where: { id } });
 
 describe("projectMeetingChanges", () => {
+  it("projects a decision made on a clock behind the one that created the admission", async () => {
+    const m = new Projected();
+    const hostReply = await m.join(host);
+    if (hostReply.kind !== "admitted") throw new Error(hostReply.kind);
+    const waiting = await m.join(ada);
+    if (waiting.kind !== "waiting") throw new Error(waiting.kind);
+    const created = m.state.admissions[waiting.admissionId].createdAt;
+
+    // The room was moved to a machine whose clock runs five seconds behind.
+    m.now = created - 5_000;
+    await m.apply({ kind: "decideAdmission", subject: host, admissionId: waiting.admissionId, approve: false });
+
+    const row = await admissionRow(waiting.admissionId);
+    expect(row).toMatchObject({ admissionStatus: "denied" });
+    expect(row!.decidedAt!.getTime()).toBeGreaterThanOrEqual(row!.createdAt.getTime());
+  });
+
   it("keeps D1 matching the room through a whole meeting, within every CHECK", async () => {
     const m = new Projected();
     const hostReply = await m.join(host);

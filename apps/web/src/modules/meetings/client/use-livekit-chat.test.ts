@@ -5,18 +5,25 @@ import { describe, expect, it, vi } from "vitest";
 import { MeetingConversation } from "./meeting-conversation";
 import { decodeBoundedPacket, encodeBoundedPacket, parseChatPacket, useLiveKitChat } from "./use-livekit-chat";
 
+import { PARTICIPANT_ATTRIBUTE } from "@/modules/meetings/contract/live-state";
+
+/** A LiveKit participant: this connection's identity, and the key the coordinator set on its grant. */
+function person(identity: string, key: string) {
+  return { identity, attributes: { [PARTICIPANT_ATTRIBUTE.key]: key } };
+}
+
 function renderChat(
   publishData: (...args: unknown[]) => Promise<void>,
   onSendError = vi.fn(),
-  remoteIdentities: string[] = [],
+  remotes: ReturnType<typeof person>[] = [],
   conversation = new MeetingConversation(),
-  identity = "me",
+  local = person("me_c1", "user:me"),
 ) {
   let chat: ReturnType<typeof useLiveKitChat> | null = null;
   const room = {
     state: ConnectionState.Connected,
-    localParticipant: { identity, name: "Me", publishData },
-    remoteParticipants: new Map(remoteIdentities.map((identity) => [identity, { identity }])),
+    localParticipant: { ...local, name: "Me", publishData },
+    remoteParticipants: new Map(remotes.map((remote) => [remote.identity, remote])),
     on: vi.fn(),
     off: vi.fn(),
   } as unknown as Room;
@@ -79,29 +86,47 @@ describe("private messages", () => {
 
   it("sends a private message only to its recipient, and keeps who it was for", async () => {
     const publishData = vi.fn().mockResolvedValue(undefined);
-    const chat = renderChat(publishData, vi.fn(), ["fayaz"]);
-    await expect(chat.sendMessage("just you", { id: "fayaz", name: "Fayaz" })).resolves.toBe(true);
+    const conversation = new MeetingConversation();
+    const chat = renderChat(publishData, vi.fn(), [person("fayaz_c1", "user:fayaz"), person("sam_c1", "user:sam")], conversation);
+    await expect(chat.sendMessage("just you", { id: "user:fayaz", name: "Fayaz" })).resolves.toBe(true);
 
     const [bytes, options] = publishData.mock.calls[0] as [Uint8Array, Record<string, unknown>];
-    expect(options).toMatchObject({ reliable: true, destinationIdentities: ["fayaz"] });
-    expect(JSON.parse(new TextDecoder().decode(bytes))).toMatchObject({ text: "just you", to: "fayaz" });
+    expect(options).toMatchObject({ reliable: true, destinationIdentities: ["fayaz_c1"] });
+    expect(JSON.parse(new TextDecoder().decode(bytes))).toMatchObject({ text: "just you", to: "user:fayaz" });
+    expect(conversation.getSnapshot().messages.at(-1)).toMatchObject({ participant: "user:me", to: { id: "user:fayaz" } });
+  });
+
+  it("keeps writing to someone in the same thread after they reconnect", async () => {
+    const conversation = new MeetingConversation();
+    const publishData = vi.fn().mockResolvedValue(undefined);
+    await renderChat(publishData, vi.fn(), [person("fayaz_c1", "user:fayaz")], conversation)
+      .sendMessage("before", { id: "user:fayaz", name: "Fayaz" });
+
+    // Fayaz rejoined: a new connection identity, the same participant.
+    const after = renderChat(publishData, vi.fn(), [person("fayaz_c2", "user:fayaz")], conversation);
+    await expect(after.sendMessage("after", { id: "user:fayaz", name: "Fayaz" })).resolves.toBe(true);
+    const [, options] = publishData.mock.calls[1] as [Uint8Array, Record<string, unknown>];
+    expect(options).toMatchObject({ destinationIdentities: ["fayaz_c2"] });
+    expect(new Set(after.messages.map((message) => message.to?.id))).toEqual(new Set(["user:fayaz"]));
   });
 
   it("refuses to send privately to someone who is not in the room, or to yourself", async () => {
     const publishData = vi.fn().mockResolvedValue(undefined);
-    const chat = renderChat(publishData, vi.fn(), ["fayaz"]);
-    await expect(chat.sendMessage("hello?", { id: "gone", name: "Gone" })).resolves.toBe(false);
-    await expect(chat.sendMessage("note to self", { id: "me", name: "Me" })).resolves.toBe(false);
+    const chat = renderChat(publishData, vi.fn(), [person("fayaz_c1", "user:fayaz")]);
+    await expect(chat.sendMessage("hello?", { id: "user:gone", name: "Gone" })).resolves.toBe(false);
+    // A connection identity is not a participant key: nothing to write to.
+    await expect(chat.sendMessage("hello?", { id: "fayaz_c1", name: "Fayaz" })).resolves.toBe(false);
+    await expect(chat.sendMessage("note to self", { id: "user:me", name: "Me" })).resolves.toBe(false);
     expect(publishData).not.toHaveBeenCalled();
   });
 
   it("keeps what was said in the stay's conversation, across a new connection", async () => {
     const conversation = new MeetingConversation();
     const publishData = vi.fn().mockResolvedValue(undefined);
-    await renderChat(publishData, vi.fn(), [], conversation, "me_connection_1").sendMessage("before the drop");
+    await renderChat(publishData, vi.fn(), [], conversation, person("me_c1", "user:me")).sendMessage("before the drop");
 
     // A rejoin: a new room, and a new identity for this participant.
-    const again = renderChat(publishData, vi.fn(), [], conversation, "me_connection_2");
+    const again = renderChat(publishData, vi.fn(), [], conversation, person("me_c2", "user:me"));
     expect(again.messages.map((message) => [message.text, message.fromSelf])).toEqual([["before the drop", true]]);
     expect(again.remoteMessageCount).toBe(0);
   });

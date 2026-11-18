@@ -25,19 +25,21 @@ import {
  * without mounting a room.
  */
 
+/**
+ * People are named by participant key (`participantKeyOf`) throughout: it
+ * stays the same across someone's reconnects, so a thread with them, and
+ * what Orb answered the two of you, outlives any one connection.
+ */
 export interface TimelineChatInput {
   id: string;
-  userId: string;
+  /** The sender's participant key. */
+  participant: string;
   userName: string;
   text: string;
   sentAt: number;
-  /**
-   * Sent from this browser. Recorded when the message is made rather than
-   * read off `userId`: a participant's identity is new on every connection,
-   * and the conversation outlives a connection.
-   */
+  /** Sent from this browser. */
   fromSelf: boolean;
-  /** A private message: the one other person in it besides the sender. */
+  /** A private message: the one other person in it besides the sender, by participant key. */
   to?: { id: string; name: string };
 }
 
@@ -53,26 +55,26 @@ export function threadKey(thread: TimelineThread): string {
 }
 
 /** Who sees what is written in a thread — and so whom Orb answers there. */
-export function threadAudience(thread: TimelineThread, currentUserId: string): AssistantAudience {
+export function threadAudience(thread: TimelineThread, self: string): AssistantAudience {
   if (thread.kind === "room") return { kind: "room" };
-  return privateAudience(thread.kind === "orb" ? [currentUserId] : [currentUserId, thread.withId]);
+  return privateAudience(thread.kind === "orb" ? [self] : [self, thread.withId]);
 }
 
 /** The thread an Orb entry or run belongs to, as this viewer sees it; null when it is not theirs. */
-export function orbThread(audience: AssistantAudience | undefined, currentUserId: string): TimelineThread | null {
+export function orbThread(audience: AssistantAudience | undefined, self: string): TimelineThread | null {
   if (!audience || audience.kind === "room") return ROOM_THREAD;
-  if (!audience.members.includes(currentUserId)) return null;
-  const other = audience.members.find((member) => member !== currentUserId);
+  if (!audience.members.includes(self)) return null;
+  const other = audience.members.find((member) => member !== self);
   return other === undefined ? ORB_THREAD : { kind: "private", withId: other };
 }
 
-function inOrbThread(audience: AssistantAudience | undefined, thread: TimelineThread, currentUserId: string): boolean {
-  return audienceKey(audience) === audienceKey(threadAudience(thread, currentUserId));
+function inOrbThread(audience: AssistantAudience | undefined, thread: TimelineThread, self: string): boolean {
+  return audienceKey(audience) === audienceKey(threadAudience(thread, self));
 }
 
 export interface TimelineSpeechInput {
   id: string;
-  userId: string;
+  participant: string;
   userName: string;
   text: string;
   isFinal: boolean;
@@ -84,7 +86,7 @@ interface TimelineChatItem {
   kind: "chat";
   id: string;
   at: number;
-  userId: string;
+  participant: string;
   userName: string;
   text: string;
   mine: boolean;
@@ -95,7 +97,7 @@ interface TimelineSpeechItem {
   /** The first segment's id: stable while the run grows, so it never remounts. */
   id: string;
   at: number;
-  userId: string;
+  participant: string;
   userName: string;
   mine: boolean;
   segments: { id: string; text: string; isFinal: boolean }[];
@@ -106,7 +108,7 @@ interface TimelineOrbAskItem {
   kind: "orb-ask";
   id: string;
   at: number;
-  userId: string;
+  participant: string;
   userName: string;
   text: string;
   mine: boolean;
@@ -120,7 +122,7 @@ interface TimelineOrbReplyItem {
   /** False while the answer is still being written. */
   done: boolean;
   /** Who asked the question this answers, when known. */
-  askedBy?: { userId: string; userName: string };
+  askedBy?: { participant: string; userName: string };
   /** What Orb was shown with the question — "Looked at page 4 of 7…" — on a run's first answer. */
   lookedAt?: string;
 }
@@ -136,7 +138,7 @@ interface TimelineOrbStepsItem {
   pageId?: string;
   created: string[];
   changed: string[];
-  askedBy?: { userId: string; userName: string };
+  askedBy?: { participant: string; userName: string };
 }
 
 interface TimelineOrbNoticeItem {
@@ -165,7 +167,7 @@ export const SPEECH_RUN_GAP_MS = 45_000;
 function inThread(message: TimelineChatInput, thread: TimelineThread): boolean {
   if (thread.kind === "room") return !message.to;
   if (thread.kind === "orb" || !message.to) return false;
-  const other = message.fromSelf ? message.to.id : message.userId;
+  const other = message.fromSelf ? message.to.id : message.participant;
   return other === thread.withId;
 }
 
@@ -175,7 +177,7 @@ export function buildTimeline({
   chat,
   speech,
   orb = [],
-  currentUserId,
+  self,
   thread = ROOM_THREAD,
 }: {
   chat: readonly TimelineChatInput[];
@@ -183,7 +185,7 @@ export function buildTimeline({
   speech: readonly TimelineSpeechInput[];
   /** Orb's conversation, in the order the server recorded it. */
   orb?: readonly AssistantEntry[];
-  currentUserId: string;
+  self: string;
   thread?: TimelineThread;
 }): TimelineItem[] {
   const inRoom = thread.kind === "room";
@@ -196,7 +198,7 @@ export function buildTimeline({
       .filter((value) => inThread(value, thread))
       .map((value, order): Entry => ({ kind: "chat", at: value.sentAt, order, value })),
     ...(inRoom ? speech : []).map((value, order): Entry => ({ kind: "speech", at: value.startedAt, order, value })),
-    ...orbEntries(orb.filter((entry) => inOrbThread(entry.audience, thread, currentUserId))),
+    ...orbEntries(orb.filter((entry) => inOrbThread(entry.audience, thread, self))),
   ];
   // Stable on ties: within one source the arrival order is the truth, and a
   // chat line typed in the same millisecond as speech began reads after it.
@@ -204,16 +206,16 @@ export function buildTimeline({
 
   const items: TimelineItem[] = [];
   let lastSpeechEnd = 0;
-  let asker: { userId: string; userName: string } | undefined;
+  let asker: { participant: string; userName: string } | undefined;
   // What the latest question showed Orb, until its first answer says so.
   let lookedAt: string | undefined;
   for (const entry of entries) {
     if (entry.kind === "orb") {
       if (entry.value.kind === "prompt") {
-        asker = { userId: entry.value.authorId, userName: entry.value.author };
+        asker = { participant: entry.value.authorId, userName: entry.value.author };
         lookedAt = entry.value.lookedAt && describeLookedAt(entry.value.lookedAt);
       }
-      appendOrb(items, entry.value, entry.at, currentUserId, asker, lookedAt);
+      appendOrb(items, entry.value, entry.at, self, asker, lookedAt);
       if (entry.value.kind === "reply") lookedAt = undefined;
       continue;
     }
@@ -223,7 +225,7 @@ export function buildTimeline({
         kind: "chat",
         id: message.id,
         at: message.sentAt,
-        userId: message.userId,
+        participant: message.participant,
         userName: message.userName,
         text: message.text,
         mine: message.fromSelf,
@@ -235,7 +237,7 @@ export function buildTimeline({
     const previous = items[items.length - 1];
     const continues =
       previous?.kind === "speech" &&
-      previous.userId === segment.userId &&
+      previous.participant === segment.participant &&
       segment.startedAt - lastSpeechEnd <= SPEECH_RUN_GAP_MS;
     if (continues) {
       previous.segments.push({ id: segment.id, text: segment.text, isFinal: segment.isFinal });
@@ -244,9 +246,9 @@ export function buildTimeline({
         kind: "speech",
         id: segment.id,
         at: segment.startedAt,
-        userId: segment.userId,
+        participant: segment.participant,
         userName: segment.userName,
-        mine: segment.userId === currentUserId,
+        mine: segment.participant === self,
         segments: [{ id: segment.id, text: segment.text, isFinal: segment.isFinal }],
       });
     }
@@ -272,8 +274,8 @@ function appendOrb(
   items: TimelineItem[],
   entry: AssistantEntry,
   at: number,
-  currentUserId: string,
-  askedBy: { userId: string; userName: string } | undefined,
+  self: string,
+  askedBy: { participant: string; userName: string } | undefined,
   lookedAt?: string,
 ): void {
   switch (entry.kind) {
@@ -282,10 +284,10 @@ function appendOrb(
         kind: "orb-ask",
         id: entry.id,
         at,
-        userId: entry.authorId,
+        participant: entry.authorId,
         userName: entry.author,
         text: entry.text,
-        mine: entry.authorId === currentUserId,
+        mine: entry.authorId === self,
       });
       return;
     case "reply":
@@ -327,14 +329,14 @@ export interface PrivateThread {
  */
 export function privateThreads(
   chat: readonly TimelineChatInput[],
-  currentUserId: string,
+  self: string,
   orb: readonly AssistantEntry[] = [],
-  nameOf: (userId: string) => string | undefined = () => undefined,
+  nameOf: (participant: string) => string | undefined = () => undefined,
 ): PrivateThread[] {
   const threads = new Map<string, PrivateThread>();
   for (const entry of orb) {
     if (entry.kind !== "prompt") continue;
-    const thread = orbThread(entry.audience, currentUserId);
+    const thread = orbThread(entry.audience, self);
     if (thread?.kind !== "private" || threads.has(thread.withId)) continue;
     const withName = entry.authorId === thread.withId ? entry.author : (nameOf(thread.withId) ?? "Someone");
     threads.set(thread.withId, { withId: thread.withId, withName, startedAt: entry.at });
@@ -342,7 +344,7 @@ export function privateThreads(
   for (const message of chat) {
     if (!message.to) continue;
     const mine = message.fromSelf;
-    const withId = mine ? message.to.id : message.userId;
+    const withId = mine ? message.to.id : message.participant;
     const withName = mine ? message.to.name : message.userName;
     const existing = threads.get(withId);
     if (!existing) threads.set(withId, { withId, withName, startedAt: message.sentAt });
@@ -360,7 +362,7 @@ export function privateThreads(
  */
 export function unreadByThread(
   chat: readonly TimelineChatInput[],
-  currentUserId: string,
+  self: string,
   readUpTo: Readonly<Record<string, number>>,
   orb: readonly AssistantEntry[] = [],
 ): Map<string, number> {
@@ -371,11 +373,11 @@ export function unreadByThread(
   };
   for (const message of chat) {
     if (message.fromSelf) continue;
-    count(threadKey(message.to ? { kind: "private", withId: message.userId } : ROOM_THREAD), message.sentAt);
+    count(threadKey(message.to ? { kind: "private", withId: message.participant } : ROOM_THREAD), message.sentAt);
   }
   for (const entry of orb) {
     if (entry.kind !== "reply" || !entry.done) continue;
-    const thread = orbThread(entry.audience, currentUserId);
+    const thread = orbThread(entry.audience, self);
     if (thread) count(threadKey(thread), entry.at);
   }
   return unread;
@@ -386,14 +388,14 @@ export function newestInThread(
   chat: readonly TimelineChatInput[],
   orb: readonly AssistantEntry[],
   thread: TimelineThread,
-  currentUserId: string,
+  self: string,
 ): number {
   let newest = 0;
   for (const message of chat) {
     if (inThread(message, thread)) newest = Math.max(newest, message.sentAt);
   }
   for (const entry of orb) {
-    if (inOrbThread(entry.audience, thread, currentUserId)) newest = Math.max(newest, entry.at);
+    if (inOrbThread(entry.audience, thread, self)) newest = Math.max(newest, entry.at);
   }
   return newest;
 }

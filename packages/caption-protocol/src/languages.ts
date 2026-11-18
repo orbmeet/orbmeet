@@ -166,27 +166,36 @@ export function isSupportedSpeechLanguageTag(value: string): value is SpeechLang
 
 /**
  * Normalize any human- or browser-provided language tag to a canonical
- * supported tag, or `null` when nothing maps. Handles exact and
- * case-insensitive matches, `_` region separators, Norwegian and Chinese
- * dialect families, and bare base languages.
+ * supported tag, or `null` when nothing maps.
+ *
+ * The tag is read as BCP 47 (`_` taken as `-`, case ignored): the language,
+ * then its region where one is given (`en-GB`, `pt_PT`, `es-419`, and
+ * Chrome's `en-GB-oxendict`, whose variant follows the region), then the
+ * language alone. Norwegian and Chinese map by family, since the supported
+ * tags name them differently from the codes browsers send.
  */
 export function normalizeSpeechLanguageTag(
   value: string | null | undefined,
 ): SpeechLanguageTag | null {
-  const language = value?.trim();
+  const subtags = value?.trim().toLowerCase().replaceAll("_", "-").split("-").filter(Boolean) ?? [];
+  const [language, ...rest] = subtags;
   if (!language) return null;
-  const exact =
-    SUPPORTED_BY_LOWER_CASE.get(language) ?? SUPPORTED_BY_LOWER_CASE.get(language.toLowerCase());
+  const exact = SUPPORTED_BY_LOWER_CASE.get(subtags.join("-"));
   if (exact) return exact;
-  const parts = language.toLowerCase().replaceAll("_", "-").split("-");
-  const base = parts[0] ?? "";
-  if (base === "nb" || base === "nn") return "no";
-  if (base === "zh") {
-    if (parts.includes("hk") || parts.includes("mo")) return "zh-HK";
-    if (parts.includes("hant") || parts.includes("tw")) return "zh-TW";
+  if (language === "nb" || language === "nn") return "no";
+  if (language === "zh") {
+    if (rest.includes("hk") || rest.includes("mo")) return "zh-HK";
+    if (rest.includes("hant") || rest.includes("tw")) return "zh-TW";
     return "zh-CN";
   }
-  return BASE_LANGUAGE_DEFAULTS[base] ?? null;
+  const region = rest.find(isRegionSubtag);
+  const regional = region === undefined ? undefined : SUPPORTED_BY_LOWER_CASE.get(`${language}-${region}`);
+  return regional ?? BASE_LANGUAGE_DEFAULTS[language] ?? null;
+}
+
+/** A BCP 47 region subtag: two letters (`gb`) or three digits (`419`). */
+function isRegionSubtag(subtag: string): boolean {
+  return /^(?:[a-z]{2}|\d{3})$/.test(subtag);
 }
 
 /**

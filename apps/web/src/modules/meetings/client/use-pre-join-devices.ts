@@ -98,7 +98,17 @@ export function usePreJoinDevices(): PreJoinDevicesResult {
     };
   }, []);
 
-  const probeDevices = React.useCallback(async function probeDevices(): Promise<void> {
+  /**
+   * `answered` marks the probe a late answer started: the person settled the
+   * prompt after the probe it belonged to stopped waiting, so asking again
+   * reads their answer at once. That probe does not start another one on a
+   * late answer of its own — a device that always answers after the deadline
+   * (a wedged camera rejecting at ten seconds) would otherwise be probed for
+   * as long as the page stays open.
+   */
+  const probeDevices = React.useCallback(async function probeDevices(
+    { answered = false }: { answered?: boolean } = {},
+  ): Promise<void> {
     dispatch({ type: "probe-started" });
     probeRef.current?.abort();
     const probe = new AbortController();
@@ -140,9 +150,7 @@ export function usePreJoinDevices(): PreJoinDevicesResult {
             },
             (late) => {
               if (late.status === "fulfilled" && late.value) stopStream(late.value);
-              // The person answered the prompt after the probe stopped
-              // waiting: ask again, which now settles at once either way.
-              if (!signal.aborted) void probeDevices();
+              if (!signal.aborted && !answered) void probeDevices({ answered: true });
             },
           ),
         queryMediaPermission,

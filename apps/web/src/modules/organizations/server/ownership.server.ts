@@ -109,9 +109,13 @@ export async function acceptOrganizationOwnershipTransferImpl({
 
   // One guarded statement: the nomination is still live, the recipient is
   // still a member and not being deleted, and owns no other Organization.
-  // A retry after a lost response finds the swap already made.
+  // A retry after a lost response finds the swap already made. In the same
+  // batch the former owner becomes a member: they joined as the creator's
+  // admin, and ownership is what they handed over — adding members (seats
+  // on the Organization's bill) and running its Spaces with it. The new owner
+  // may make them an admin again.
   const nowSeconds = Math.floor(now.getTime() / 1000);
-  const transferred = await withD1Retry(() => db.run(sql`
+  const [transferred] = await withD1Retry(() => db.batch([db.run(sql`
     update ${organizations}
     set owner_id = ${user.id}, updated_at = ${nowSeconds}
     where ${organizations.id} = ${data.organizationId}
@@ -136,7 +140,16 @@ export async function acceptOrganizationOwnershipTransferImpl({
         select 1 from ${organizations} other
         where other.owner_id = ${user.id} and other.id <> ${data.organizationId}
       )
-  `), { idempotent: true });
+  `), db.run(sql`
+    update ${organizationMembers}
+    set role = 'member'
+    where ${organizationMembers.organizationId} = ${data.organizationId}
+      and ${organizationMembers.userId} = ${pending.requestedByUserId}
+      and exists (
+        select 1 from ${organizations}
+        where ${organizations.id} = ${data.organizationId} and ${organizations.ownerId} = ${user.id}
+      )
+  `)]), { idempotent: true });
   if (getRunChanges(transferred) === 0) {
     const current = await db.query.organizations.findFirst({
       where: { id: data.organizationId },

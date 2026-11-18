@@ -437,26 +437,34 @@ export function LiveMeetingLayout({
   const orbAssistant = orbExtension?.assistant ?? null;
   const orbEntries = orbExtension ? (orbAssistant?.entries ?? orbExtension.history) : undefined;
   // The Timeline's threads outlive the panel: closing it keeps your place.
+  const timelinePeople = React.useMemo(
+    () => meeting.participantsList.map((person) => ({ id: person.key, name: person.name })),
+    [meeting.participantsList],
+  );
   const timelineThreads = useTimelineThreads({
     messages: meeting.chatMessages,
     orb: orbEntries,
-    currentUserId: meeting.currentUserId,
-    participants: meeting.participantsList,
+    self: meeting.participantKey,
+    participants: timelinePeople,
     timelineOpen: openPanel === "timeline",
     readUpTo: meeting.chatReadUpTo,
     markRead: meeting.markChatRead,
   });
   const { openPrivate: openPrivateThread, showRoom: showRoomThread, showOrb: showOrbThread } = timelineThreads;
   const openTimelinePanel = meeting.ui.openPanel;
+  // People are listed by connection; a private thread is with the person,
+  // whose key outlives the connection.
   const messagePrivately = (person: { id: string; name: string }) => {
-    openPrivateThread(person);
+    const key = meeting.participantsList.find((listed) => listed.id === person.id)?.key;
+    if (!key) return;
+    openPrivateThread({ id: key, name: person.name });
     openTimelinePanel("timeline");
   };
   // Someone asks Orb in the room: the Conversation opens on the room's thread
   // for everyone, unless they already have it showing.
   useOpenOnRoomQuestion({
     entries: orbEntries,
-    currentUserId: meeting.currentUserId,
+    self: meeting.participantKey,
     enabled: !meeting.isEgress,
     open: () => {
       if (openPanel === "timeline") return;
@@ -534,7 +542,7 @@ export function LiveMeetingLayout({
   // Nobody else here, nobody to show: the board keeps the width.
   const facesInColumn =
     roomLayout.faces === "column" &&
-    meeting.connectedParticipants.some((person) => person.identity !== meeting.currentUserId);
+    meeting.connectedParticipants.some((person) => person.identity !== meeting.currentIdentity);
   const sideColumnShown = roomLayout.placement === "side" || facesInColumn;
   const desktopPanelReservation = sideColumnShown ? `calc(${SIDE_PANEL_WIDTH} + ${space.s3})` : "0px";
   // What is said lives in the Conversation; folded, the Conversation is one
@@ -600,7 +608,7 @@ export function LiveMeetingLayout({
   }) => (
     <LazyMeetingTimeline
       messages={meeting.chatMessages}
-      currentUserId={meeting.currentUserId}
+      self={meeting.participantKey}
       onSendMessage={meeting.sendChatMessage}
       orb={orbExtension ? orbExtension.assistant : undefined}
       orbHistory={orbExtension?.history}
@@ -641,7 +649,7 @@ export function LiveMeetingLayout({
   );
   // What this viewer may do to other people, for the list and the faces alike.
   const participantManagement: ParticipantManagement = {
-    currentUserId: meeting.currentUserId,
+    currentIdentity: meeting.currentIdentity,
     canManageModerators: meeting.canManageMeeting && Boolean(meeting.moderators),
     moderatorUpdatePending: meeting.moderators?.pendingIdentities,
     onSetModerator: (identity: string, moderator: boolean) => {
@@ -1020,7 +1028,7 @@ export function LiveMeetingLayout({
     messagePrivately: meeting.isEgress
       ? undefined
       : {
-          people: meeting.participantsList.filter((person) => person.id !== meeting.currentUserId),
+          people: meeting.participantsList.filter((person) => person.id !== meeting.currentIdentity),
           open: messagePrivately,
         },
     copyLink: () => void copyMeetingLink(),

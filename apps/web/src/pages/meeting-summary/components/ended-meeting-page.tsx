@@ -19,7 +19,7 @@ import { Page } from "@/app/shell/page";
 import { PageHeader } from "@/app/shell/page-header";
 import { Section } from "@/app/shell/section";
 import { focus, motion } from "@orbmeet/ui/styles/atoms";
-import { accent, ink, neutral, surface, warning } from "@orbmeet/ui/tokens/colors.stylex";
+import { accent, danger, ink, neutral, surface, warning } from "@orbmeet/ui/tokens/colors.stylex";
 import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
@@ -35,6 +35,7 @@ const RecordingPlayer = lazy(() =>
 const VIEW_LABELS: Record<MeetingView, string> = { pdf: "PDF", recording: "Recording", transcript: "Transcript" };
 
 const styles = stylex.create({
+  downloadError: { margin: 0, marginTop: space.s2, fontSize: text.sm, color: danger.d700 },
   page: {
     maxWidth: 1100,
     marginInline: "auto",
@@ -388,6 +389,7 @@ function TranscriptList({ meetingId, filename }: { meetingId: string; filename: 
   const { data, isPending, isError, refetch, hasNextPage, fetchNextPage, isFetchingNextPage } =
     useInfiniteQuery(meetingTranscriptsInfiniteQueryOptions(meetingId));
   const [downloading, setDownloading] = useState(false);
+  const [downloadFailed, setDownloadFailed] = useState(false);
   const transcripts = data?.pages.flatMap((page) => page.transcripts) ?? [];
 
   if (isPending) {
@@ -406,16 +408,22 @@ function TranscriptList({ meetingId, filename }: { meetingId: string; filename: 
     return <EmptyState icon={MicOff} title="Transcript unavailable" />;
   }
 
-  // The whole transcript, however little of it has been scrolled to yet.
+  // The whole transcript, however little of it has been scrolled to yet —
+  // or nothing: a file that silently stops partway reads as the whole meeting.
   const download = async () => {
     setDownloading(true);
+    setDownloadFailed(false);
     try {
       let pages = data?.pages ?? [];
       let more = hasNextPage;
       while (more) {
         const result = await fetchNextPage();
+        if (result.isError) {
+          setDownloadFailed(true);
+          return;
+        }
         pages = result.data?.pages ?? pages;
-        more = result.hasNextPage && !result.isError;
+        more = result.hasNextPage;
       }
       downloadTranscript(pages, filename);
     } finally {
@@ -430,6 +438,11 @@ function TranscriptList({ meetingId, filename }: { meetingId: string; filename: 
           <Download size={14} aria-hidden="true" />
           Download transcript
         </Button>
+        {downloadFailed ? (
+          <p role="alert" {...stylex.props(styles.downloadError)}>
+            Part of the transcript could not be loaded, so nothing was downloaded. Try again.
+          </p>
+        ) : null}
       </div>
       <Card sx={styles.transcriptCard}>
         {groupTranscriptTurns(transcripts).map((turn) => (

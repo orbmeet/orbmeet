@@ -397,7 +397,10 @@ export function useMeetingCamera({
       if (!roomInstance) return;
       const lp = roomInstance.localParticipant;
       const nextEnabled = !lp.isCameraEnabled;
-      cameraLostRef.current = false;
+      // Turning it off is a choice: a camera plugged in later stays off. A
+      // try to turn it on that fails changes nothing — the person still
+      // wants video, so a camera plugged in later still brings it back.
+      if (!nextEnabled) cameraLostRef.current = false;
 
       try {
         if (!nextEnabled) {
@@ -408,6 +411,7 @@ export function useMeetingCamera({
             getCameraCaptureOptions(currentVideoDeviceIdRef.current),
             getCameraPublishOptions(),
           );
+          cameraLostRef.current = false;
         }
         onChoiceRef.current?.({ videoEnabled: nextEnabled });
       } catch (err) {

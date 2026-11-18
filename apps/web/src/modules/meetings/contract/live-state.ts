@@ -12,12 +12,15 @@
  *   the waiting list on.
  */
 
+import { whiteboardGrantPrincipalKey } from "@orbmeet/whiteboard-core/whiteboard-grant-principal";
 import { MEETING_ROLES, type MeetingRole } from "./constants";
 import { roomAllowsTranscription } from "@orbmeet/caption-protocol/room-transcription";
 
 export const PARTICIPANT_ATTRIBUTE = {
   /** The participant's admission id: what moderator decisions name. */
   participant: "orbmeet.participant",
+  /** The participant's {@link participantKeyOf key}: what the meeting's conversation names them by. */
+  key: "orbmeet.key",
   role: "orbmeet.role",
   /** `<raiseId>:<raisedAt ms>`, or empty. */
   hand: "orbmeet.hand",
@@ -29,6 +32,30 @@ export const PARTICIPANT_ATTRIBUTE = {
   transcriptionStop: "orbmeet.transcription_stop",
   captionLanguage: "orbmeet.caption_language",
 } as const;
+
+/**
+ * Who someone is in a meeting, across their reconnects, tabs and devices: a
+ * signed-in user is their account, a guest their admission. Chat threads,
+ * Orb's conversations and who said what are keyed by it. A LiveKit identity is
+ * one connection's, new on every rejoin, and a conversation keyed by it splits
+ * whenever someone reconnects.
+ *
+ * The same key the board's grant principal names (`user:<id>`,
+ * `guest_admission:<id>`), so a private thread holds both the two people's
+ * messages and what Orb answered them.
+ */
+export function participantKeyOf(participant: { userId: string | null; admissionId: string }): string {
+  return whiteboardGrantPrincipalKey(
+    participant.userId
+      ? { type: "user", id: participant.userId }
+      : { type: "guest_admission", id: participant.admissionId },
+  );
+}
+
+/** A LiveKit participant's key, as the coordinator set it; null for agents and recorders. */
+export function participantKeyOfAttributes(attributes: Readonly<Record<string, string>> | undefined): string | null {
+  return attributes?.[PARTICIPANT_ATTRIBUTE.key] || null;
+}
 
 export interface MeetingRoomState {
   /** Grows with every change; an older state is ignored. */

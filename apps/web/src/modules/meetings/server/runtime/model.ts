@@ -13,6 +13,7 @@ import type { SurfaceFocus } from "@/modules/meetings/contract/live-state";
 import type { MeetingEndReason } from "@orbmeet/domain-model";
 import {
   PARTICIPANT_ATTRIBUTE,
+  participantKeyOf,
   formatRaisedHand,
   formatScreenShareAsk,
   type MeetingRoomState,
@@ -173,8 +174,10 @@ export interface Admission {
   screenShareAsk: { attemptId: string; at: number } | null;
   /**
    * A host or moderator let this attendee edit the meeting's boards. Like the
-   * moderator grant it is meeting-local, and cleared whenever the admission
-   * leaves `approved` or rises above attendee.
+   * moderator grant it is meeting-local, and cleared when the admission leaves
+   * `approved`. Above attendee the role covers it, so it is hidden there, not
+   * cleared (see `grantFor`): a moderator or stand-in who goes back to
+   * attending finds it as it was.
    */
   boardEdit: boolean;
   /**
@@ -246,6 +249,13 @@ export interface Attempt {
   joinedAt: number | null;
   endedAt: number | null;
   endReason: string | null;
+  /**
+   * The role it held as it ended, which its connection row keeps. What its
+   * admission resolves to afterwards says nothing of what this connection
+   * was: a stand-in host is host only while seated, and every meeting ends
+   * by unseating everyone.
+   */
+  endedRole: MeetingRole | null;
   sid: string | null;
   /**
    * When LiveKit says the session `sid` joined the room, if it said. A report
@@ -481,6 +491,8 @@ export function upgradeState(state: MeetingState): MeetingState {
   // and an ended meeting is never renamed.
   state.meta.title ??= null;
   state.meta.organizerUserId ??= null;
+  // Attempts that ended before roles were kept resolve as they did then.
+  for (const attempt of Object.values(state.attempts)) attempt.endedRole ??= null;
   return state;
 }
 
@@ -631,6 +643,7 @@ export function grantFor(state: MeetingState, admission: Admission): Participant
     canScreenShare: role !== "attendee" || admission.screenShare === "granted",
     attributes: {
       [PARTICIPANT_ATTRIBUTE.participant]: admission.id,
+      [PARTICIPANT_ATTRIBUTE.key]: participantKeyOf({ userId: admission.userId, admissionId: admission.id }),
       [PARTICIPANT_ATTRIBUTE.role]: role,
       [PARTICIPANT_ATTRIBUTE.hand]: role === "attendee" ? formatRaisedHand(admission.hand) : "",
       [PARTICIPANT_ATTRIBUTE.screenShare]:

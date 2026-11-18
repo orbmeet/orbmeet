@@ -127,7 +127,14 @@ class ScreenshotSelecting extends StateNode {
     // feedback that the gesture was accepted and prevents another canvas drag
     // from queuing a duplicate while PDF rasterization/upload is still running.
     this.editor.setCurrentTool("select");
-    if (!releaseCapture) return;
+    if (!releaseCapture) {
+      // One snip at a time; the selection is already gone, so say why
+      // nothing was made rather than leave it to look like a lost gesture.
+      emitWhiteboardError("The previous snip is still being made. Try again in a moment.", {
+        title: "Snip in progress",
+      });
+      return;
+    }
 
     void this._captureRegion(brush).catch((err) => {
       console.error("[ScreenshotTool] capture failed:", err);

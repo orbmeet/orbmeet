@@ -267,14 +267,14 @@ function command(
       if (ownPrunedAttempt(state, input.subject, input.attemptId)) return { kind: "ok" };
       const attempt = ownAttempt(state, input.subject, input.attemptId);
       if (attempt.endedAt === null && attempt.joinedAt === null) {
-        endAttempt(attempt, "released", now);
+        endAttempt(state, attempt, "released", now);
       }
       return { kind: "ok" };
     }
     case "leave": {
       if (ownPrunedAttempt(state, input.subject, input.attemptId)) return { kind: "left", found: false };
       const attempt = ownAttempt(state, input.subject, input.attemptId);
-      endAttempt(attempt, "voluntary", now);
+      endAttempt(state, attempt, "voluntary", now);
       // Found: this leave, or the same one repeated, ended it. An attempt
       // ended otherwise (taken over by another tab) was not this leave's.
       return { kind: "left", found: attempt.endReason === "voluntary" };
@@ -661,6 +661,7 @@ function join(
     joinedAt: null,
     endedAt: null,
     endReason: null,
+    endedRole: null,
     sid: null,
     sessionJoinedAt: null,
     sidKnownSince: null,
@@ -775,7 +776,7 @@ function markJoined(
   const { sid, joinedAt: sessionJoinedAt } = report;
   const admission = state.admissions[attempt.admissionId];
   if (!admission || admission.status !== "approved" || !isOpen(state)) {
-    endAttempt(attempt, "admission_revoked", now);
+    endAttempt(state, attempt, "admission_revoked", now);
     addStray(state, attempt.identity);
     return;
   }
@@ -812,7 +813,7 @@ function markJoined(
       other.endedAt === null &&
       issuedBefore(state, other, attempt)
     ) {
-      endAttempt(other, "superseded", now);
+      endAttempt(state, other, "superseded", now);
     }
   }
 
@@ -1095,26 +1096,33 @@ function reconcilePresence(
   requestedAt: number,
   now: number,
 ): void {
-  state.room.lastPresenceCheckAt = requestedAt;
   state.room.unreachableSince = null;
   if (!roomExists) newRoomInstance(state);
   const present = new Map(participants.filter((p) => p.standard).map((p) => [p.identity, p]));
+  // A listing asked for before a departure was heard cannot speak to it: the
+  // person may have left after it was taken. The attempt stays absent, and
+  // the listing is not the fresh look the departure asked for.
+  let predatesDeparture = false;
 
   for (const attempt of Object.values(state.attempts)) {
     if (attempt.endedAt !== null) continue;
     const seen = present.get(attempt.identity);
     if (seen !== undefined) {
+      if (attempt.absentSince !== null && requestedAt < attempt.absentSince) {
+        predatesDeparture = true;
+        continue;
+      }
       markJoined(state, attempt, { sid: seen.sid, joinedAt: seen.joinedAt, requestedAt }, now, now);
       continue;
     }
     if (attempt.joinedAt === null) {
       // If it arrives later anyway, its join is refused and it is removed.
-      if (requestedAt - attempt.issuedAt >= ISSUE_GRACE_MS) endAttempt(attempt, "unused", now);
+      if (requestedAt - attempt.issuedAt >= ISSUE_GRACE_MS) endAttempt(state, attempt, "unused", now);
       continue;
     }
     attempt.absentSince ??= now;
     if (now - attempt.absentSince >= ABSENT_GRACE_MS) {
-      endAttempt(attempt, "participant_left", now);
+      endAttempt(state, attempt, "participant_left", now);
       attempt.removed = true;
     }
   }
@@ -1123,6 +1131,7 @@ function reconcilePresence(
     const attempt = attemptByIdentity(state, identity);
     if (!attempt || attempt.endedAt !== null) addStray(state, identity);
   }
+  state.room.lastPresenceCheckAt = predatesDeparture ? null : requestedAt;
 }
 
 // ─── Transitions ─────────────────────────────────────────────────────────────
@@ -1136,9 +1145,11 @@ function decide(
   now: number,
 ): void {
   const wasPending = admission.status === "pending";
+  // What its connections were, before this decision changes what it resolves to.
+  const roleBefore = roleOf(state, admission);
   admission.status = status;
   admission.decidedByUserId = decidedByUserId;
-  admission.decidedAt = now;
+  admission.decidedAt = admissionTime(admission, now);
   admission.decisionReason = reason;
   if (status !== "approved") {
     admission.moderator = false;
@@ -1149,7 +1160,7 @@ function decide(
     admission.hand = null;
     for (const attempt of Object.values(state.attempts)) {
       if (attempt.admissionId === admission.id && attempt.endedAt === null) {
-        endAttempt(attempt, reason ?? status, now);
+        endAttempt(state, attempt, reason ?? status, now, roleBefore);
       }
     }
   }
@@ -1160,8 +1171,19 @@ function decide(
   }
 }
 
-function endAttempt(attempt: Attempt, reason: string, now: number): void {
+/**
+ * End an attempt. `role` is the role it held, read before anything this
+ * change ends unseats it; by default, as the meeting stands now.
+ */
+function endAttempt(
+  state: MeetingState,
+  attempt: Attempt,
+  reason: string,
+  now: number,
+  role: MeetingRole = roleOf(state, state.admissions[attempt.admissionId]),
+): void {
   if (attempt.endedAt !== null) return;
+  attempt.endedRole = role;
   attempt.endedAt = Math.max(now, attempt.joinedAt ?? attempt.issuedAt);
   attempt.endReason = reason;
   // Only an attempt that reached the room has anything to remove from it.
@@ -1183,7 +1205,14 @@ function endMeeting(state: MeetingState, reason: EndReason, now: number): void {
   bumpRoom(state);
   // Everyone still in the room is removed now, not when the room is
   // deleted: deleting it waits for a running egress to stop.
-  for (const attempt of Object.values(state.attempts)) endAttempt(attempt, "meeting_finalized", now);
+  // Roles are read before anyone is unseated: ending one attempt first could
+  // move the stand-in to another, and record them as the host they never were.
+  const roles = new Map(Object.values(state.attempts)
+    .filter((attempt) => attempt.endedAt === null)
+    .map((attempt) => [attempt.id, roleOf(state, state.admissions[attempt.admissionId])]));
+  for (const attempt of Object.values(state.attempts)) {
+    endAttempt(state, attempt, "meeting_finalized", now, roles.get(attempt.id));
+  }
   for (const admission of Object.values(state.admissions)) {
     if (admission.status === "pending") decide(state, admission, "expired", null, "meeting_ended", now);
   }
@@ -1300,7 +1329,7 @@ function place(state: MeetingState, nodeId: string, now: number): void {
 function abandonNode(state: MeetingState, reason: string, now: number): void {
   for (const attempt of Object.values(state.attempts)) {
     if (attempt.nodeId !== state.meta.nodeId) continue;
-    endAttempt(attempt, reason, now);
+    endAttempt(state, attempt, reason, now);
     attempt.removed = true;
   }
   const egress = state.egress;
@@ -1655,8 +1684,20 @@ function setScreenShare(
   touch(admission, now);
 }
 
+/**
+ * A time stamped on an admission. Its row holds every stamp at or after
+ * `created_at` (`meeting_admissions_timestamps_check`), and `created_at` was
+ * read from the clock of whichever machine created the admission; this commit
+ * may run on one whose clock is behind it. A stamp under it would fail the
+ * projection on every retry — the state is already kept, so the same values
+ * replay — and wedge the meeting. Every admission time goes through here.
+ */
+function admissionTime(admission: Admission, now: number): number {
+  return Math.max(now, admission.createdAt);
+}
+
 function touch(admission: Admission, now: number): void {
-  admission.updatedAt = Math.max(now, admission.createdAt);
+  admission.updatedAt = admissionTime(admission, now);
 }
 
 function bumpRoom(state: MeetingState): void {

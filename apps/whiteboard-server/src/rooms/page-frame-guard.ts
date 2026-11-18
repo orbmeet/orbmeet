@@ -1,5 +1,5 @@
 import { isRecord } from "@orbmeet/primitives";
-import { isDocumentRecordId } from "@orbmeet/whiteboard-core/room-snapshot-validation";
+import { hasUnsafeObjectKeyDeep, isDocumentRecordId } from "@orbmeet/whiteboard-core/room-snapshot-validation";
 import { isPageFrameRecord } from "./record-rules.ts";
 export { JsonMessageAssembler } from "@orbmeet/whiteboard-core/chunked-json";
 
@@ -9,28 +9,6 @@ export { JsonMessageAssembler } from "@orbmeet/whiteboard-core/chunked-json";
  * whole, after it is applied, by the room's authorizers
  * (room-record-authorizers.ts); this is the message around them.
  */
-
-const UNSAFE_OBJECT_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-
-/**
- * Whether a value carries a prototype-polluting key (`__proto__`,
- * `constructor`, `prototype`) anywhere within it. sync-core applies a patch
- * with `applyObjectDiff`, whose `newObject[key] = value` sets a record's
- * prototype from a `__proto__` key before any authorizer sees the result, and
- * its validator accepts the key inside a put record's free-form JSON (`meta`)
- * (both pinned in tldraw-contract.test.ts). So it is checked on the message
- * itself.
- * `Object.entries` sees a JSON-parsed `__proto__` because it is an own
- * enumerable property, not the real prototype.
- */
-export function hasUnsafeObjectKeyDeep(value: unknown): boolean {
-  if (Array.isArray(value)) return value.some(hasUnsafeObjectKeyDeep);
-  if (!isRecord(value)) return false;
-  for (const [key, child] of Object.entries(value)) {
-    if (UNSAFE_OBJECT_KEYS.has(key) || hasUnsafeObjectKeyDeep(child)) return true;
-  }
-  return false;
-}
 
 export function getPageFrameIdsFromSnapshot(snapshot: unknown): Set<string> {
   const ids = new Set<string>();
@@ -124,6 +102,12 @@ export function classifyIncomingDiff(
     if (kind !== "put" && kind !== "patch" && kind !== "remove") return "forbidden";
     if (kind !== "remove" && !isRecord(payload)) return "forbidden";
     if (!isDocumentRecordId(id) || (kind === "put" && (payload as { id?: unknown }).id !== id)) {
+      return "invalid-record-id";
+    }
+    // A record's identity is its key: a patch may not rewrite it. sync-core
+    // would apply one and then fail an invariant, ending the sender's session
+    // with an unknown error instead of rolling their push back.
+    if (kind === "patch" && (Object.hasOwn(payload as object, "id") || Object.hasOwn(payload as object, "typeName"))) {
       return "invalid-record-id";
     }
     // A put can create a page or replace one with another shape. A patch can

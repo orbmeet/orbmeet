@@ -11,6 +11,7 @@ import { and, eq, isNotNull, ne, sql, type SQL } from "drizzle-orm";
 import type { BatchStatement } from "@/platform/database/db-batching";
 import { beginMeetingCloseStatement } from "../lifecycle/finalize";
 import { connectionStatusOf } from "../connection/state";
+import type { MeetingRole } from "@/modules/meetings/contract/constants";
 import { roleOf, type Admission, type Attempt, type MeetingState } from "./model";
 
 const seconds = (ms: number) => Math.floor(ms / 1000);
@@ -79,14 +80,19 @@ function meetingRowOf(state: MeetingState) {
   ];
 }
 
-/** An attempt's connection row: its own fields and the role its admission resolves to. */
+/** A connection's role: the one it ended with, or while it lasts, what its admission resolves to. */
+function connectionRole(state: MeetingState, attempt: Attempt, admission: Admission): MeetingRole {
+  return attempt.endedRole ?? roleOf(state, admission);
+}
+
+/** An attempt's connection row: its own fields and its role. */
 function connectionRowOf(state: MeetingState, attemptId: string) {
   const attempt = state.attempts[attemptId];
   const admission = attempt ? state.admissions[attempt.admissionId] : undefined;
   if (!attempt || !admission) return undefined;
   return [
     connectionStatusOf(attempt), attempt.sid, attempt.endReason, attempt.joinedAt, attempt.endedAt,
-    roleOf(state, admission), admission.userId,
+    connectionRole(state, attempt, admission), admission.userId,
   ];
 }
 
@@ -275,7 +281,7 @@ function attemptUpsert(
           livekitIdentity: sql`${attempt.identity}`.as("livekit_identity"),
           livekitParticipantSid: sql`${attempt.sid}`.as("livekit_participant_sid"),
           userId: sql`${admission.userId}`.as("user_id"),
-          role: sql`${roleOf(state, admission)}`.as("role"),
+          role: sql`${connectionRole(state, attempt, admission)}`.as("role"),
           connectionStatus: sql`${status}`.as("connection_status"),
           reason: sql`${attempt.endReason}`.as("reason"),
           tokenIssuedAt: sql`${seconds(attempt.issuedAt)}`.as("token_issued_at"),

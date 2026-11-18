@@ -224,6 +224,17 @@ describe("public-host and asset security primitives", () => {
       expect(toWhiteboardRoomId("test-1")).toBe("meet-test-1");
     });
 
+    it("refuses a stored record carrying a prototype-polluting key", () => {
+      const valid = createEmptyWhiteboardRoomSnapshot();
+      const [first, ...rest] = valid.documents;
+      const poisoned = JSON.parse(JSON.stringify({
+        ...valid,
+        documents: [{ ...first, state: { ...first.state, meta: {} } }, ...rest],
+      }).replace('"meta":{}', '"meta":{"__proto__":{"polluted":true}}'));
+      expect(validateWhiteboardRoomSnapshot(poisoned)).toMatchObject({ ok: false, error: expect.stringContaining("prototype-polluting") });
+      expect(validateWhiteboardRoomSnapshot(valid).ok).toBe(true);
+    });
+
     it("validates room snapshot records against schema", () => {
       const valid = createEmptyWhiteboardRoomSnapshot();
       expect(validateWhiteboardRoomSnapshot(valid).ok).toBe(true);

@@ -56,6 +56,13 @@ export class MicrophoneController {
   private expectedPortState: MicrophoneIntent | null = null;
   /** Off because the device went away while on; nobody chose it. */
   private lost = false;
+  /**
+   * The generation a mute could not be applied for. LiveKit refused it, and
+   * asking again at once would refuse again — in a loop of microtasks that
+   * never yields to the page. It is tried again when something changes: a new
+   * intent, the track changing under us, or a reconnect asking for intent.
+   */
+  private unappliedGeneration: number | null = null;
 
   constructor(
     private readonly port: MicrophoneControllerPort,
@@ -175,6 +182,7 @@ export class MicrophoneController {
    * a full reconnect that could not publish the microphone again.
    */
   driveToIntent(): void {
+    this.unappliedGeneration = null;
     this.kick();
   }
 
@@ -183,6 +191,7 @@ export class MicrophoneController {
   }
 
   private needsWork(): boolean {
+    if (this.unappliedGeneration === this.generation) return false;
     const desiredOn = this.intent === "on";
     if (desiredOn !== this.port.isMicrophoneEnabled) return true;
     return desiredOn && this.verifiedGeneration !== this.generation;
@@ -218,10 +227,14 @@ export class MicrophoneController {
           await this.setPortEnabled(desiredOn);
         } catch (error) {
           this.options.onFailure?.(desiredOn ? "enable" : "disable", error);
-          // An unmute that cannot be applied is not a state to retry forever:
-          // fall back to muted and let the loop settle there.
-          if (desiredOn) this.forceOff();
-          else return;
+          // An unmute that cannot be applied falls back to muted, and the loop
+          // settles there. A mute that cannot be applied waits for a change.
+          if (desiredOn) {
+            this.forceOff();
+          } else {
+            this.unappliedGeneration = this.generation;
+            return;
+          }
         }
         continue;
       }

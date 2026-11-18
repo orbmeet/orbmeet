@@ -341,6 +341,21 @@ describe("Board", () => {
       expect(board.slots).toEqual(["free", "free", "free"]);
     });
 
+    it("is replaced when the supervisor is killed mid-run, leaving its slot's processes behind", async () => {
+      const { container, board, run, settled, logs } = setup();
+      container.onExec = (supervisor) => {
+        // The OOM killer picked cellrun: no report, and 128 + SIGKILL.
+        supervisor.report(new Uint8Array(0));
+        supervisor.exit(137);
+      };
+
+      await expect(run()).rejects.toBeInstanceOf(RunnerUnavailableError);
+      await settled();
+      expect(container.destroyed).toHaveLength(1);
+      expect(logs.map(([message]) => message)).toContain("replacing the container: cellrun exited with 137");
+      expect(board.slots).toEqual(["free", "free", "free"]);
+    });
+
     it("is replaced after the result when cleanup is what failed, saying why", async () => {
       const { container, run, settled, logs } = setup();
       container.onExec = (supervisor) => {

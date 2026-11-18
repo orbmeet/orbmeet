@@ -596,9 +596,13 @@ export function LibraryPage() {
   const routeQuery = search.q ?? "";
   const [previousRouteQuery, setPreviousRouteQuery] = useState(routeQuery);
   const [draft, setDraft] = useState(routeQuery);
+  // What this box last put in the URL. The URL catching up with it is not
+  // news, and adopting it would undo whatever was typed while it caught up;
+  // any other change (back, the rail's search) replaces the draft.
+  const [sentQuery, setSentQuery] = useState(routeQuery);
   if (previousRouteQuery !== routeQuery) {
     setPreviousRouteQuery(routeQuery);
-    setDraft(routeQuery);
+    if (routeQuery !== sentQuery) setDraft(routeQuery);
   }
 
   const setFilters = useCallback(
@@ -612,7 +616,10 @@ export function LibraryPage() {
   useEffect(() => {
     const next = draft.trim() || undefined;
     if (next === search.q) return;
-    const timer = window.setTimeout(() => setFilters({ q: next }), 300);
+    const timer = window.setTimeout(() => {
+      setSentQuery(next ?? "");
+      setFilters({ q: next });
+    }, 300);
     return () => window.clearTimeout(timer);
   }, [draft, search.q, setFilters]);
 

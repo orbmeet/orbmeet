@@ -161,14 +161,15 @@ export function placeBeside(rect: Rect, width: number, viewport: { w: number; h:
  */
 export function SelectionAsk({
   editor,
-  userId,
+  participant,
   live,
   entries,
   runs,
   prompt,
 }: {
   editor: Editor;
-  userId: string;
+  /** This viewer's participant key. */
+  participant: string;
   /** Orb can take a question now. */
   live: boolean;
   entries: readonly AssistantEntry[];
@@ -227,7 +228,7 @@ export function SelectionAsk({
     if (open) inputRef.current?.focus();
   }, [open]);
 
-  const mine = audienceKey(privateAudience([userId]));
+  const mine = audienceKey(privateAudience([participant]));
   const working = runs.some((run) => audienceKey(run.audience) === mine);
   const answer = asked
     ? entries.find((entry) => entry.kind === "reply" && audienceKey(entry.audience) === mine && entry.at >= asked.since)

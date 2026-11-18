@@ -583,12 +583,11 @@ export function SyncedWhiteboard({
     enabled: agentEnabled,
     whiteboardUrl,
     tokenRef,
-    userId: identity.userId,
+    participant: identity.participant,
     editor,
     pages: wb,
     pageManagerRef,
     canManageWhiteboard: isHost,
-    syncReady,
     syncOnline,
     canDraw: canMutateWhiteboard,
     followedPresenterRef: presenting.followedPresenterRef,
@@ -944,10 +943,10 @@ export function SyncedWhiteboard({
             />
           </WhiteboardToolbarContext.Provider>
         </WhiteboardCanvasSlotsContext.Provider>
-        {editor && agentEnabled && assistant.available && identity.userId && (
+        {editor && agentEnabled && assistant.available && identity.participant && (
           <SelectionAsk
             editor={editor}
-            userId={identity.userId}
+            participant={identity.participant}
             live={assistant.live}
             entries={assistant.entries}
             runs={assistant.runs}
