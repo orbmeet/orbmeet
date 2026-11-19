@@ -1,4 +1,4 @@
-import { SIGNATURE_HEADER, signatureTarget, signRequest } from "@orbmeet/primitives";
+import { postSignedJson } from "@orbmeet/primitives";
 import {
   MAX_TRANSCRIPT_REQUEST_BYTES,
   MAX_TRANSCRIPT_SEGMENTS_PER_REQUEST,
@@ -58,24 +58,14 @@ export async function deliverTranscriptPayload(
   payload: TranscriptPayload,
   fetchImpl: typeof fetch = fetch,
 ): Promise<DeliveryOutcome> {
-  const body = JSON.stringify(payload);
-  const url = `${config.appUrl}${TRANSCRIPT_INGEST_PATH}`;
-  const signature = await signRequest({
-    method: "POST",
-    target: signatureTarget(url),
-    body,
-    keyring: new Map([[config.internalKeyId, config.internalSecret]]),
-  });
-
   let response: Response;
   try {
-    response = await fetchImpl(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", [SIGNATURE_HEADER]: signature },
-      body,
-      redirect: "error",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
+    response = await postSignedJson(
+      `${config.appUrl}${TRANSCRIPT_INGEST_PATH}`,
+      payload,
+      new Map([[config.internalKeyId, config.internalSecret]]),
+      { timeoutMs: REQUEST_TIMEOUT_MS, redirect: "error", fetch: fetchImpl },
+    );
   } catch (error) {
     return { kind: "unavailable", reason: error instanceof Error ? error.message : String(error) };
   }

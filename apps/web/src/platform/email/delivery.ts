@@ -171,10 +171,24 @@ export function parseFromAddress(
  * needed its whitespace collapsed.
  */
 export function sanitizeSubject(subject: string): string {
-  const flattened = subject.replace(CONTROL_CHARS_RE, " ").replace(/\s+/g, " ").trim();
+  const flattened = flattenHeaderText(subject);
   return flattened.length > MAX_SUBJECT_LENGTH
     ? flattened.slice(0, MAX_SUBJECT_LENGTH).trimEnd()
     : flattened;
+}
+
+/** Header text on one line: control characters and line breaks become single spaces. */
+function flattenHeaderText(value: string): string {
+  return value.replace(CONTROL_CHARS_RE, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * A named address fit for a header. Display names carry user-supplied text
+ * (an organizer's name in Reply-To), held to the same rule as the subject.
+ */
+function headerAddress(value: string | EmailAddress): EmailAddress {
+  const address = typeof value === "string" ? parseFromAddress(value) : value;
+  return { email: address.email, name: flattenHeaderText(address.name) };
 }
 
 /**
@@ -210,9 +224,7 @@ export async function deliverEmail(
       subject: sanitizeSubject(options.subject),
       html: options.html,
       ...(options.text ? { text: options.text } : {}),
-      ...(options.replyTo
-        ? { replyTo: typeof options.replyTo === "string" ? parseFromAddress(options.replyTo) : options.replyTo }
-        : {}),
+      ...(options.replyTo ? { replyTo: headerAddress(options.replyTo) } : {}),
       ...(options.headers && Object.keys(options.headers).length
         ? { headers: options.headers }
         : {}),

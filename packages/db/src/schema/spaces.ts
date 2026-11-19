@@ -41,6 +41,9 @@ export const spaces = sqliteTable(
     slug: text("slug"),
     // Default IANA timezone for schedules created in this Space.
     timeZone: text("time_zone").notNull().default("UTC"),
+    // Whether this Space's meetings begin with transcription on, whoever
+    // starts them. A host or co-host can still change it in the meeting.
+    transcribeMeetings: integer("transcribe_meetings", { mode: "boolean" }).notNull().default(true),
     archivedAt: integer("archived_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()

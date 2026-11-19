@@ -235,7 +235,7 @@ export function SettingsPage() {
         <MeetingsSection />
       </Panel>
       <Panel id="privacy">
-        <OrbSection user={user} />
+        <OrbSection />
       </Panel>
       <nav aria-label="More settings" {...stylex.props(styles.more)}>
         <Link to="/settings" search={{ tab: "security" }} {...stylex.props(styles.moreLink, motion.tint, focus.ring)}>

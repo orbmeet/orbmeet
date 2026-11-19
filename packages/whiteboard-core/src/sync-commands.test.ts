@@ -68,7 +68,7 @@ describe("parseSyncCommandRequest", () => {
     editResolve: { ...room, targetPrincipalKey: "user:user_1", approverId: "user_2", outcome: "approved" },
     pageEditValidate: { ...room, userId: "user_1", connectionId: "c1", pageId: "shape:page_1" },
     pagePresentValidate: { ...room, userId: "user_1", connectionId: "c1", pageId: "shape:page_1" },
-    pageAdd: { ...room, userId: "user_1", connectionId: "c1", afterPageNumber: 2 },
+    pageAdd: { ...room, userId: "user_1", afterPageNumber: 2 },
     navigationControllerSet: { ...room, targetUserId: "user_1", approverId: "user_2" },
     navigationControllerRelease: { ...room, requesterId: "user_1" },
   };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseKeyring, signRequest, verifySignedRequest } from "./signed-request.ts";
+import { parseKeyring, postSignedJson, SIGNATURE_HEADER, signRequest, verifySignedRequest } from "./signed-request.ts";
 
 const SECRET_A = "a".repeat(40);
 const SECRET_B = "b".repeat(40);
@@ -76,5 +76,37 @@ describe("signed requests", () => {
   it("signs byte bodies the same as their string form", async () => {
     const bytes = new TextEncoder().encode('{"x":1}');
     expect(await verify(await signed(), { body: bytes })).toEqual({ ok: true, keyId: "primary" });
+  });
+});
+
+describe("postSignedJson", () => {
+  it("sends exactly the bytes and URL its signature covers, with the caller's headers", async () => {
+    const ring = keyring({ primary: SECRET_A });
+    let sent: { url: string; init: RequestInit } | null = null;
+    const send = async (url: string | URL | Request, init?: RequestInit) => {
+      sent = { url: String(url), init: init ?? {} };
+      return new Response(null, { status: 204 });
+    };
+
+    await postSignedJson("https://app.test/api/x?y=1", { a: "é" }, ring, {
+      timeoutMs: 1_000,
+      headers: { "X-Extra": "1" },
+      redirect: "error",
+      fetch: send,
+    });
+
+    const { url, init } = sent!;
+    const headers = init.headers as Record<string, string>;
+    expect(url).toBe("https://app.test/api/x?y=1");
+    expect(headers["X-Extra"]).toBe("1");
+    expect(headers["Content-Type"]).toBe("application/json");
+    expect(init.redirect).toBe("error");
+    await expect(verifySignedRequest({
+      header: headers[SIGNATURE_HEADER],
+      method: "POST",
+      target: "/api/x?y=1",
+      body: init.body as string,
+      keyring: ring,
+    })).resolves.toEqual({ ok: true, keyId: "primary" });
   });
 });

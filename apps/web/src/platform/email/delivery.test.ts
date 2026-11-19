@@ -169,6 +169,17 @@ describe("deliverEmail", () => {
     }));
   });
 
+  it("flattens a reply-to name that carries control characters", async () => {
+    const binding = stubBinding();
+    await deliverEmail(binding, {
+      ...input,
+      replyTo: { email: "organizer@example.com", name: "Ann\tLee\r\nBcc: evil@example.com" },
+    });
+    expect(binding.send).toHaveBeenCalledWith(expect.objectContaining({
+      replyTo: { email: "organizer@example.com", name: "Ann Lee Bcc: evil@example.com" },
+    }));
+  });
+
   it("omits empty header and reply-to fields rather than sending blanks", async () => {
     const binding = stubBinding();
     await deliverEmail(binding, { ...input, replyTo: null, headers: {} });

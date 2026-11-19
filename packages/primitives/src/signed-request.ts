@@ -111,6 +111,43 @@ export async function signRequest(input: SignRequestInput): Promise<string> {
   return `v1,kid=${keyId},ts=${timestamp},sig=${signature}`;
 }
 
+export interface PostSignedJsonOptions {
+  timeoutMs: number;
+  headers?: Record<string, string>;
+  redirect?: RequestInit["redirect"];
+  fetch?: typeof fetch;
+}
+
+/**
+ * A signed JSON POST to a peer service: the body is serialized once, and the
+ * signature covers exactly the bytes sent and the URL they are sent to.
+ */
+export async function postSignedJson(
+  url: string | URL,
+  body: unknown,
+  keyring: Keyring,
+  { timeoutMs, headers = {}, redirect, fetch: send = fetch }: PostSignedJsonOptions,
+): Promise<Response> {
+  const target = typeof url === "string" ? new URL(url) : url;
+  const text = JSON.stringify(body);
+  return send(target.toString(), {
+    method: "POST",
+    headers: {
+      ...headers,
+      "Content-Type": "application/json",
+      [SIGNATURE_HEADER]: await signRequest({
+        method: "POST",
+        target: signatureTarget(target),
+        body: text,
+        keyring,
+      }),
+    },
+    body: text,
+    ...(redirect ? { redirect } : {}),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+}
+
 export type SignatureVerification =
   | { ok: true; keyId: string }
   | { ok: false; reason: "missing" | "malformed" | "unknown_key" | "expired" | "invalid" };

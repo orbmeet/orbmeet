@@ -81,6 +81,44 @@ describe("moving a board between nodes", () => {
       .resolves.toMatchObject({ ok: false, reason: "conflict" });
   });
 
+  it("refuses the generation it handed off while the Worker records the move", async () => {
+    const objects = createMemoryObjectStore();
+    const { dir, manager } = node(objects);
+    await dispatchSyncCommand("open", open(1), manager);
+    await dispatchSyncCommand("handoff", { whiteboardRoomId: ROOM, whiteboardId: "wb_a", generation: 1 }, manager);
+
+    // A request decided before D1 named the next node must not reopen the
+    // board here from the copy the handoff just saved.
+    await expect(manager.prepare(ROOM, 1)).resolves.toMatchObject({ ok: false, reason: "conflict" });
+    await expect(manager.prepare(ROOM, undefined)).resolves.toMatchObject({ ok: false, reason: "conflict" });
+    await expect(dispatchSyncCommand("open", open(1), manager))
+      .resolves.toMatchObject({ ok: false, reason: "conflict" });
+    await expect(dispatchSyncCommand("open", open(), manager))
+      .resolves.toMatchObject({ ok: false, reason: "conflict" });
+    expect(roomDatabaseExists(dir, ROOM)).toBe(false);
+
+    // The board coming back at a newer generation is served.
+    await expect(dispatchSyncCommand("open", open(2), manager)).resolves.toMatchObject({ ok: true });
+    expect(shapes(manager)).toBe(1);
+  });
+
+  it("serves the handed-off generation again once the fence passes, as D1 then still names this node", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const objects = createMemoryObjectStore();
+      const { manager } = node(objects);
+      await dispatchSyncCommand("open", open(1), manager);
+      await dispatchSyncCommand("handoff", { whiteboardRoomId: ROOM, whiteboardId: "wb_a", generation: 1 }, manager);
+
+      vi.setSystemTime(Date.now() + 2 * 60_000);
+
+      await expect(dispatchSyncCommand("open", open(1), manager)).resolves.toMatchObject({ ok: true });
+      expect(shapes(manager)).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps a copy of its own that is newer than the newest saved one", async () => {
     const objects = createMemoryObjectStore();
     const { manager } = node(objects);

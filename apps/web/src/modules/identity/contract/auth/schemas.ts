@@ -1,7 +1,25 @@
 import * as v from "valibot";
 import { APPEARANCES } from "@orbmeet/domain-model";
-import { emailSchema, idSchema, timeZoneSchema, trimmedText } from "@orbmeet/public-api-contract/fields";
+import { emailSchema, idSchema, timeZoneSchema } from "@orbmeet/public-api-contract/fields";
+import { sanitizeDisplayName } from "@/lib/sanitize";
 import { EMAIL_CODE_ALPHABET, EMAIL_CODE_LENGTH } from "./constants";
+
+/**
+ * A person's name as everyone else sees it, cleaned once, where it enters:
+ * no tags, control or invisible characters, which would otherwise reach every
+ * place it is shown or sent (a whiteboard token refuses a name with control
+ * characters outright).
+ */
+function displayNameSchema(requiredMessage: string) {
+  return v.pipe(
+    v.string(),
+    v.trim(),
+    v.nonEmpty(requiredMessage),
+    v.maxLength(100),
+    v.transform((name) => sanitizeDisplayName(name, "")),
+    v.nonEmpty(requiredMessage),
+  );
+}
 
 const emailCodeSchema = v.pipe(
   v.string(),
@@ -41,15 +59,13 @@ export const resendOtpSchema = v.object({
 
 export const beginEmailAuthSchema = v.object({
   email: v.pipe(v.string(), v.trim(), emailSchema),
-  name: v.optional(trimmedText(100, "Full name is required")),
+  name: v.optional(displayNameSchema("Full name is required")),
 });
 
 export const updateProfileSchema = v.object({
-  name: trimmedText(100, "Name is required"),
+  name: displayNameSchema("Name is required"),
   timeZone: v.optional(timeZoneSchema),
 });
-
-export const setTranscribeMeetingsSchema = v.object({ on: v.boolean() });
 
 export const setAppearanceSchema = v.object({ appearance: v.picklist(APPEARANCES) });
 

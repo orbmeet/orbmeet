@@ -71,6 +71,8 @@ export interface JoinResult {
   joinPolicy: "open" | "approval_required" | "closed";
   /** Whether speech is being transcribed as this participant joins; room metadata follows it after. */
   transcription?: boolean;
+  /** The Space's transcription default, for a participant who may change it (a Space admin). */
+  spaceTranscription?: { spaceId: string; on: boolean };
   expiresIn: number;
   surface?: MeetingSurfaceAccess;
   recordingEnabled?: boolean;

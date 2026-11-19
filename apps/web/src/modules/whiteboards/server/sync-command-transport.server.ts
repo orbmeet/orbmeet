@@ -11,7 +11,7 @@ import {
   type SyncCommandResult,
 } from "@orbmeet/whiteboard-core/sync-commands";
 import { logError, logWarn } from "@/lib/logger";
-import { postSignedJson } from "@/platform/http/internal-auth";
+import { postSignedJson } from "@orbmeet/primitives";
 import type { WhiteboardNode } from "./config.server";
 
 /**
@@ -61,13 +61,10 @@ export async function postSyncCommand<C extends SyncCommandName>(
 ): Promise<SyncCommandResult<C>> {
   let response: Response;
   try {
-    response = await postSignedJson(
-      `${node.whiteboardUrl}${syncCommandPath(name)}`,
-      body,
-      node.commandKeyring,
+    response = await postSignedJson(`${node.whiteboardUrl}${syncCommandPath(name)}`, body, node.commandKeyring, {
       timeoutMs,
-      { [SYNC_PROTOCOL_HEADER]: String(SYNC_PROTOCOL.speaks) },
-    );
+      headers: { [SYNC_PROTOCOL_HEADER]: String(SYNC_PROTOCOL.speaks) },
+    });
   } catch (error) {
     logWarn("[whiteboard] command failed to reach the sync server", { name, node: node.id }, error);
     return unreachable();

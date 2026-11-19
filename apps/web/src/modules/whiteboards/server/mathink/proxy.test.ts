@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { handleMathInkRequest } from "./proxy";
+const verifyActiveWhiteboardBearerMock = vi.hoisted(() => vi.fn());
+vi.mock("@orbmeet/db", () => ({ createDb: () => ({}) }));
+vi.mock("@/modules/whiteboards/server/http/active-whiteboard-auth", () => ({
+  verifyActiveWhiteboardBearer: verifyActiveWhiteboardBearerMock,
+}));
+
+import { handleAuthenticatedMathInkRequest, handleMathInkRequest } from "./proxy";
 
 function testEnv(overrides: Partial<Env> = {}): Env {
   return {
@@ -110,5 +116,39 @@ describe("MathInk proxy", () => {
 
     expect(response.status).toBe(503);
     expect(originFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("MathInk proxy authorization", () => {
+  const strokes = { strokes: [[[10, 20], [20, 10], [30, 20]]] };
+
+  it("forwards an editor's request", async () => {
+    verifyActiveWhiteboardBearerMock.mockResolvedValue({ access: { canEditWhiteboard: true } });
+    const fetchMock = vi.fn(async () => Response.json({ latex: "x" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await handleAuthenticatedMathInkRequest(recognitionRequest(strokes), testEnv());
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a participant who cannot edit the whiteboard, without calling the origin", async () => {
+    verifyActiveWhiteboardBearerMock.mockResolvedValue({ access: { canEditWhiteboard: false } });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await handleAuthenticatedMathInkRequest(recognitionRequest(strokes), testEnv());
+
+    expect(response.status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("passes the bearer's own refusal through", async () => {
+    verifyActiveWhiteboardBearerMock.mockResolvedValue(new Response("Unauthorized", { status: 401 }));
+
+    const response = await handleAuthenticatedMathInkRequest(recognitionRequest(strokes), testEnv());
+
+    expect(response.status).toBe(401);
   });
 });

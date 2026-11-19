@@ -25,7 +25,6 @@ import { authorizeInMeeting, userSubject } from "@/modules/meetings/server/runti
 import { ensurePersonalSpace } from "@/modules/spaces/server/personal";
 import { newCommandId, runSyncCommand } from "@/modules/whiteboards/server/sync-commands.server";
 import { toWhiteboardRoomId } from "@orbmeet/whiteboard-core/whiteboard-room-id";
-import { loadSpaceEntitlement } from "@/modules/billing/server/entitlements.server";
 import { enqueueR2ObjectCleanup } from "@/modules/assets/server/r2-cleanup.server";
 import { runSerially } from "@/app/serial/serial";
 
@@ -739,24 +738,15 @@ export async function restoreArchivedWhiteboard(
   if (!board) throw Errors.NOT_FOUND("Archived Whiteboard");
   await assertWhiteboardLifecycleAuthority(db, board, actorUserId);
 
-  // Reuse the same atomic active-document quota gate as creation.
-  const entitlement = await loadSpaceEntitlement(db, board.spaceId);
   const now = new Date();
   const restored = await db.run(sql`
         update ${whiteboards}
         set status = 'active', archived_at = null, updated_at = ${Math.floor(now.getTime() / 1000)}
         where id = ${board.id}
           and status = 'archived'
-          and (
-            select count(*) from ${whiteboards} active_board
-            where active_board.space_id = ${board.spaceId}
-              and active_board.status = 'active'
-          ) < ${entitlement.limits.maxWhiteboardsPerSpace}
       `);
   if (!restored.meta.changes) {
-    throw Errors.PLAN_LIMIT_REACHED(
-      `This Space has reached its ${entitlement.limits.maxWhiteboardsPerSpace}-Whiteboard limit`,
-    );
+    throw Errors.CONFLICT("This Whiteboard is no longer archived");
   }
   try {
     await runSyncCommand(env, "reopen", {

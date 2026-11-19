@@ -623,6 +623,38 @@ describe.skipIf(!available).each(RUNTIMES)(`code runner container (${IMAGE}) on 
       expect(outcome.kind === "result" && outcome.result.stdout.trim()).toBe("started\nsurvived");
     });
 
+    it("cannot stop or kill the sweep that ends it", { timeout: 120_000 }, async () => {
+      // kill(-1) from a snippet reaches every process its uid may signal. The
+      // sweep's own process must not be one of them: stopped, cellrun would
+      // wait on it for good; killed, the sweep would fail and the container
+      // be replaced. Threads, because kill(-1) spares only the caller's own
+      // process: separate processes would stop one another.
+      for (const signal of ["SIGSTOP", "SIGKILL"]) {
+        const result = await runCell(
+          "c",
+          [
+            "#define _GNU_SOURCE",
+            "#include <pthread.h>",
+            "#include <signal.h>",
+            "#include <stdio.h>",
+            `static void *signal_everyone(void *arg) { (void)arg; for (;;) kill(-1, ${signal}); return NULL; }`,
+            "int main(void) {",
+            "  pthread_t threads[3];",
+            "  for (int i = 0; i < 3; i++) pthread_create(&threads[i], NULL, signal_everyone, NULL);",
+            "  puts(\"signalling\"); fflush(stdout);",
+            "  signal_everyone(NULL);",
+            "}",
+          ].join("\n"),
+        );
+
+        expect(result.stdout.trim()).toBe("signalling");
+        expect(result.timedOut).toBe(true);
+        await settled();
+        expect(await slotProcesses(containerId)).toBe("");
+      }
+      expect(container.destroyed).toEqual([]);
+    });
+
     it("hands the next run a clean slot whatever the last one left in it", { timeout: 120_000 }, async () => {
       // The run-directory-reuse escalation: a leftover symlink that root would
       // later write through, a tree built to be slow or impossible to delete,

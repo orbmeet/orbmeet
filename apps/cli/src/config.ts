@@ -39,7 +39,9 @@ async function readStoredToken(): Promise<string | undefined> {
 }
 
 export async function readConfig(): Promise<CliConfig> {
-  const token = process.env.ORBMEET_TOKEN || await readStoredToken();
+  // Trimmed as `configure` trims what it saves: a CI secret often ends in a
+  // newline, which no HTTP header may carry.
+  const token = process.env.ORBMEET_TOKEN?.trim() || await readStoredToken();
   if (!token) {
     throw new Error("Orb Meet is not configured. Pipe a token to: orbmeet configure");
   }

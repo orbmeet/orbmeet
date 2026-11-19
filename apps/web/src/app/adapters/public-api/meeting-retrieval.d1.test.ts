@@ -163,6 +163,17 @@ describe("automation Meeting retrieval", () => {
     })).resolves.toMatchObject({ id: "meeting_product" });
   });
 
+  it("never matches the personal Space by its name", async () => {
+    // The personal Space is named after its owner, and never shown by name.
+    await db.update(spaces).set({ name: "Owner Wonderland" }).where(eq(spaces.id, "user_owner_space"));
+
+    await expect(resolveAutomationMeeting(db, "user_owner", {
+      space: "Wonderland",
+      include: [],
+      transcriptLimit: 500,
+    })).rejects.toMatchObject({ code: "MEETING_NOT_FOUND" });
+  });
+
   it("applies the exact local-date bounds before the result limit", async () => {
     await insertEndedMeeting(
       "meeting_older_match",

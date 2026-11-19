@@ -1,4 +1,4 @@
-import { signingKey, type Keyring } from "@orbmeet/primitives";
+import { signingKey, truncateCodeUnits, type Keyring } from "@orbmeet/primitives";
 import { errors, jwtVerify, SignJWT } from "jose";
 import * as v from "valibot";
 import {
@@ -12,6 +12,8 @@ const AUDIENCE = "whiteboard";
 const MAX_WHITEBOARD_JWT_TTL_SECONDS = 24 * 3600;
 const MAX_WHITEBOARD_JWT_CLOCK_SKEW_SECONDS = 60;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/;
+const CONTROL_CHARACTER_RUNS = /[\u0000-\u001f\u007f-\u009f]+/g;
+const MAX_NAME_LENGTH = 256;
 export const WHITEBOARD_ROLES = ["participant", "guest"] as const;
 export type WhiteboardRole = (typeof WHITEBOARD_ROLES)[number];
 export interface WhiteboardCapabilities {
@@ -46,7 +48,7 @@ const IDENTITY_MESSAGE = "JWT sub and connectionId claims must be valid non-empt
 const claimsSchema = v.object(
   {
     sub: text(1, 256, IDENTITY_MESSAGE),
-    name: text(0, 256, "JWT name claim contains invalid characters or is too long"),
+    name: text(0, MAX_NAME_LENGTH, "JWT name claim contains invalid characters or is too long"),
     role: v.picklist(WHITEBOARD_ROLES, "Invalid JWT role"),
     capabilities: v.object(
       {
@@ -107,7 +109,11 @@ export async function createWhiteboardJWT(
 ): Promise<string> {
   const { keyId, secret } = signingKey(keyring);
   const now = Math.floor(Date.now() / 1000);
-  return new SignJWT(payload)
+  // `name` is only shown, and issuers pass stored names straight through:
+  // fit it to what the verifier accepts rather than mint a token every
+  // node refuses.
+  const name = truncateCodeUnits(payload.name.replace(CONTROL_CHARACTER_RUNS, ""), MAX_NAME_LENGTH);
+  return new SignJWT({ ...payload, name })
     .setProtectedHeader({ alg: "HS256", typ: "JWT", kid: keyId })
     .setIssuer(ISSUER)
     .setAudience(AUDIENCE)

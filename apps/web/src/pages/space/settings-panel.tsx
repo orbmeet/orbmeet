@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   useMutation,
@@ -9,7 +9,8 @@ import { deleteSpace } from "@/workflows/space-deletion/delete-space.functions";
 import { queryKeys } from "@/app/query-client/query-keys";
 import { evictSpaceQueryCache } from "@/modules/spaces/client/space-query-cache";
 import { getErrorMessage } from "@/lib/error-inspection";
-import { Button, dialogLayout, TimeZoneSelect } from "@orbmeet/ui/react";
+import { Button, dialogLayout, Switch, TimeZoneSelect } from "@orbmeet/ui/react";
+import { useSpaceTranscriptionDefault } from "@/modules/spaces/client/use-space-transcription";
 import {
   Dialog,
   DialogBody,
@@ -54,6 +55,7 @@ const styles = stylex.create({
   },
   formHint: { margin: 0, fontSize: text.xs, lineHeight: leading.xs, color: ink.muted },
   submit: { alignSelf: "flex-start" },
+  switchRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: space.s4 },
   dangerZone: {
     borderRadius: radii.control,
     borderWidth: 1,
@@ -85,6 +87,7 @@ export function SettingsPanel({
   name,
   description,
   timeZone,
+  transcribeMeetings,
   organizationName,
   canDelete,
 }: {
@@ -93,10 +96,13 @@ export function SettingsPanel({
   name: string;
   description: string | null;
   timeZone: string;
+  transcribeMeetings: boolean;
   organizationName: string | null;
   canDelete: boolean;
 }) {
   const queryClient = useQueryClient();
+  const transcription = useSpaceTranscriptionDefault({ spaceId, on: transcribeMeetings });
+  const transcriptionLabelId = useId();
   const navigate = useNavigate();
   const [editName, setEditName] = useState(name);
   const [editDesc, setEditDesc] = useState(description || "");
@@ -201,6 +207,30 @@ export function SettingsPanel({
           <p {...stylex.props(status.error, status.flush)}>{getErrorMessage(updateMutation.error)}</p>
         )}
       </form>
+
+      {transcription && (
+        <div {...stylex.props(stack.x2)}>
+          <h3 {...stylex.props(styles.formTitle)}>Meetings</h3>
+          <div {...stylex.props(styles.switchRow)}>
+            <p id={transcriptionLabelId} {...stylex.props(styles.formHint)}>
+              {transcription.on
+                ? "This Space’s meetings begin with transcription on, whoever starts them: what people say is sent to Deepgram for captions, the transcript and the summary."
+                : "This Space’s meetings begin with transcription off, whoever starts them: nothing anyone says is sent to Deepgram."}{" "}
+              A host or co-host can change it during a meeting.
+            </p>
+            <Switch
+              checked={transcription.on}
+              pending={transcription.pending}
+              onCheckedChange={(next) => void transcription.set(next)}
+              aria-label="Transcribe this Space’s meetings"
+              aria-describedby={transcriptionLabelId}
+            />
+          </div>
+          {transcription.failed && (
+            <p role="alert" {...stylex.props(status.error, status.flush)}>That change didn&rsquo;t save. Try again.</p>
+          )}
+        </div>
+      )}
 
       <ActivityPanel spaceId={spaceId} />
 

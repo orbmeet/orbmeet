@@ -368,6 +368,7 @@ async function selectSpaceDetail(
         description: spaces.description,
         slug: spaces.slug,
         timeZone: spaces.timeZone,
+        transcribeMeetings: spaces.transcribeMeetings,
         ownerUserId: spaces.ownerUserId,
         organizationId: spaces.organizationId,
         organizationName: organizations.name,

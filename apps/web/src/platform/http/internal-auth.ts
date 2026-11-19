@@ -1,7 +1,6 @@
 import {
   SIGNATURE_HEADER,
   signatureTarget,
-  signRequest,
   verifySignedRequest,
   type Keyring,
 } from "@orbmeet/primitives";
@@ -18,8 +17,8 @@ import {
  * Every internal link is signed with a keyring (a JSON map of key ids to
  * secrets, see `@orbmeet/primitives`' `signed-request`). Each direction has
  * its own keyring, so the key a peer holds to call the Worker cannot sign the
- * Worker's calls to it. This module is the Worker's one place to read, verify
- * and produce those signatures.
+ * Worker's calls to it. This module is the Worker's one place to read and
+ * verify them; its own calls are signed by `postSignedJson`.
  */
 
 export type SignedRequestResult =
@@ -69,30 +68,4 @@ export async function readSignedRequest(
     return { ok: false, response: new Response("Unauthorized", { status: 401 }) };
   }
   return { ok: true, body, keyId: verification.keyId };
-}
-
-/** A signed JSON POST from the Worker to a peer service. */
-export async function postSignedJson(
-  url: string,
-  body: unknown,
-  keyring: Keyring,
-  timeoutMs: number,
-  headers: Record<string, string> = {},
-): Promise<Response> {
-  const text = JSON.stringify(body);
-  return fetch(url, {
-    method: "POST",
-    headers: {
-      ...headers,
-      "Content-Type": "application/json",
-      [SIGNATURE_HEADER]: await signRequest({
-        method: "POST",
-        target: signatureTarget(url),
-        body: text,
-        keyring,
-      }),
-    },
-    body: text,
-    signal: AbortSignal.timeout(timeoutMs),
-  });
 }

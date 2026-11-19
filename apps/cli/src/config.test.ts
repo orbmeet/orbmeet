@@ -66,6 +66,12 @@ describe("saveToken and readConfig", () => {
     await expect(readConfig()).resolves.toMatchObject({ token: "env-token" });
   });
 
+  it("trims ORBMEET_TOKEN as configure trims what it stores, so a secret ending in a newline still works", async () => {
+    const { readConfig } = await loadConfig();
+    process.env.ORBMEET_TOKEN = "env-token\n";
+    await expect(readConfig()).resolves.toMatchObject({ token: "env-token" });
+  });
+
   it("enforces 0o700 directory permissions and 0o600 file permissions for stored credentials", async () => {
     const { saveToken, CONFIG_PATH } = await loadConfig();
     await saveToken("secret_token_123");

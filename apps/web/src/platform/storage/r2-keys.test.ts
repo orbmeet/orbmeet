@@ -44,6 +44,8 @@ describe("meetingIdOfRecordingKey", () => {
     expect(meetingIdOfRecordingKey("meetings/../recordings/a.mp4")).toBeNull();
     expect(meetingIdOfRecordingKey("meetings/m1/recordings/")).toBeNull();
     expect(meetingIdOfRecordingKey("internal/meetings/m1/recordings/a.mp4")).toBeNull();
+    // LiveKit Egress's manifest, written beside a recording unless disabled.
+    expect(meetingIdOfRecordingKey("meetings/m1/recordings/EG_abc123.json")).toBeNull();
   });
 });
 

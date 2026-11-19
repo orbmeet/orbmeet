@@ -11,7 +11,7 @@ import { revokeAccountAuthenticationExceptCurrent } from "@/modules/identity/ser
 import { findPersonalSpaceId } from "@/modules/spaces/server/personal";
 import { callCoordinator } from "@/modules/meetings/server/runtime/client.server";
 import { revokeFromOpenMeetings } from "@/modules/meetings/server/runtime/revoke.server";
-import { cleanupAccountR2Objects } from "@/modules/identity/server/account-deletion.server";
+import { cleanupAccountR2Objects, loadAccountStorageScope } from "@/modules/identity/server/account-deletion.server";
 import { startJob, type Job, type JobStep } from "@/platform/jobs/jobs";
 
 /**
@@ -135,19 +135,23 @@ export async function deleteAccount(
     });
   }
 
-  await step.do("release stored files", async () => {
-    const delayedCleanupScope = await cleanupAccountR2Objects(db, env, userId, {
-      meetingLinkIds,
-      personalSpaceId,
-    });
-    await startJob(env, {
+  // Read before anything is deleted, and kept as the step's result: the
+  // release deletes the rows it is read from, so a retried step that read it
+  // again would release nothing and leave the later cleanup nothing to do.
+  const storageScope = await step.do("list stored files", () =>
+    loadAccountStorageScope(db, { meetingLinkIds, personalSpaceId }));
+
+  await step.do("release stored files", () =>
+    cleanupAccountR2Objects(db, env, userId, { ...storageScope, personalSpaceId }));
+
+  await step.do("schedule late file cleanup", () =>
+    startJob(env, {
       kind: "accountCleanup",
       userId,
       personalSpaceId,
-      ...delayedCleanupScope,
+      ...storageScope,
       requestedAt: deletionStartedAt.getTime(),
-    });
-  });
+    }));
 
   await step.do("erase", async () => {
     for (const deletion of boundedStatements(meetingLinkIds, (ids) =>

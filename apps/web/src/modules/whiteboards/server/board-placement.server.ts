@@ -211,12 +211,6 @@ export async function nodeForNewBoard(
   return node;
 }
 
-/** Every node that may hold a copy of a board and answers: a purge reaches them all. */
-export async function liveWhiteboardNodes(db: Database, env: Env): Promise<WhiteboardNode[]> {
-  const health = await readNodeHealth(db, "whiteboard");
-  return whiteboardNodes(env).filter((node) => !isServiceDown(health.get(node.id)));
-}
-
 /**
  * The minutely check of every sync server, at its public URL: boards move
  * off one that keeps failing. Throws while any is down, so the cron alerts

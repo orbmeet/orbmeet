@@ -6,7 +6,7 @@ export { buildR2Client };
 import { PDF_MAX_IMPORT_SIZE } from "@orbmeet/whiteboard-core/pdf-geometry";
 import { mapWithConcurrency } from "@orbmeet/primitives";
 import type { PdfImportGrantConfig, R2UploadConfig, StoredPdfSource } from "./pdf-import-jobs.ts";
-import { postSignedJson } from "../http/app-client.ts";
+import { postToApp } from "../http/app-client.ts";
 
 /**
  * What an import asks of the app, and what it puts in R2. Every grant call is
@@ -42,7 +42,7 @@ export class GrantRefused extends Error {
 }
 
 function grantRequest(id: string, config: PdfImportGrantConfig, body: Record<string, unknown>) {
-  return postSignedJson(
+  return postToApp(
     new URL(GRANT_PATH, config.appUrl),
     {
       meetingId: config.meetingSid,

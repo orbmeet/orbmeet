@@ -357,6 +357,7 @@ function RecorderMeetingContent({
         recordingEnabled: false,
         meetingTitle: null,
         spaceName: null,
+        spaceTranscription: null,
         joinPolicy: "open",
         admissionPolicyPending: false,
         isEgress: true,

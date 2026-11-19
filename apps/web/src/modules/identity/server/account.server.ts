@@ -11,7 +11,6 @@ import type {
   revokeSessionSchema,
   StepUpBody,
   setAppearanceSchema,
-  setTranscribeMeetingsSchema,
   updateProfileSchema,
 } from "@/modules/identity/contract/auth/schemas";
 import { Errors } from "@/lib/app-errors";
@@ -48,7 +47,7 @@ export async function updateProfileImpl({
 }) {
   await enforceRateLimit(env, `account:update-profile:${user.id}`);
 
-  const name = data.name.trim();
+  const { name } = data;
   await db
     .update(users)
     .set({
@@ -79,22 +78,6 @@ export async function setAppearanceImpl({
     .set({ appearance: data.appearance, updatedAt: new Date() })
     .where(eq(users.id, user.id));
   return { success: true, appearance: data.appearance };
-}
-
-/** The account default for whether meetings this user starts are transcribed. */
-export async function setTranscribeMeetingsImpl({
-  data,
-  context: { user, env, db },
-}: {
-  data: v.InferOutput<typeof setTranscribeMeetingsSchema>;
-  context: AuthFnContext;
-}) {
-  await enforceRateLimit(env, `account:transcribe-meetings:${user.id}`);
-  await db
-    .update(users)
-    .set({ transcribeMeetings: data.on, updatedAt: new Date() })
-    .where(eq(users.id, user.id));
-  return { success: true, transcribeMeetings: data.on };
 }
 
 export async function listSessionsImpl({

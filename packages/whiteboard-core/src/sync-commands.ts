@@ -194,7 +194,7 @@ export interface SyncCommands {
    * there with them, in the same write.
    */
   pageAdd: {
-    request: RoomTarget & { userId: string; connectionId?: string; afterPageNumber?: number };
+    request: RoomTarget & { userId: string; afterPageNumber?: number };
     result: { status: "page_added" | "initialized"; page: PageTarget };
   };
   navigationControllerSet: {
@@ -336,7 +336,7 @@ export const SYNC_COMMAND_REQUESTS = {
   }),
   pageEditValidate: v.object({ ...roomTarget, userId, connectionId, pageId }),
   pagePresentValidate: v.object({ ...roomTarget, userId, connectionId, pageId }),
-  pageAdd: v.object({ ...roomTarget, userId, connectionId: v.optional(connectionId), afterPageNumber: v.optional(finiteNumber) }),
+  pageAdd: v.object({ ...roomTarget, userId, afterPageNumber: v.optional(finiteNumber) }),
   navigationControllerSet: v.object({ ...roomTarget, targetUserId: userId, approverId: userId }),
   navigationControllerRelease: v.object({ ...roomTarget, requesterId: userId }),
 } satisfies { [C in SyncCommandName]: v.GenericSchema<unknown, SyncCommandRequest<C>> };

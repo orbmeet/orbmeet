@@ -23,6 +23,11 @@ describe('sanitizeDisplayName', () => {
     expect(sanitizeDisplayName('\x1FAlice')).toBe('Alice')
   })
 
+  it('strips C1 control characters, such as a mis-decoded apostrophe', () => {
+    expect(sanitizeDisplayName('O\u0092Brien')).toBe('OBrien')
+    expect(sanitizeDisplayName('Bob\u0085')).toBe('Bob')
+  })
+
   it('normalizes multiple spaces to one', () => {
     expect(sanitizeDisplayName('Alice   Bob')).toBe('Alice Bob')
     expect(sanitizeDisplayName('  Alice  ')).toBe('Alice')

@@ -7,15 +7,20 @@ import {
   files,
   spaces,
   users,
+  r2ObjectCleanupTasks,
+  whiteboardAssetReferences,
   whiteboardAssets,
   whiteboards,
 } from "@orbmeet/db/schema";
-import { createTestDb } from "@/test/db";
+import { eq } from "drizzle-orm";
+import { createTestDb, type TestDb } from "@/test/db";
 import { seedPersonalSpace } from "@/test/fixtures";
 import {
   ACCOUNT_UPLOAD_URL_GRACE_MS,
   cleanupAccountR2Objects,
+  loadAccountStorageScope,
   runAccountCleanup,
+  type AccountStorageScope,
 } from "./account-deletion.server";
 import { immediateJobStep } from "@/test/jobs";
 
@@ -151,6 +156,13 @@ spaceKind: "personal" as const,
   return db;
 }
 
+/** The deletion workflow's two steps: the scope, read once, then the release. */
+async function releaseOwnerStorage(db: TestDb, bucket: R2Bucket): Promise<AccountStorageScope> {
+  const scope = await loadAccountStorageScope(db, { meetingLinkIds: ["link_1"], personalSpaceId: "owner_space" });
+  await cleanupAccountR2Objects(db, { R2_BUCKET: bucket }, "owner", { ...scope, personalSpaceId: "owner_space" });
+  return scope;
+}
+
 describe("cleanupAccountR2Objects", () => {
   it("deletes more pending Whiteboard assets than one D1 statement can bind", async () => {
     const db = await seedAccountDeletionData();
@@ -184,12 +196,7 @@ describe("cleanupAccountR2Objects", () => {
     }
     const { bucket } = createBucket(keys);
 
-    await expect(cleanupAccountR2Objects(
-      db,
-      { R2_BUCKET: bucket },
-      "owner",
-      { meetingLinkIds: ["link_1"], personalSpaceId: "owner_space" },
-    )).resolves.toEqual({
+    await expect(releaseOwnerStorage(db, bucket)).resolves.toEqual({
       meetingIds: ["meeting_1"],
       whiteboardIds: ["whiteboard_many_pending"],
     });
@@ -209,7 +216,7 @@ describe("cleanupAccountR2Objects", () => {
       "spaces/unrelated/files/asset_keep/keep.png",
     ]);
 
-    await cleanupAccountR2Objects(db, { R2_BUCKET: bucket }, "owner", { meetingLinkIds: ["link_1"], personalSpaceId: "owner_space" });
+    await releaseOwnerStorage(db, bucket);
 
     expect([...keys]).toEqual([
       "spaces/space_1/uploads/asset_1.pdf",
@@ -228,6 +235,91 @@ describe("cleanupAccountR2Objects", () => {
     ).toBeDefined();
   });
 
+  it("releases the same boards and meetings when retried after their rows are gone", async () => {
+    const db = await seedAccountDeletionData();
+    const now = new Date();
+    await db.insert(whiteboards).values({
+      id: "whiteboard_personal",
+      syncRoomId: "whiteboard_personal",
+      spaceId: "owner_space",
+      title: "Personal",
+      createdByUserId: "owner",
+      createdAt: now,
+      updatedAt: now,
+    });
+    const scope = await loadAccountStorageScope(db, { meetingLinkIds: ["link_1"], personalSpaceId: "owner_space" });
+    const { bucket } = createBucket([]);
+
+    await cleanupAccountR2Objects(db, { R2_BUCKET: bucket }, "owner", { ...scope, personalSpaceId: "owner_space" });
+    // A retry of the step, as after a failure that came after the deletes.
+    const { bucket: retried, keys } = createBucket([
+      "meetings/meeting_1/recordings/late.mp4",
+      "whiteboards/whiteboard_personal/assets/late.png",
+    ]);
+    await cleanupAccountR2Objects(db, { R2_BUCKET: retried }, "owner", { ...scope, personalSpaceId: "owner_space" });
+
+    expect(scope).toEqual({ meetingIds: ["meeting_1"], whiteboardIds: ["whiteboard_personal"] });
+    expect(keys.size).toBe(0);
+    await expect(db.select().from(whiteboards)).resolves.toEqual([]);
+    await expect(db.select().from(meetings)).resolves.toEqual([]);
+  });
+
+  it("queues what a personal board borrowed from another board before deleting it", async () => {
+    const db = await seedAccountDeletionData();
+    const now = new Date();
+    await db.insert(whiteboards).values([
+      {
+        id: "whiteboard_source",
+        syncRoomId: "whiteboard_source",
+        spaceId: "space_1",
+        title: "Shared original",
+        createdByUserId: "member",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "whiteboard_personal",
+        syncRoomId: "whiteboard_personal",
+        spaceId: "owner_space",
+        title: "Personal copy",
+        createdByUserId: "owner",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    const borrowed = "whiteboards/whiteboard_source/assets/diagram.png";
+    await db.insert(whiteboardAssets).values({
+      id: "source_asset",
+      whiteboardId: "whiteboard_source",
+      spaceId: "space_1",
+      r2Key: borrowed,
+      filename: "diagram.png",
+      mimeType: "image/png",
+      size: 1,
+      status: "committed",
+      uploadedByUserId: "member",
+      committedAt: now,
+      createdAt: now,
+    });
+    await db.insert(whiteboardAssetReferences).values({
+      id: "reference_1",
+      whiteboardId: "whiteboard_personal",
+      sourceWhiteboardId: "whiteboard_source",
+      r2Key: borrowed,
+      createdAt: now,
+    });
+    // The original is deleted, and the copy's reference is now the object's
+    // last owner.
+    await db.delete(whiteboards).where(eq(whiteboards.id, "whiteboard_source"));
+    const { bucket } = createBucket([borrowed]);
+
+    await releaseOwnerStorage(db, bucket);
+
+    await expect(db.select().from(whiteboardAssetReferences)).resolves.toEqual([]);
+    await expect(db.select({ r2Key: r2ObjectCleanupTasks.r2Key }).from(r2ObjectCleanupTasks))
+      .resolves.toEqual([{ r2Key: borrowed }]);
+  });
+
   it("propagates R2 failures so relational deletion can be retried", async () => {
     const db = await seedAccountDeletionData();
     const bucket = {
@@ -236,7 +328,7 @@ describe("cleanupAccountR2Objects", () => {
     } as unknown as R2Bucket;
 
     await expect(
-      cleanupAccountR2Objects(db, { R2_BUCKET: bucket }, "owner", { meetingLinkIds: ["link_1"], personalSpaceId: "owner_space" }),
+      releaseOwnerStorage(db, bucket),
     ).rejects.toThrow("r2 unavailable");
     expect(
       await db.query.meetingArtifacts.findFirst({

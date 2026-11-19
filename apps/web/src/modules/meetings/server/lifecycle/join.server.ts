@@ -33,6 +33,7 @@ import { egressFields } from "../runtime/live.server";
 import { acquireMeetingOccurrence } from "./meeting-occurrence";
 import { appErrorToJoinMeetingResult, endedOccurrenceJoinError, waitingForApproval } from "./join-results";
 import { participantKeyOf } from "@/modules/meetings/contract/live-state";
+import { manageableSpaceTranscription } from "@/modules/spaces/server/transcription.server";
 
 function joined(result: JoinResult): JoinMeetingResult {
   return { state: "joined", result };
@@ -229,8 +230,8 @@ export async function joinMeetingImpl({
     // every other mint does. A role-only token here disagreed with the room's
     // authority check, which answered "refresh" to every attempt it made.
     //
-    // These three do not depend on one another, and each is a round trip to D1.
-    const [, whiteboardDocument, { capabilities: participantCapabilities }] = await Promise.all([
+    // These do not depend on one another, and each is a round trip to D1.
+    const [, whiteboardDocument, { capabilities: participantCapabilities }, spaceTranscription] = await Promise.all([
       renewPermanentLink(db, meetingLink),
       findMeetingWhiteboardDocument(db, meeting.id),
       resolveWhiteboardCapabilities(db, {
@@ -238,6 +239,8 @@ export async function joinMeetingImpl({
         principal: grantPrincipal,
         base: whiteboardCapabilitiesForMeetingRole(participant.role),
       }),
+      // A Space admin's switch in the meeting can also set the Space's default.
+      user ? manageableSpaceTranscription(db, meetingLink.spaceId, user.id) : null,
     ]);
     const surface = await buildWhiteboardJoinAccessExtras(env, {
       meetingId: meeting.id,
@@ -283,6 +286,7 @@ export async function joinMeetingImpl({
         : {}),
       joinPolicy: participant.joinPolicy,
       transcription: participant.room.transcription,
+      ...(spaceTranscription ? { spaceTranscription } : {}),
       expiresIn: reply.expiresIn,
       recordingEnabled: participant.recordingEnabled,
       ...egressFields(participant.egress),

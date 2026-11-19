@@ -1,5 +1,5 @@
 import type { Database } from "@orbmeet/db";
-import { meetings, meetingLinks, meetingSchedules, spaces, users } from "@orbmeet/db/schema";
+import { meetings, meetingLinks, meetingSchedules, spaces } from "@orbmeet/db/schema";
 import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { AppError, Errors } from "@/lib/app-errors";
 import { generateId } from "@/lib/ids";
@@ -191,9 +191,9 @@ export async function insertMeetingForLinkWithinLimit(
           status: sql`'open'`.as("status"),
           allowGuests: sql`${input.allowGuests ? 1 : 0}`.as("allow_guests"),
           recordingEnabled: sql`${input.recordingEnabled ? 1 : 0}`.as("recording_enabled"),
-          // The starter's account default, read in the same statement.
+          // The Space's default, whoever starts it, read in the same statement.
           transcriptionEnabled: sql`coalesce((
-            select ${users.transcribeMeetings} from ${users} where ${users.id} = ${input.startedByUserId}
+            select ${spaces.transcribeMeetings} from ${spaces} where ${spaces.id} = ${input.spaceId}
           ), 1)`.as("transcription_enabled"),
           joinPolicy: sql`${input.joinPolicy}`.as("join_policy"),
           activeEgressId: sql`null`.as("active_egress_id"),

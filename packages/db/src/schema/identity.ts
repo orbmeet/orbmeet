@@ -41,9 +41,9 @@ export const users = sqliteTable(
     role: text("role", { enum: USER_ROLE_VALUES })
       .default("user")
       .notNull(),
-    // Whether meetings this user starts begin with transcription on: their
-    // participants' speech sent to Deepgram for captions, the transcript and
-    // the summary. A host or co-host can still change it in the meeting.
+    // Superseded by `spaces.transcribe_meetings` (`space_transcription`) and no
+    // longer read or written. Kept one release so the code still serving
+    // while that migration runs can read it; the next release drops it.
     transcribeMeetings: integer("transcribe_meetings", { mode: "boolean" }).default(true).notNull(),
     // Light, dark, or the device's own setting. Kept on the account so it
     // follows the person to another device; each browser also keeps a copy in

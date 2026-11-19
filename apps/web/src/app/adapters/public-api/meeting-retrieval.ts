@@ -64,7 +64,11 @@ export async function resolveAutomationMeeting(
       bounds ? gte(meetings.startedAt, bounds.earliest) : undefined,
       bounds ? lt(meetings.startedAt, bounds.latest) : undefined,
       titleQuery ? d1UnicodeContains(meetings.title, titleQuery) : undefined,
-      spaceQuery ? d1UnicodeContains(spaces.name, spaceQuery) : undefined,
+      spaceQuery
+        ? // The personal space is never addressed by name (it is named after
+          // its owner); the selector only matches shared spaces.
+          and(eq(spaces.kind, "shared"), d1UnicodeContains(spaces.name, spaceQuery))
+        : undefined,
       participantQuery
         ? exists(
             db.select({ id: meetingAdmissions.id })

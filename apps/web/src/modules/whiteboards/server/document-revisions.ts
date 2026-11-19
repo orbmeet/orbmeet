@@ -44,7 +44,7 @@ import { mapWithConcurrency } from "@orbmeet/primitives";
 import {
   attachExistingWhiteboardToMeeting,
   cleanupFailedWhiteboardCopy,
-  insertDurableWhiteboardWithinLimit,
+  insertDurableWhiteboard,
   type MeetingWhiteboardDocument,
 } from "./documents";
 import { loadSpaceEntitlement } from "@/modules/billing/server/entitlements.server";
@@ -335,7 +335,7 @@ export async function copyWhiteboard(
     // references commit together or not at all. A reference to an object the
     // cleanup queue is deleting is refused, and every object is checked again
     // once the references hold it (see r2KeyBeingDeletedSql).
-    await insertDurableWhiteboardWithinLimit(
+    await insertDurableWhiteboard(
       db,
       {
         id: whiteboardId,

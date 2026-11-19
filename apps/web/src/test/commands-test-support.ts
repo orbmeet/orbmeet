@@ -20,7 +20,6 @@ export const organizer: AuthenticatedUser = {
   email: "host@example.com",
   image: null,
   timeZone: "Asia/Dhaka",
-  transcribeMeetings: true,
   appearance: "system",
   plan: "pro",
   role: "user",

@@ -73,6 +73,23 @@ describe("ship-logs.jq", () => {
     ]);
   });
 
+  it("reads JSON without a log level as output, not a log line, and never stops on it", () => {
+    // A failing filter fails the run, and the next run reads the same entry:
+    // one such line would stop the node's shipping for good.
+    const events = ship(
+      container("whiteboard", { foo: "bar" }),
+      container("whiteboard", { level: true, msg: "odd" }, "6"),
+      container("livekit", { level: { name: "error" }, msg: "odder" }),
+      container("livekit", { level: "error", msg: "numbered room", room: 5 }),
+    );
+    expect(events.map(({ service, level, msg, meetingId }) => ({ service, level, msg, meetingId }))).toEqual([
+      { service: "whiteboard", level: "error", msg: JSON.stringify({ foo: "bar" }), meetingId: undefined },
+      { service: "livekit", level: "error", msg: JSON.stringify({ level: { name: "error" }, msg: "odder" }),
+        meetingId: undefined },
+      { service: "livekit", level: "error", msg: "numbered room", meetingId: undefined },
+    ]);
+  });
+
   it("sends nothing for an empty line on stderr", () => {
     expect(ship(container("livekit", ""), { ...container("transcription", ""), MESSAGE: null })).toEqual([]);
   });

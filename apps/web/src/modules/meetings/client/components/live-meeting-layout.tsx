@@ -45,7 +45,7 @@ import { useParticipantTileActions, type ParticipantManagement } from "./partici
 import { ESSENTIAL_MEETING_UI, SECONDARY_MEETING_UI } from "./meeting-ui-modules";
 import { CATCH_UP_QUESTION, ORB_NAME, recentConversation, type MeetingAssistant } from "@/modules/meetings/client/orb";
 import { useTimelineThreads } from "@/modules/meetings/client/use-timeline-threads";
-import { useTranscribeMeetingsPreference } from "@/modules/identity/client/use-transcribe-meetings-preference";
+import { useSpaceTranscriptionDefault } from "@/modules/spaces/client/use-space-transcription";
 import { useOpenOnRoomQuestion } from "@/modules/meetings/client/use-open-on-room-question";
 
 const styles = stylex.create({
@@ -371,8 +371,8 @@ export function LiveMeetingLayout({
   const phoneLandscape = meeting.isPhone && meeting.isLandscape;
   const commands = useMeetingCommandPalette(hasCommandPalette);
   const { copy: copyToClipboard } = useCopyToClipboard();
-  // Your own default for meetings you start, offered beside this meeting's switch.
-  const transcribeMeetings = useTranscribeMeetingsPreference();
+  // The Space's default for its meetings, offered beside this meeting's switch to its admins.
+  const spaceTranscription = useSpaceTranscriptionDefault(meeting.spaceTranscription);
   const { add: addToast } = useToast();
 
   const surface = extensions?.surface;
@@ -688,7 +688,7 @@ export function LiveMeetingLayout({
         asked: meeting.transcription.asked,
         onAsk: () => void meeting.transcription.askToStop(),
         onTakeBack: () => void meeting.transcription.takeBackAsk(),
-        future: meeting.canModerate && transcribeMeetings ? transcribeMeetings : undefined,
+        future: meeting.canModerate && spaceTranscription ? spaceTranscription : undefined,
       }}
       onClose={options.onClose ?? meeting.ui.closePanel}
       hideHeader={options.hideHeader}

@@ -125,6 +125,29 @@ describe("reconcileSubscriptions", () => {
     expect(runSeriallyMock).toHaveBeenCalledExactlyOnceWith(env, { kind: "syncOrganizationSeats", organizationId: "org_1" });
   });
 
+  it("counts the members of more Organizations than one D1 statement can bind", async () => {
+    // Seats of 1 match an Organization with no members, so only org_1 drifts,
+    // and it comes after the first hundred.
+    const others = Array.from({ length: 100 }, (_, index) => subscription({
+      id: `sub_org_${index}`,
+      product_id: ORGANIZATION,
+      seats: 1,
+      customer: { id: `cus_org_${index}`, external_id: `org:org_other_${index}` },
+    }));
+    listSubscriptionsByStatusMock.mockResolvedValueOnce({
+      subscriptions: [...others, subscription({
+        id: "sub_org",
+        product_id: ORGANIZATION,
+        seats: 5,
+        customer: { id: "cus_org", external_id: "org:org_1" },
+      })],
+      lastPage: true,
+    });
+
+    await reconcileSubscriptions(db, env);
+    expect(runSeriallyMock).toHaveBeenCalledExactlyOnceWith(env, { kind: "syncOrganizationSeats", organizationId: "org_1" });
+  });
+
   it("leaves an Organization alone when its seats already match", async () => {
     listSubscriptionsByStatusMock.mockResolvedValueOnce({
       subscriptions: [subscription({

@@ -5,6 +5,7 @@ import { billingSubscriptions, organizationMembers } from "@orbmeet/db/schema";
 import { count, inArray, ne } from "drizzle-orm";
 import { runSerially } from "@/app/serial/serial";
 import { logError } from "@/lib/logger";
+import { boundedStatements } from "@/platform/database/db-batching";
 import { ENDED_SUBSCRIPTION_STATUS } from "@/modules/billing/contract/subscription";
 import { parseCustomerExternalId } from "./customer-ids";
 import { getSubscription, listSubscriptionsByStatus, polarClientFromEnv } from "./polar";
@@ -79,14 +80,16 @@ export async function reconcileSubscriptions(db: Database, env: Env): Promise<nu
   }
 
   if (organizationSubscriptions.length > 0) {
-    const memberCounts = new Map(
-      (await db
+    const memberCounts = new Map<string, number>();
+    const organizationIds = [...new Set(organizationSubscriptions.map((entry) => entry.organizationId))];
+    for (const lookup of boundedStatements(organizationIds, (ids) =>
+      db
         .select({ organizationId: organizationMembers.organizationId, value: count() })
         .from(organizationMembers)
-        .where(inArray(organizationMembers.organizationId, organizationSubscriptions.map((entry) => entry.organizationId)))
-        .groupBy(organizationMembers.organizationId))
-        .map((row) => [row.organizationId, row.value]),
-    );
+        .where(inArray(organizationMembers.organizationId, ids))
+        .groupBy(organizationMembers.organizationId))) {
+      for (const row of await lookup) memberCounts.set(row.organizationId, row.value);
+    }
     for (const { organizationId, subscription } of organizationSubscriptions) {
       if (!seatChangeFor(subscription, memberCounts.get(organizationId) ?? 0)) continue;
       try {

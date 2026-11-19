@@ -11,8 +11,8 @@ import { syncRoomIdFromWhiteboardRoomId } from "@orbmeet/whiteboard-core/whitebo
 import { AppError, Errors } from "@/lib/app-errors";
 import { generateId } from "@/lib/ids";
 import { logError } from "@/lib/logger";
-import { liveWhiteboardNodes, nodeForNewBoard, placeBoard, type BoardPlacement } from "./board-placement.server";
-import { isWhiteboardConfigured, type WhiteboardNode } from "./config.server";
+import { nodeForNewBoard, placeBoard, type BoardPlacement } from "./board-placement.server";
+import { isWhiteboardConfigured, whiteboardNodes, type WhiteboardNode } from "./config.server";
 import { postSyncCommand } from "./sync-command-transport.server";
 
 /**
@@ -53,8 +53,11 @@ export async function sendSyncCommand<C extends SyncCommandName>(
   if (!isWhiteboardConfigured(env)) throw Errors.CONFIG_ERROR("Whiteboard not configured");
   if (name === "purge" && !options.target) {
     // A deleted board's row is gone, and with it where the board was: every
-    // node deletes whatever it holds of it.
-    const nodes = await liveWhiteboardNodes(createDb(env.DB), env);
+    // node deletes whatever it holds of it. Every configured node, not only
+    // those answering now: one skipped while down would keep its copy, and
+    // save it back to R2 when it restarts. One that cannot be reached fails
+    // the purge, which its job retries until that node answers.
+    const nodes = whiteboardNodes(env);
     const results = await Promise.all(nodes.map((node) => postSyncCommand(node, name, request, options.timeoutMs)));
     return results.find((result) => !result.ok)
       ?? results[0]

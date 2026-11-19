@@ -231,6 +231,8 @@ async function startEgress(
     ? new EncodedFileOutput({
         fileType: EncodedFileType.MP4,
         filepath: `${meetingRecordingsPrefix(meetingId)}${RECORDING_FILE_TEMPLATE}`,
+        // Egress otherwise uploads `<egressId>.json` beside the recording.
+        disableManifest: true,
       })
     : new StreamOutput({ protocol: StreamProtocol.RTMP, urls: [effect.target ?? ""] });
   const [link] = await db

@@ -232,6 +232,7 @@ const PUBLISHED_SERVER_FILES: Record<string, readonly string[]> = {
     "server/files.functions",
     "server/helpers",
     "server/personal",
+    "server/transcription.server",
   ],
   whiteboards: [
     "server/config.server",

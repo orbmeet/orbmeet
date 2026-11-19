@@ -8,10 +8,6 @@ export interface PlanLimits {
   maxMeetingDurationMinutes: number | null; // null = unlimited
   maxSpaces: number | null; // null = unlimited
   maxMembersPerSpace: number | null; // null = unlimited; counts the owner
-  /** Active durable document count. Archived Whiteboards do not consume a
-   *  slot. Always finite, including Organization plans, so one compromised
-   *  member cannot create unbounded D1 rows and sync rooms. */
-  maxWhiteboardsPerSpace: number;
   /** Undo snapshots created by explicit restores. System-managed
    *  Meeting-boundary revisions are not charged to this cap. */
   maxWhiteboardRestorePointsPerBoard: number;
@@ -30,7 +26,6 @@ export const PLAN_LIMITS: Record<SubscriptionTier, PlanLimits> = {
     maxMeetingDurationMinutes: 90,
     maxSpaces: 1,
     maxMembersPerSpace: 25,
-    maxWhiteboardsPerSpace: 100,
     maxWhiteboardRestorePointsPerBoard: 25,
     maxStorageBytes: 1 * 1024 * 1024 * 1024, // 1 GB
     recordingEnabled: false,
@@ -45,7 +40,6 @@ export const PLAN_LIMITS: Record<SubscriptionTier, PlanLimits> = {
     maxMeetingDurationMinutes: null,
     maxSpaces: null,
     maxMembersPerSpace: 200,
-    maxWhiteboardsPerSpace: 2_000,
     maxWhiteboardRestorePointsPerBoard: 250,
     maxStorageBytes: 50 * 1024 * 1024 * 1024, // 50 GB
     recordingEnabled: true,
@@ -60,7 +54,6 @@ export const PLAN_LIMITS: Record<SubscriptionTier, PlanLimits> = {
     maxMeetingDurationMinutes: null,
     maxSpaces: null,
     maxMembersPerSpace: null,
-    maxWhiteboardsPerSpace: 10_000,
     maxWhiteboardRestorePointsPerBoard: 1_000,
     maxStorageBytes: null, // unlimited
     recordingEnabled: true,

@@ -5,12 +5,14 @@ export { timingSafeEqual } from "./timing-safe-equal.ts";
 export { clamp, clampFinite, isRecord } from "./guards.ts";
 export {
   parseKeyring,
+  postSignedJson,
   SIGNATURE_HEADER,
   signatureTarget,
   signingKey,
   signRequest,
   verifySignedRequest,
   type Keyring,
+  type PostSignedJsonOptions,
   type SignatureVerification,
 } from "./signed-request.ts";
 export { codePointBoundary, truncateCodeUnits, truncateUtf8 } from "./text.ts";

@@ -197,19 +197,27 @@ async function selectScheduleRows(
             )
           : undefined,
         participantQuery
-          ? exists(
-              db
-                .select({ id: meetingScheduleAttendees.id })
-                .from(meetingScheduleAttendees)
-                .where(
-                  and(
-                    eq(meetingScheduleAttendees.scheduleId, meetingSchedules.id),
-                    or(
-                      d1UnicodeContains(meetingScheduleAttendees.displayName, participantQuery),
-                      d1UnicodeContains(visibleAttendeeEmail(), participantQuery),
+          ? // Only the organizer's own invitees are searched: they named them.
+            // Anyone else sees no attendee of a schedule, and the addresses
+            // are shown as the organizer's contacts know them, not the
+            // viewer's — a search by another manager, say of a departed
+            // organizer's schedule, would test addresses it was never shown.
+            and(
+              eq(meetingSchedules.organizerUserId, filters.viewerUserId),
+              exists(
+                db
+                  .select({ id: meetingScheduleAttendees.id })
+                  .from(meetingScheduleAttendees)
+                  .where(
+                    and(
+                      eq(meetingScheduleAttendees.scheduleId, meetingSchedules.id),
+                      or(
+                        d1UnicodeContains(meetingScheduleAttendees.displayName, participantQuery),
+                        d1UnicodeContains(visibleAttendeeEmail(), participantQuery),
+                      ),
                     ),
                   ),
-                ),
+              ),
             )
           : undefined,
         filters.manageableOnly

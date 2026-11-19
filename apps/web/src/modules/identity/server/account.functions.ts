@@ -3,7 +3,6 @@ import { serverInput } from "@/lib/validation";
 import {
   revokeSessionSchema,
   setAppearanceSchema,
-  setTranscribeMeetingsSchema,
   stepUpBodySchema,
   updateProfileSchema,
 } from "@/modules/identity/contract/auth/schemas";
@@ -14,7 +13,6 @@ import {
   revokeSessionImpl,
   revokeAllOtherSessionsImpl,
   getDeletionPendingAccountImpl,
-  setTranscribeMeetingsImpl,
   setAppearanceImpl,
 } from "./account.server";
 
@@ -23,13 +21,6 @@ export const updateProfile = createServerFn({ method: "POST" })
   .validator(serverInput(updateProfileSchema))
   .handler(async ({ data, context }) => {
     return updateProfileImpl({ data, context });
-  });
-
-export const setTranscribeMeetings = createServerFn({ method: "POST" })
-  .middleware([authMiddleware])
-  .validator(serverInput(setTranscribeMeetingsSchema))
-  .handler(async ({ data, context }) => {
-    return setTranscribeMeetingsImpl({ data, context });
   });
 
 export const setAppearance = createServerFn({ method: "POST" })

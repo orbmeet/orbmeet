@@ -51,9 +51,12 @@ def time:
   | ($us / 1000000 | floor | strftime("%Y-%m-%dT%H:%M:%S"))
     + "." + (($us / 1000 | floor) % 1000 | tostring | "00\(.)" | .[-3:]) + "Z";
 
+# A log line's level, from pino's number or a name; null for a JSON value that
+# is not a log line (no level, or one of neither kind).
 def level_name:
   if type == "number" then (if . >= 50 then "error" elif . >= 40 then "warn" else "info" end)
-  else ascii_downcase end;
+  elif type == "string" then ascii_downcase
+  else null end;
 
 def failing: IN("error", "dpanic", "panic", "fatal");
 
@@ -62,14 +65,14 @@ def failing: IN("error", "dpanic", "panic", "fatal");
 def livekit_fields:
   {room, participant, error}
   | with_entries(select(.value != null))
-  | if .room then . + {meetingId: (.room | ltrimstr("meet-"))} else . end;
+  | if (.room | type) == "string" then . + {meetingId: (.room | ltrimstr("meet-"))} else . end;
 
 def container_event($service):
   message as $text
   | ($text | try fromjson catch null) as $line
-  | if ($line | type) == "object" then
-      ($line.level | level_name) as $level
-      | if $service == "livekit" then
+  | (if ($line | type) == "object" then $line.level | level_name else null end) as $level
+  | if $level != null then
+      if $service == "livekit" then
           select($level | failing)
           | {level: $level, msg: $line.msg} + ($line | livekit_fields)
         else

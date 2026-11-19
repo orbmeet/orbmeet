@@ -162,10 +162,6 @@ export function PlanSection({
             <p {...stylex.props(styles.limitValue)}>{limits.maxMembersPerSpace ?? "Unlimited"}</p>
           </div>
           <div>
-            <p {...stylex.props(styles.limitLabel)}>Active Whiteboards per Space</p>
-            <p {...stylex.props(styles.limitValue)}>{limits.maxWhiteboardsPerSpace}</p>
-          </div>
-          <div>
             <p {...stylex.props(styles.limitLabel)}>Personal links</p>
             <p {...stylex.props(styles.limitValue)}>Included</p>
           </div>

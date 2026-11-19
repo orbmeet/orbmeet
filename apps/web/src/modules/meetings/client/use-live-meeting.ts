@@ -81,6 +81,8 @@ export interface LiveMeetingState {
   recordingEnabled: boolean;
   meetingTitle: string | null;
   spaceName: string | null;
+  /** The Space's transcription default, when this participant may change it. */
+  spaceTranscription: { spaceId: string; on: boolean } | null;
   joinPolicy: "open" | "approval_required" | "closed";
   admissionPolicyPending: boolean;
   isEgress?: boolean;
@@ -583,6 +585,7 @@ export function useLiveMeeting(
     recordingEnabled: joinResult.recordingEnabled ?? false,
     meetingTitle: joinResult.meetingTitle,
     spaceName: joinResult.spaceName ?? null,
+    spaceTranscription: joinResult.spaceTranscription ?? null,
     joinPolicy,
     admissionPolicyPending,
 

@@ -28,6 +28,11 @@ export const updateSpaceSchema = v.object({
   }),
 });
 
+export const setSpaceTranscriptionSchema = v.object({
+  spaceId: idSchema,
+  on: v.boolean(),
+});
+
 export const addMemberByEmailSchema = v.object({
   spaceId: idSchema,
   email: emailSchema,

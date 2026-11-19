@@ -88,6 +88,10 @@
 #ifndef CELLRUN_UID_BASE
 #define CELLRUN_UID_BASE 2000
 #endif
+/* The uid a sweep signals from (see signal_slot). Nothing may run as it. */
+#ifndef CELLRUN_SWEEP_UID
+#define CELLRUN_SWEEP_UID 1999
+#endif
 
 #define CELLS_ROOT "/cells"
 #define LOCK_ROOT "/run/cellrun"
@@ -270,10 +274,19 @@ static void restore_signals(void) {
 }
 
 /*
- * SIGKILLs every process of the slot's uid. Sent from a child that has become
- * that uid, so the kernel's own permission check scopes `kill(-1)` to exactly
- * the slot: an unprivileged sender reaches only processes of its own uid, and
- * dropping to it cleared every capability that could reach further.
+ * SIGKILLs every process of the slot's uid. Sent from a child without
+ * capabilities, so the kernel's own permission check scopes `kill(-1)`: an
+ * unprivileged sender reaches a process only when the sender's real or
+ * effective uid is the target's real or saved uid.
+ *
+ * The child takes the slot's uid as its effective uid only, and the sweep uid,
+ * which nothing runs as, as its real and saved ones. So its `kill(-1)` reaches
+ * the slot's processes and nothing else, while no process of the slot can
+ * signal the child back: a snippet's every uid is the slot's, which is neither
+ * of the child's. Were the child the slot's uid through and through, a snippet
+ * looping on `kill(-1, SIGSTOP)` could stop it mid-sweep, leaving cellrun
+ * waiting on it for good, or kill it and fail the sweep. With no uid of 0
+ * left, the child holds no capability.
  *
  * kill(-1)'s result cannot say whether anything was signalled — it counts the
  * processes it had no permission for too — so `slot_alive` is what decides.
@@ -282,7 +295,10 @@ static int signal_slot(const struct slot *slot) {
   pid_t pid = fork();
   if (pid < 0) return -1;
   if (pid == 0) {
-    if (become(slot) != 0) _exit(1);
+    if (setgroups(0, NULL) != 0 || setresgid(slot->gid, slot->gid, slot->gid) != 0
+        || setresuid(CELLRUN_SWEEP_UID, slot->uid, CELLRUN_SWEEP_UID) != 0) {
+      _exit(1);
+    }
     kill(-1, SIGKILL);
     _exit(0);
   }

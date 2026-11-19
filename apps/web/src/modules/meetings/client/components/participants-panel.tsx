@@ -240,9 +240,9 @@ export interface PanelTranscriptionControls {
   onAsk: () => void;
   onTakeBack: () => void;
   /**
-   * The viewer's own default for meetings they start, when they are signed
-   * in. Flipping the switch to the other side of that default asks whether the
-   * change is for this meeting alone or for their future meetings too.
+   * The Space's default for its meetings, when the viewer is one of its
+   * admins. Flipping the switch to the other side of that default asks whether
+   * the change is for this meeting alone or for the Space's future meetings too.
    */
   future?: {
     on: boolean;
@@ -552,7 +552,7 @@ function TranscriptionCard({ transcription }: { transcription: PanelTranscriptio
           </p>
           {transcription.canChange && future && choosing === null && future.on !== on && (
             <p {...stylex.props(styles.lockNote)}>
-              Meetings you start still begin with it {future.on ? "on" : "off"}.{" "}
+              This Space&rsquo;s meetings still begin with it {future.on ? "on" : "off"}.{" "}
               <button
                 type="button"
                 disabled={future.pending}

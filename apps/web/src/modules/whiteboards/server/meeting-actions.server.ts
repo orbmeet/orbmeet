@@ -450,7 +450,6 @@ export async function addWhiteboardPageImpl({
   const { status, page } = await runSyncCommand(env, "pageAdd", {
     whiteboardRoomId,
     userId: callerIdentity.identity,
-    connectionId: callerIdentity.connectionId,
     afterPageNumber: data.afterPageNumber,
   });
   return { success: true, status, page };

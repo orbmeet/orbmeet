@@ -7,8 +7,6 @@ export interface SessionUser {
   email: string;
   image: string | null;
   timeZone: string | null;
-  /** Whether meetings this user starts begin with transcription on. */
-  transcribeMeetings: boolean;
   /** Light, dark, or the device's own setting. */
   appearance: (typeof APPEARANCES)[number];
   /** The person's own plan. An Organization's plan applies to its Spaces only. */

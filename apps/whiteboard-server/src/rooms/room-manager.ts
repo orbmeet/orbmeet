@@ -67,6 +67,8 @@ export class RoomManager {
   private static readonly MAX_ROOMS = 500;
   /** Room saves running at once; libuv's thread pool has four threads by default. */
   private static readonly SAVE_CONCURRENCY = 2;
+  /** How long a handoff refuses its generation: far longer than the Worker takes to record the move. */
+  private static readonly HANDOFF_FENCE_MS = 2 * 60_000;
   private readonly rooms = new Map<WhiteboardRoomId, Room>();
   /** Boards being deleted: their rooms take no new work and are never reopened. */
   private readonly purges = new Map<WhiteboardRoomId, Promise<SyncCommandResult<"purge">>>();
@@ -74,6 +76,16 @@ export class RoomManager {
   private readonly handoffs = new Map<WhiteboardRoomId, Promise<SyncCommandResult<"handoff">>>();
   /** Rooms being brought to a newer generation; they open once it lands. */
   private readonly preparing = new Map<WhiteboardRoomId, Promise<SyncCommandFailure | null>>();
+  /**
+   * Boards this node just handed off: the generation it handed each off at,
+   * and until when that refuses requests. The Worker records a move in D1
+   * only after the handoff answers, so in between a request at the handed-off
+   * generation still looks current to it, and must not reopen the board here
+   * from the copy just saved. Once D1 has the move, D1 refuses those requests
+   * itself; and if the Worker never records it, the board is still here at
+   * that generation, so the fence only has to outlast that one write.
+   */
+  private readonly handedOff = new Map<WhiteboardRoomId, { generation: number; until: number }>();
   /** The generation a board this node has no database for yet is created at. */
   private readonly newBoardGenerations = new Map<WhiteboardRoomId, number>();
   /** Each room's save in flight. A room is saved by at most one at a time. */
@@ -165,10 +177,14 @@ export class RoomManager {
    * the newest saved copy when this node's copy is older (or absent), and
    * refuse with `conflict` when it is newer, since the request was made for
    * a generation the board has moved on from. Null when the request may go
-   * ahead; with no generation, it always may.
+   * ahead; with no generation, it may unless this node handed the board off.
    */
   async prepare(whiteboardRoomId: WhiteboardRoomId, generation: number | undefined): Promise<SyncCommandFailure | null> {
-    if (generation === undefined) return null;
+    if (generation === undefined) {
+      return this.handedOffAt(whiteboardRoomId) === null
+        ? null
+        : syncCommandFailure("conflict", "This whiteboard has moved to another node");
+    }
     this.assertAcceptingWork();
     for (;;) {
       if (this.purges.has(whiteboardRoomId)) return syncCommandFailure("not_found", "This whiteboard is being deleted");
@@ -191,6 +207,12 @@ export class RoomManager {
 
   private async prepareNow(whiteboardRoomId: WhiteboardRoomId, generation: number): Promise<SyncCommandFailure | null> {
     const moved = () => syncCommandFailure("conflict", "This whiteboard has moved to another node");
+    const handedOff = this.handedOffAt(whiteboardRoomId);
+    if (handedOff !== null) {
+      if (generation <= handedOff) return moved();
+      // The board came back to this node at a newer generation.
+      this.handedOff.delete(whiteboardRoomId);
+    }
     const resident = this.rooms.get(whiteboardRoomId);
     if (resident) {
       const held = resident.document.generation;
@@ -217,6 +239,19 @@ export class RoomManager {
     } else {
       writeGenerationOnDisk(this.dataDir, whiteboardRoomId, generation);
     }
+    return null;
+  }
+
+  private fenceHandedOff(whiteboardRoomId: WhiteboardRoomId, generation: number): void {
+    this.handedOff.set(whiteboardRoomId, { generation, until: Date.now() + RoomManager.HANDOFF_FENCE_MS });
+  }
+
+  /** The generation this node just handed the board off at, while that still refuses requests. */
+  private handedOffAt(whiteboardRoomId: WhiteboardRoomId): number | null {
+    const fence = this.handedOff.get(whiteboardRoomId);
+    if (!fence) return null;
+    if (Date.now() < fence.until) return fence.generation;
+    this.handedOff.delete(whiteboardRoomId);
     return null;
   }
 
@@ -260,6 +295,7 @@ export class RoomManager {
       const held = room?.document.generation ?? roomGenerationOnDisk(this.dataDir, whiteboardRoomId);
       if (held === null) {
         forgetRoomCopy(this.dataDir, whiteboardRoomId);
+        if (generation !== undefined) this.fenceHandedOff(whiteboardRoomId, generation);
         return { ok: true, savedGeneration: null };
       }
       if (generation !== undefined && held > generation) {
@@ -279,6 +315,7 @@ export class RoomManager {
       this.assertAcceptingWork();
       removeRoomFiles(this.dataDir, whiteboardRoomId);
       forgetRoomCopy(this.dataDir, whiteboardRoomId);
+      this.fenceHandedOff(whiteboardRoomId, generation ?? held);
       return { ok: true, savedGeneration };
     })().finally(() => this.handoffs.delete(whiteboardRoomId));
     this.handoffs.set(whiteboardRoomId, handoff);
@@ -472,6 +509,7 @@ export class RoomManager {
     removeRoomFiles(this.dataDir, whiteboardRoomId);
     forgetRoomCopy(this.dataDir, whiteboardRoomId);
     this.newBoardGenerations.delete(whiteboardRoomId);
+    this.handedOff.delete(whiteboardRoomId);
     await deleteRoomCopies(this.options.objects, whiteboardRoomId);
     return { ok: true, status: "purged" };
   }

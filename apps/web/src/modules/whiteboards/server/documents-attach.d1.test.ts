@@ -390,11 +390,11 @@ describe("Meeting Whiteboard documents: opening and attaching", () => {
     expect(loser.meetingWhiteboardId).toBe(winner.meetingWhiteboardId);
   });
 
-  it("does not charge archived Whiteboards to the active-document plan limit", async () => {
+  it("creates Whiteboards with no per-Space count limit", async () => {
     const { db, now } = await seedMeeting();
     const rows = Array.from({ length: 100 }, (_, index) => ({
-      id: `whiteboard_limit_${index}`,
-      syncRoomId: `whiteboard_limit_${index}`,
+      id: `whiteboard_many_${index}`,
+      syncRoomId: `whiteboard_many_${index}`,
       spaceId: "user_host_space",
       title: `Board ${index}`,
       status: "active" as const,
@@ -407,23 +407,10 @@ describe("Meeting Whiteboard documents: opening and attaching", () => {
     }
     await expect(createSpaceWhiteboard(db, {
       spaceId: "user_host_space",
-      title: "Over the limit",
+      title: "Board 101",
       createdByUserId: "user_host",
-    })).rejects.toThrow(/100-Whiteboard limit/);
-
-    await db.update(whiteboards).set({
-      status: "archived",
-      archivedAt: now,
-      updatedAt: now,
-    }).where(eq(whiteboards.id, rows[0].id));
-
-    await expect(createSpaceWhiteboard(db, {
-      spaceId: "user_host_space",
-      title: "Replacement board",
-      createdByUserId: "user_host",
-    })).resolves.toMatchObject({ title: "Replacement board" });
+    })).resolves.toMatchObject({ title: "Board 101" });
     const allBoards = await db.select().from(whiteboards);
-    expect(allBoards.filter((board) => board.status === "active")).toHaveLength(100);
-    expect(allBoards.filter((board) => board.status === "archived")).toHaveLength(1);
+    expect(allBoards.filter((board) => board.status === "active")).toHaveLength(101);
   });
 });

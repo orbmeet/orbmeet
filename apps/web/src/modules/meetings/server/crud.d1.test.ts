@@ -128,7 +128,7 @@ spaceKind: "personal" as const,
     ).resolves.toMatchObject({ lastUsedAt: startedAt, updatedAt: startedAt });
   });
 
-  it("starts the meeting transcribing as its starter's account setting says", async () => {
+  it("starts the meeting transcribing as its Space's setting says, whoever starts it", async () => {
     await insertUser("host");
     const createdAt = new Date("2026-01-01T00:00:00.000Z");
     // One open meeting per link, and one reusable link per personal Space:
@@ -165,9 +165,10 @@ spaceKind: "personal" as const,
         maxConcurrentMeetings: null,
       });
 
-    // Nobody chose: meetings transcribe, as they always did.
-    await expect(start("MEETING_DEFAULT", "LINK_DEFAULT", new Date("2026-01-01T01:00:00.000Z"))).resolves.toBe(true);
+    // The starter's old account setting no longer decides anything.
     await db.update(users).set({ transcribeMeetings: false }).where(eq(users.id, "host"));
+    await expect(start("MEETING_DEFAULT", "LINK_DEFAULT", new Date("2026-01-01T01:00:00.000Z"))).resolves.toBe(true);
+    await db.update(spaces).set({ transcribeMeetings: false }).where(eq(spaces.id, "host_space"));
     await expect(start("MEETING_PRIVATE", "LINK_PRIVATE", new Date("2026-01-01T02:00:00.000Z"))).resolves.toBe(true);
 
     const started = await db.query.meetings.findMany({

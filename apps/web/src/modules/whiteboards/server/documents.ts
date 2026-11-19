@@ -17,7 +17,6 @@ import { getRunChanges, isUniqueConstraintError, withD1Retry } from "@/platform/
 import { logError } from "@/lib/logger";
 import { startWhiteboardPurge } from "./purge.server";
 import { runSerially } from "@/app/serial/serial";
-import { loadSpaceEntitlement } from "@/modules/billing/server/entitlements.server";
 import { connectionIsUnfinished } from "@/modules/meetings/server/connection/state";
 
 export interface MeetingWhiteboardDocument {
@@ -98,11 +97,10 @@ type DurableWhiteboardInsert = Pick<
 >;
 
 /**
- * The plan limit and insert are one D1 statement. Counting before a normal
- * insert would allow every concurrent creator to observe the same remaining
- * slot and permanently exceed the durable-document budget.
+ * Inserts an active durable Whiteboard, optionally gated on `onlyIf` and
+ * committed together with `alongside` statements in one D1 batch.
  */
-export async function insertDurableWhiteboardWithinLimit(
+export async function insertDurableWhiteboard(
   db: Database,
   input: DurableWhiteboardInsert,
   options: {
@@ -113,14 +111,13 @@ export async function insertDurableWhiteboardWithinLimit(
      */
     alongside?: () => BatchItem<"sqlite">[];
     /**
-     * A condition the board itself requires besides the Space's limit, and
-     * the refusal to throw when it is what kept the board out.
+     * A condition the board itself requires, and the refusal to throw when it
+     * is what kept the board out.
      */
     onlyIf?: { condition: SQL; refused: () => Error };
   } = {},
 ): Promise<void> {
   const { alongside = () => [], onlyIf } = options;
-  const entitlement = await loadSpaceEntitlement(db, input.spaceId);
   const createdAtSeconds = Math.floor((input.createdAt ?? new Date()).getTime() / 1000);
   const updatedAtSeconds = Math.floor((input.updatedAt ?? input.createdAt ?? new Date()).getTime() / 1000);
   const [result] = await withD1Retry(
@@ -134,12 +131,7 @@ export async function insertDurableWhiteboardWithinLimit(
           ${input.id}, ${input.syncRoomId}, ${input.syncNodeId ?? null}, ${input.syncGeneration ?? 0},
           ${input.spaceId}, ${input.title}, 'active', ${input.createdByUserId ?? null}, null,
           ${createdAtSeconds}, ${updatedAtSeconds}
-        where (
-          select count(*) from ${whiteboards}
-          where ${whiteboards.spaceId} = ${input.spaceId}
-            and ${whiteboards.status} = 'active'
-        ) < ${entitlement.limits.maxWhiteboardsPerSpace}
-          and ${onlyIf?.condition ?? sql`1`}
+        where ${onlyIf?.condition ?? sql`1`}
         on conflict(id) do nothing
       `),
       ...alongside(),
@@ -156,9 +148,7 @@ export async function insertDurableWhiteboardWithinLimit(
     const holds = await db.get<{ holds: number }>(sql`select ${onlyIf.condition} as holds`);
     if (!holds?.holds) throw onlyIf.refused();
   }
-  throw Errors.PLAN_LIMIT_REACHED(
-    `This Space has reached its ${entitlement.limits.maxWhiteboardsPerSpace}-Whiteboard limit`,
-  );
+  throw Errors.CONFLICT("A different Whiteboard already uses this id");
 }
 
 /**
@@ -381,7 +371,7 @@ export async function createMeetingWhiteboardDocument(
   const title = meetingWhiteboardTitle(meeting.title, now, namingTimeZone);
   // The board and its use in the Meeting commit together, both only while the
   // Meeting takes boards: a Meeting that closes in between gets neither.
-  await insertDurableWhiteboardWithinLimit(db, {
+  await insertDurableWhiteboard(db, {
     id: whiteboardId,
     syncRoomId: whiteboardId,
     spaceId: meeting.spaceId,
@@ -609,7 +599,7 @@ export async function createSpaceWhiteboard(
   const now = new Date();
   const title = input.title.trim().slice(0, 200);
   if (!title) throw Errors.VALIDATION("A Whiteboard needs a name");
-  await insertDurableWhiteboardWithinLimit(db, {
+  await insertDurableWhiteboard(db, {
       id: whiteboardId,
       syncRoomId: whiteboardId,
       spaceId: input.spaceId,

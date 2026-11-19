@@ -63,17 +63,7 @@ export async function verifyOtpImpl({ data }: { data: v.InferOutput<typeof otpVe
   const absoluteExpiresAtSeconds = Math.floor(absoluteExpiresAt.getTime() / 1000);
   const passkeyGrant = await preparePasskeyRegistrationGrant(userId, sessionId, now);
   const passkeyGrantExpiresAtSeconds = Math.floor(passkeyGrant.expiresAt.getTime() / 1000);
-  const userRecord: typeof users.$inferInsert = {
-    id: userId,
-    email: flow.data.recipientEmail,
-    normalizedEmail: flow.data.normalizedEmail,
-    name: flow.data.name,
-    image: null,
-    role: "user",
-    createdAt: now,
-    updatedAt: now,
-  };
-
+  let createdUser: typeof users.$inferSelect;
   try {
     const flowExists = emailAuthFlowLiveSql(flow, now);
     const insertUser = db.insert(users).select(
@@ -90,7 +80,7 @@ export async function verifyOtpImpl({ data }: { data: v.InferOutput<typeof otpVe
         })
         .from(sql`(select 1)`)
         .where(flowExists),
-    );
+    ).returning();
     const insertSession = db.insert(sessions).select(
       db
         .select({
@@ -136,20 +126,23 @@ export async function verifyOtpImpl({ data }: { data: v.InferOutput<typeof otpVe
           ),
         ),
     );
-    const [userInsertResult, sessionInsertResult, passkeyGrantInsertResult] = await db.batch([
+    const [insertedUsers, sessionInsertResult, passkeyGrantInsertResult] = await db.batch([
       insertUser,
       insertSession,
       insertPasskeyGrant,
       consumeEmailAuthFlowStatement(db, flow, now),
       enforceSessionCapStatement(db, userId),
     ]);
+    const [insertedUser] = insertedUsers;
     if (
-      getRunChanges(userInsertResult) !== 1 ||
+      !insertedUser ||
       getRunChanges(sessionInsertResult) !== 1 ||
       getRunChanges(passkeyGrantInsertResult) !== 1
     ) {
       throw createValidationError("Invalid or expired code.");
     }
+    // The row as stored, with the columns the insert leaves to their defaults.
+    createdUser = insertedUser;
   } catch (error) {
     if (isUniqueConstraintError(error)) {
       throw createValidationError(
@@ -169,7 +162,7 @@ export async function verifyOtpImpl({ data }: { data: v.InferOutput<typeof otpVe
   ]);
   return {
     // A new account has no subscriptions yet.
-    user: sanitizeUser(userRecord as typeof users.$inferSelect, FREE_USER_BILLING),
+    user: sanitizeUser(createdUser, FREE_USER_BILLING),
     passkeyRegistrationGrant: passkeyGrant.token,
   };
 }

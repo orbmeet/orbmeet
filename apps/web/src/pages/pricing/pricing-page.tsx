@@ -176,10 +176,6 @@ const FEATURES: FeatureRow[] = [
     },
   },
   {
-    label: "Active Whiteboards per Space",
-    getValue: (plan) => getPlanLimits(plan).maxWhiteboardsPerSpace,
-  },
-  {
     label: "Whiteboard restore points",
     getValue: (plan) => getPlanLimits(plan).maxWhiteboardRestorePointsPerBoard,
   },

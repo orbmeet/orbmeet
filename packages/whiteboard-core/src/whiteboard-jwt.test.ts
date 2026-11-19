@@ -24,6 +24,18 @@ async function makeToken(
   return createWhiteboardJWT(KEYRING, { ...BASE_PAYLOAD, ...overrides }, expiresInSeconds);
 }
 
+/** A token signed with the right key carrying `name` as given, as an issuer other than ours could. */
+async function signedWithName(name: string): Promise<string> {
+  const b64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const enc = new TextEncoder();
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64(enc.encode(JSON.stringify({ alg: "HS256", typ: "JWT", kid: KID })));
+  const payload = b64(enc.encode(JSON.stringify({ ...BASE_PAYLOAD, name, iss: "orbmeet", aud: "whiteboard", iat: now, exp: now + 3600 })));
+  const key = await crypto.subtle.importKey("raw", enc.encode(SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = await crypto.subtle.sign("HMAC", key, enc.encode(`${header}.${payload}`));
+  return `${header}.${payload}.${b64(new Uint8Array(signature))}`;
+}
+
 describe("identity claims must be distinguishable principals", () => {
   it("rejects an empty sub", async () => {
     await expect(verifyWhiteboardJWT(await makeToken({ sub: "" }), KEYRING)).rejects.toThrow(
@@ -235,18 +247,30 @@ describe("createWhiteboardJWT / verifyWhiteboardJWT", () => {
   });
 
   it("rejects a name with control characters", async () => {
-    const token = await makeToken({ name: "Alice\x01Evil" });
-    await expect(verifyWhiteboardJWT(token, KEYRING)).rejects.toThrow("invalid characters");
+    await expect(verifyWhiteboardJWT(await signedWithName("Alice\x01Evil"), KEYRING)).rejects.toThrow("invalid characters");
   });
 
   it("rejects a name with C1 control characters", async () => {
-    const token = await makeToken({ name: "Alice\u0085Evil" });
-    await expect(verifyWhiteboardJWT(token, KEYRING)).rejects.toThrow("invalid characters");
+    await expect(verifyWhiteboardJWT(await signedWithName("Alice\u0085Evil"), KEYRING)).rejects.toThrow("invalid characters");
   });
 
   it("rejects a name exceeding 256 characters", async () => {
-    const token = await makeToken({ name: "A".repeat(257) });
-    await expect(verifyWhiteboardJWT(token, KEYRING)).rejects.toThrow("invalid characters or is too long");
+    await expect(verifyWhiteboardJWT(await signedWithName("A".repeat(257)), KEYRING))
+      .rejects.toThrow("invalid characters or is too long");
+  });
+
+  it("issues only names its verifier accepts, whatever name it is given", async () => {
+    // Stored names reach the issuer as they are: a tab pasted into a profile,
+    // or a mis-decoded apostrophe (U+0092).
+    for (const [given, issued] of [
+      ["Alice\tSmith", "AliceSmith"],
+      ["O\u0092Brien", "OBrien"],
+      ["A".repeat(300), "A".repeat(256)],
+      [`${"A".repeat(255)}😀`, "A".repeat(255)],
+    ]) {
+      const claims = await verifyWhiteboardJWT(await makeToken({ name: given }), KEYRING);
+      expect(claims.name).toBe(issued);
+    }
   });
 
   it("bounds identity and service claims", async () => {

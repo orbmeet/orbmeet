@@ -8,7 +8,7 @@ export function sanitizeDisplayName(
 ): string {
   const sanitized = raw
     .replace(/<[^>]*>/g, "") // Strip HTML tags
-    .replace(/[\x00-\x1F\x7F\u00AD\u061C\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, "") // Strip control + bidi/invisible format chars
+    .replace(/[\x00-\x1F\x7F-\x9F\u00AD\u061C\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, "") // Strip C0/C1 control + bidi/invisible format chars
     .replace(/\s+/g, " ") // Normalize whitespace
     .trim();
   // Truncate Unicode code points without materializing another full-size array.

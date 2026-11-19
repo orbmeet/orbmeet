@@ -167,12 +167,17 @@ export async function handleMathInkRequest(request: Request, env: Env): Promise<
 }
 
 /** Public-route boundary: recognition spends vendor quota, so it requires the
- * same live whiteboard bearer used by the other whiteboard-origin proxies. */
+ * same live whiteboard bearer used by the other whiteboard-origin proxies, and,
+ * as recognized ink is placed on the board, edit access to it — resolved from
+ * D1 with grants applied, so a revoked grant takes effect at once. */
 export async function handleAuthenticatedMathInkRequest(
   request: Request,
   env: Env,
 ): Promise<Response> {
   const auth = await verifyActiveWhiteboardBearer(request, env, createDb(env.DB));
   if (auth instanceof Response) return auth;
+  if (!auth.access.canEditWhiteboard) {
+    return new Response("Whiteboard edit access is required", { status: 403 });
+  }
   return handleMathInkRequest(request, env);
 }

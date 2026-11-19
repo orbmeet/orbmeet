@@ -178,6 +178,7 @@ export function SpaceDetailPage({ spaceSlug, spaceId, tab }: SpaceDetailPageProp
               name={space.name}
               description={space.description}
               timeZone={space.timeZone}
+              transcribeMeetings={space.transcribeMeetings}
               organizationName={space.organizationName}
               canDelete={capabilities.canDelete}
             />

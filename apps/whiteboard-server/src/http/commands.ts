@@ -56,7 +56,9 @@ export async function dispatchSyncCommand<C extends SyncCommandName>(
 ): Promise<AnyResult> {
   const request = parseSyncCommandRequest(name, body);
   if (isFailure(request)) return request;
-  if ("generation" in request && request.generation !== undefined && !UNPREPARED.has(name)) {
+  // With or without a generation: one without is still refused for a board
+  // this node has just handed off, rather than reopened here.
+  if ("whiteboardRoomId" in request && !UNPREPARED.has(name)) {
     const failure = await roomManager.prepare(request.whiteboardRoomId, request.generation);
     if (failure) return failure;
   }

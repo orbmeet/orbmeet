@@ -56,7 +56,9 @@ export const queryKeys = {
     // navigation away lands. `scope(id)` is the opposite: the prefix that owns
     // every membership-gated branch, so eviction can drop them in one call.
     all: () => ["spaces", "list"] as const,
-    bySlug: (slug: string) => ["spaces", "slug", slug] as const,
+    /** Every slug-keyed Space payload: what a change to a Space whose slug is not at hand invalidates. */
+    slugs: () => ["spaces", "slug"] as const,
+    bySlug: (slug: string) => [...queryKeys.spaces.slugs(), slug] as const,
     scope: (id: string) => ["spaces", id] as const,
     detail: (id: string) => ["spaces", id, "detail"] as const,
     members: (id: string) => ["spaces", id, "members"] as const,
@@ -66,6 +68,8 @@ export const queryKeys = {
     invite: (id: string) => ["spaces", id, "invite"] as const,
     invitePreview: (token: string) => ["spaces", "invite-preview", token] as const,
     audit: (id: string) => ["spaces", id, "audit"] as const,
+    /** The viewer's personal Space's transcription default, edited from Settings. */
+    personalTranscription: () => ["spaces", "personal", "transcription"] as const,
   },
   organizations: {
     all: () => ["organizations"] as const,

@@ -22,7 +22,6 @@ vi.mock("@/modules/whiteboards/server/board-placement.server", () => ({
   placeBoard: vi.fn(async (_db: unknown, _env: unknown, syncRoomId: string) =>
     placement.missing.has(syncRoomId) ? null : { node: placement.node, generation: 4 }),
   nodeForNewBoard: vi.fn(async () => placement.node),
-  liveWhiteboardNodes: vi.fn(async () => [placement.node]),
 }));
 
 // The cookie helper transitively imports the web app's auth helpers (which reach
@@ -229,7 +228,6 @@ describe("sync command channel", () => {
       runSyncCommand(env, "pageAdd", {
         whiteboardRoomId: toWhiteboardRoomId("room_1"),
         userId: "usr_1",
-        connectionId: "conn_1",
       }),
     ).rejects.toMatchObject({ statusCode: 409, code: "CONFLICT" });
   });

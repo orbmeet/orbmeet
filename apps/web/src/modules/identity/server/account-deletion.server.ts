@@ -24,6 +24,7 @@ import {
   consumeR2CleanupOperation,
   createR2CleanupBudget,
   deleteR2Prefix,
+  enqueueR2ObjectCleanup,
   referencedWhiteboardAssetKeys,
   type R2CleanupBudget,
 } from "@/modules/assets/server/r2-cleanup.server";
@@ -67,35 +68,56 @@ async function deleteR2Keys(
   }
 }
 
+/** The meetings and personal boards an account's deletion removes. */
+export interface AccountStorageScope {
+  meetingIds: string[];
+  whiteboardIds: string[];
+}
+
 /**
- * Delete all R2 data that account deletion intentionally removes while the
- * relational ownership metadata still exists. Any failure aborts account
- * deletion so a later attempt can discover and retry every object.
+ * What an account's deletion removes from storage. Read once, before any of
+ * it is deleted, and kept by the caller: the cleanup deletes the rows it is
+ * read from, so a retry that read it again would find nothing, and leave the
+ * boards' rooms and every late upload behind.
  */
-export async function cleanupAccountR2Objects(
+export async function loadAccountStorageScope(
   db: Database,
-  env: Pick<Env, "R2_BUCKET">,
-  userId: string,
-  scope: { meetingLinkIds: string[]; personalSpaceId: string | null },
-): Promise<{ meetingIds: string[]; whiteboardIds: string[] }> {
-  const { meetingLinkIds, personalSpaceId } = scope;
+  { meetingLinkIds, personalSpaceId }: { meetingLinkIds: string[]; personalSpaceId: string | null },
+): Promise<AccountStorageScope> {
   const accountMeetings = await loadAccountMeetings(db, meetingLinkIds);
-  const meetingIds = accountMeetings.map((meeting) => meeting.id);
-  const artifactKeys = new Set<string>();
   const personalWhiteboards = personalSpaceId
     ? await db
         .select({ id: whiteboards.id })
         .from(whiteboards)
         .where(eq(whiteboards.spaceId, personalSpaceId))
     : [];
-  if (personalWhiteboards.length > 0 && personalSpaceId) {
-    const usageLookups = boundedStatements(personalWhiteboards.map((board) => board.id), (whiteboardIds) =>
+  return {
+    meetingIds: accountMeetings.map((meeting) => meeting.id),
+    whiteboardIds: personalWhiteboards.map((board) => board.id),
+  };
+}
+
+/**
+ * Delete all R2 data that account deletion intentionally removes while the
+ * relational ownership metadata still exists, then the meetings and personal
+ * boards of `scope`. Any failure aborts account deletion so a later attempt
+ * can retry; it is given the same scope, and every part repeats safely.
+ */
+export async function cleanupAccountR2Objects(
+  db: Database,
+  env: Pick<Env, "R2_BUCKET">,
+  userId: string,
+  { meetingIds, whiteboardIds, personalSpaceId }: AccountStorageScope & { personalSpaceId: string | null },
+): Promise<void> {
+  const artifactKeys = new Set<string>();
+  if (whiteboardIds.length > 0 && personalSpaceId) {
+    const usageLookups = boundedStatements(whiteboardIds, (ids) =>
       db
         .select({ id: meetingWhiteboards.id })
         .from(meetingWhiteboards)
         .innerJoin(meetings, eq(meetings.id, meetingWhiteboards.meetingId))
         .where(and(
-          inArray(meetingWhiteboards.whiteboardId, whiteboardIds),
+          inArray(meetingWhiteboards.whiteboardId, ids),
           ne(meetings.spaceId, personalSpaceId),
         ))
         .limit(1));
@@ -141,7 +163,7 @@ export async function cleanupAccountR2Objects(
   // budget to the account being deleted so several meetings cannot exhaust the
   // fixed maintenance-job default before cleanup reaches their namespaces.
   const prefixCount =
-    (meetingIds.length + personalWhiteboards.length) * 2;
+    (meetingIds.length + whiteboardIds.length) * 2;
   const keyDeleteCount = Math.ceil(artifactKeys.size / R2_DELETE_BATCH_SIZE);
   const r2Budget = createR2CleanupBudget(
     Math.max(16, keyDeleteCount + prefixCount * 2),
@@ -151,11 +173,11 @@ export async function cleanupAccountR2Objects(
     await deleteR2Prefix(db, env.R2_BUCKET, meetingPrefix(meetingId), r2Budget);
     await deleteR2Prefix(db, env.R2_BUCKET, internalMeetingPrefix(meetingId), r2Budget);
   }
-  for (const whiteboard of personalWhiteboards) {
+  for (const whiteboardId of whiteboardIds) {
     await deleteR2Prefix(
       db,
       env.R2_BUCKET,
-      internalWhiteboardPrefix(whiteboard.id),
+      internalWhiteboardPrefix(whiteboardId),
       r2Budget,
     );
     const retainedAssets = await db
@@ -163,13 +185,13 @@ export async function cleanupAccountR2Objects(
       .from(whiteboardAssetReferences)
       .innerJoin(whiteboards, eq(whiteboards.id, whiteboardAssetReferences.whiteboardId))
       .where(and(
-        eq(whiteboardAssetReferences.sourceWhiteboardId, whiteboard.id),
+        eq(whiteboardAssetReferences.sourceWhiteboardId, whiteboardId),
         ne(whiteboards.spaceId, personalSpaceId!),
       ));
     await deleteR2Prefix(
       db,
       env.R2_BUCKET,
-      whiteboardPrefix(whiteboard.id),
+      whiteboardPrefix(whiteboardId),
       r2Budget,
       new Set(retainedAssets.map((asset) => asset.r2Key)),
     );
@@ -183,11 +205,21 @@ export async function cleanupAccountR2Objects(
     db.delete(meetingArtifacts).where(inArray(meetingArtifacts.meetingId, ids)))) {
     await withD1Retry(() => deletion, { idempotent: true });
   }
+  // What the boards borrowed from other boards is queued before their
+  // outgoing references go with them: the source board may be gone already,
+  // leaving these the object's last owners. The queue rechecks every owner.
+  for (const lookup of boundedStatements(whiteboardIds, (ids) =>
+    db
+      .select({ r2Key: whiteboardAssetReferences.r2Key })
+      .from(whiteboardAssetReferences)
+      .where(inArray(whiteboardAssetReferences.whiteboardId, ids)))) {
+    await enqueueR2ObjectCleanup(db, (await lookup).map((row) => row.r2Key));
+  }
   if (personalSpaceId) {
-    await withD1Retry(
-      () => db.delete(whiteboards).where(eq(whiteboards.spaceId, personalSpaceId)),
-      { idempotent: true },
-    );
+    for (const deletion of boundedStatements(whiteboardIds, (ids) =>
+      db.delete(whiteboards).where(and(inArray(whiteboards.id, ids), eq(whiteboards.spaceId, personalSpaceId))))) {
+      await withD1Retry(() => deletion, { idempotent: true });
+    }
   }
   // Meeting links are origin lineage, not history owners. Remove the Meetings
   // explicitly after their objects are gone; the caller may delete the now-
@@ -195,10 +227,6 @@ export async function cleanupAccountR2Objects(
   for (const deletion of boundedStatements(meetingIds, (ids) => db.delete(meetings).where(inArray(meetings.id, ids)))) {
     await withD1Retry(() => deletion, { idempotent: true });
   }
-  return {
-    meetingIds,
-    whiteboardIds: personalWhiteboards.map((whiteboard) => whiteboard.id),
-  };
 }
 
 /**

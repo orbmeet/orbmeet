@@ -96,13 +96,17 @@ export function meetingRecordingsPrefix(meetingId: string): string {
   return `meetings/${segment(meetingId, "meetingId")}/recordings/`;
 }
 
-/** The meeting a recording's key belongs to, or null for any other key. */
+/**
+ * The meeting a recording's key belongs to, or null for any other key.
+ * Recordings are MP4 files (`RECORDING_FILE_TEMPLATE`); anything else under
+ * the prefix, such as a manifest LiveKit writes beside one, is not a recording.
+ */
 export function meetingIdOfRecordingKey(r2Key: string): string | null {
   const [root, meetingId, kind, name, ...rest] = r2Key.split("/");
   if (root !== "meetings" || kind !== "recordings" || rest.length > 0) return null;
   const safe = (value: string | undefined): value is string =>
     value !== undefined && value !== "." && value !== ".." && SAFE_SEGMENT.test(value);
-  return safe(meetingId) && safe(name) ? meetingId : null;
+  return safe(meetingId) && safe(name) && name.endsWith(".mp4") ? meetingId : null;
 }
 
 function meetingWhiteboardHandoutsPrefix(meetingId: string): string {
@@ -169,7 +173,7 @@ export function isMeetingArtifactR2Key(
 ): boolean {
   switch (type) {
     case "recording":
-      return r2Key.startsWith(meetingRecordingsPrefix(ids.meetingId));
+      return meetingIdOfRecordingKey(r2Key) === ids.meetingId;
     case "whiteboard_pdf":
       return isMeetingWhiteboardHandoutKey(ids.meetingId, r2Key);
   }

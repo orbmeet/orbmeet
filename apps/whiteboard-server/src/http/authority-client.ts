@@ -1,5 +1,5 @@
 import type { Keyring } from "@orbmeet/primitives";
-import { postSignedJson } from "./app-client.ts";
+import { postToApp } from "./app-client.ts";
 import {
   MAX_AUTHORITY_CLAIMS,
   ROOM_AUTHORITY_PATH,
@@ -44,7 +44,7 @@ export function createAuthorityClient(options: {
       ? { whiteboardRoomId, claims }
       : { whiteboardRoomId, generation, claims };
     try {
-      const response = await postSignedJson(url, body, options.keyring, AUTHORITY_TIMEOUT_MS, send);
+      const response = await postToApp(url, body, options.keyring, AUTHORITY_TIMEOUT_MS, send);
       if (!response.ok) {
         logWarn(`[authority] ${whiteboardRoomId}: Worker answered ${response.status}`);
         return "unavailable";
