@@ -68,7 +68,7 @@ class Projected {
       displayName: subject.kind === "user" ? subject.userId : "Guest", captionLanguage: "en-US",
       replacesAttemptId: null, newAdmissionId: `admission_${this.seq}`, newAttemptId: `connection_${this.seq}`,
       newGuestSecretHash: subject.kind === "guest" ? "hash".repeat(16) : null,
-      guestNetworkKey: null,
+      placement: null, guestNetworkKey: null,
     });
   }
 }

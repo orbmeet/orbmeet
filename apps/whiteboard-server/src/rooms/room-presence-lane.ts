@@ -25,6 +25,8 @@ interface PresenceLaneHost {
   reserveFanout(userId: string, bytes: number): boolean;
   /** Ask a session to change its presence once, so the lane can forward it whole. */
   requestResync(tldrawSessionId: string): void;
+  /** Evict a session whose presence record has grown past the retained ceiling. */
+  evictOversized(tldrawSessionId: string, userId: string, bytes: number): void;
 }
 
 interface SessionPresence {
@@ -41,7 +43,7 @@ interface SessionPresence {
  */
 const RESYNC_DELAY_MS = 1_000;
 
-const { MAX_PRESENCE_MESSAGE_BYTES } = WHITEBOARD_CONFIG;
+const { MAX_PRESENCE_MESSAGE_BYTES, MAX_RETAINED_PRESENCE_BYTES } = WHITEBOARD_CONFIG;
 
 /**
  * The room's presence traffic, kept in step with what each client believes
@@ -78,6 +80,16 @@ export class RoomPresenceLane {
     session.believed = op[0] === "put"
       ? op[1]
       : session.believed && applyObjectDiff(session.believed, op[1]);
+    // What the client believes it pushed is held here whether or not any of
+    // it is forwarded, so it is bounded here too, by the same ceiling as the
+    // record the room retains: past it the session is evicted, and its client
+    // starts again from fresh presence when it reconnects.
+    const believedBytes = session.believed ? byteLength(["put", session.believed]) : 0;
+    if (believedBytes > MAX_RETAINED_PRESENCE_BYTES) {
+      this.deleteSession(tldrawSessionId);
+      this.host.evictOversized(tldrawSessionId, userId, believedBytes);
+      return null;
+    }
 
     // In step, the operation itself; out of step, the whole record. Without a
     // record to send (a patch before any put), only an in-step patch can go.

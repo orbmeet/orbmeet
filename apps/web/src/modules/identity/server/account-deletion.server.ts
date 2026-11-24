@@ -215,17 +215,21 @@ export async function cleanupAccountR2Objects(
       .where(inArray(whiteboardAssetReferences.whiteboardId, ids)))) {
     await enqueueR2ObjectCleanup(db, (await lookup).map((row) => row.r2Key));
   }
+  // Meeting links are origin lineage, not history owners. Remove the Meetings
+  // explicitly after their objects are gone; the caller may delete the now-
+  // unreferenced personal Links afterward without relying on an FK cascade.
+  // The Meetings go before the boards: a Meeting's uses of a board
+  // (meeting_whiteboards) cascade with the Meeting but RESTRICT the board's
+  // own deletion, so a board shown in a personal Meeting can only be deleted
+  // once that Meeting is.
+  for (const deletion of boundedStatements(meetingIds, (ids) => db.delete(meetings).where(inArray(meetings.id, ids)))) {
+    await withD1Retry(() => deletion, { idempotent: true });
+  }
   if (personalSpaceId) {
     for (const deletion of boundedStatements(whiteboardIds, (ids) =>
       db.delete(whiteboards).where(and(inArray(whiteboards.id, ids), eq(whiteboards.spaceId, personalSpaceId))))) {
       await withD1Retry(() => deletion, { idempotent: true });
     }
-  }
-  // Meeting links are origin lineage, not history owners. Remove the Meetings
-  // explicitly after their objects are gone; the caller may delete the now-
-  // unreferenced personal Links afterward without relying on an FK cascade.
-  for (const deletion of boundedStatements(meetingIds, (ids) => db.delete(meetings).where(inArray(meetings.id, ids)))) {
-    await withD1Retry(() => deletion, { idempotent: true });
   }
 }
 

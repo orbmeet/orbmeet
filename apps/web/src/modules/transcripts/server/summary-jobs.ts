@@ -73,11 +73,12 @@ export async function summarizeMeeting(
         // superseded request, or one already settled, from spending a model
         // run per retry.
         if ((await owedRevision(db, request)) === null) return { kind: "superseded" as const };
-        const result = await generateMeetingSummaryForMeeting(db, env, input.meetingId);
+        const result = await generateMeetingSummaryForMeeting(db, env, request);
         if (result.summary || result.error === undefined) return { kind: "generated" as const };
         if (isSkipReason(result.error)) return { kind: "skipped" as const, reason: result.error };
-        // The meeting is no longer ended: whatever owes it a Summary now is newer.
-        if (result.error === "meeting_not_ended") return { kind: "superseded" as const };
+        // The meeting is no longer ended, or a newer request came while the
+        // model ran: whatever owes it a Summary now is newer, and writes it.
+        if (result.error === "meeting_not_ended" || result.error === "superseded") return { kind: "superseded" as const };
         // A model failure or a transcript still changing is retried.
         throw new Error(result.error);
       });

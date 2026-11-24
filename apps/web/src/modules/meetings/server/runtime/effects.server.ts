@@ -27,7 +27,7 @@ import { finalizeMeetingEnd } from "../lifecycle/finalize";
 import { isSummaryGenerationConfigured } from "../history/summary-generation-policy";
 import { startMeetingFollowUp, startMeetingWhiteboardCapture } from "../lifecycle/follow-up.server";
 import { ROOM_COMPOSITE_EGRESS_PRESET } from "../media/egress-media-policy.server";
-import { isLiveKitMissingError, zeroPermissionsAndRemoveParticipant } from "../media/livekit-removal";
+import { isLiveKitEgressOverError, isLiveKitMissingError, zeroPermissionsAndRemoveParticipant } from "../media/livekit-removal";
 import type { MeetingState, ParticipantGrant, Placement } from "./model";
 import type { Effect, EffectSucceeded, ObservedEgress } from "./protocol";
 import { spaceRoleFor } from "./client.server";
@@ -148,7 +148,8 @@ export async function executeEffect(
         await createEgressClient(node(effect.placement)).stopEgress(effect.egressId);
         return { kind: "egressStopped", placement: effect.placement, egressId: effect.egressId, missing: false };
       } catch (error) {
-        if (!isLiveKitMissingError(error)) throw error;
+        // Gone, or over on its own: either way nothing is left to stop.
+        if (!isLiveKitMissingError(error) && !isLiveKitEgressOverError(error)) throw error;
         return { kind: "egressStopped", placement: effect.placement, egressId: effect.egressId, missing: true };
       }
 

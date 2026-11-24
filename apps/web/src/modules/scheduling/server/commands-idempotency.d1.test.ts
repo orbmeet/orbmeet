@@ -317,6 +317,46 @@ describe("Scheduled meeting commands: idempotency and revisions", () => {
   });
 
 
+  it("does not replay a Space schedule to an organizer who has left the Space, nor once it is archived", async () => {
+    pinClock();
+    await db.insert(spaces).values({
+      kind: "shared",
+      id: "spc_left",
+      name: "Left behind",
+      ownerUserId: "usr_maruf",
+      slug: "left-behind",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(spaceMembers).values([
+      { id: "spm_left_owner", spaceId: "spc_left", userId: "usr_maruf", role: "admin", joinedAt: now },
+      { id: "spm_left_organizer", spaceId: "spc_left", userId: organizer.id, role: "admin", joinedAt: now },
+    ]);
+    const input = {
+      startsAt: "2026-07-16T09:00:00.000Z",
+      durationMinutes: 30,
+      timeZone: "UTC",
+      spaceId: "spc_left",
+      attendees: [],
+      joinPolicy: "open" as const,
+      idempotencyKey: "agent-request-left",
+    };
+    await createMeetingScheduleForUser(db, organizer, input);
+
+    // Removed, then the Space replaces its join code: the replay must not
+    // hand the departed organizer the new one.
+    await db.delete(spaceMembers).where(eq(spaceMembers.id, "spm_left_organizer"));
+    await expect(createMeetingScheduleForUser(db, organizer, input)).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    // Still a member, but the Space is archived.
+    await db.insert(spaceMembers).values({
+      id: "spm_left_organizer_again", spaceId: "spc_left", userId: organizer.id, role: "admin", joinedAt: now,
+    });
+    await db.update(spaces).set({ archivedAt: now }).where(eq(spaces.id, "spc_left"));
+    await expect(createMeetingScheduleForUser(db, organizer, input)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(db.select().from(meetingSchedules)).resolves.toHaveLength(1);
+  });
+
   it("commits only the winning mutation and its notification", async () => {
     const created = await createFixture(db);
     const mutationTime = new Date("2026-07-14T10:00:00.000Z");

@@ -170,15 +170,12 @@ export async function shipJournalBatch(
 ): Promise<ShipResult> {
   const now = options.now ?? Date.now;
   let delivered = 0;
-  /** Meetings the app throttled during this pass, and until when. */
-  const throttled = new Map<string, number>();
+  /** Meetings the app throttled during this pass. */
+  const throttled = new Set<string>();
   const ship = async (rows: JournalRow[]): Promise<"ok" | "unavailable"> => {
     const { meetingId } = rows[0].payload;
-    const waitUntil = throttled.get(meetingId);
-    if (waitUntil !== undefined) {
-      journal.defer(rows.map((row) => row.id), waitUntil);
-      return "ok";
-    }
+    // Its rows are deferred already, these with them.
+    if (throttled.has(meetingId)) return "ok";
     const outcome = await deliver(payloadFor(rows));
     switch (outcome.kind) {
       case "committed":
@@ -195,9 +192,8 @@ export async function shipJournalBatch(
         journal.reject([rows[0].id], outcome.reason);
         return "ok";
       case "throttled": {
-        const until = now() + outcome.retryAfterMs;
-        throttled.set(meetingId, until);
-        journal.defer(rows.map((row) => row.id), until);
+        throttled.add(meetingId);
+        journal.deferMeeting(meetingId, now() + outcome.retryAfterMs);
         logWarn("Transcript ingest throttled a meeting; its rows wait", {
           meetingId,
           retryAfterMs: outcome.retryAfterMs,

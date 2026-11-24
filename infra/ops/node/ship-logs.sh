@@ -13,7 +13,7 @@ set -euo pipefail
 source /etc/orbmeet/host.env
 state=/var/lib/orbmeet/ship-logs
 install -d -m 700 "$state"
-trap 'rm -f "$state/entries" "$state/batch" "$state/cursor.new"' EXIT
+trap 'rm -f "$state/entries" "$state/chunk" "$state/batch" "$state/cursor.new" "$state/auth"' EXIT
 
 if [[ -s $state/cursor ]]; then
   from=(--after-cursor="$(<"$state/cursor")")
@@ -44,31 +44,70 @@ if [[ -n $held ]]; then
   mv "$state/entries.held" "$state/entries"
 fi
 
-jq -nc --arg node "$NODE" -f /usr/local/lib/orbmeet/ship-logs.jq "$state/entries" > "$state/batch"
-
-# The health check's latest result in this run's entries: PASS or FAIL, with its line.
-latest=$(jq -r 'select(.SYSLOG_IDENTIFIER == "orbmeet-health" and (.MESSAGE | type) == "string")
-  | .MESSAGE | select(startswith("PASS") or startswith("FAIL"))' "$state/entries" | tail -n 1)
+# The health check's latest result in this run's entries: its PASS or FAIL
+# line, or systemd's word that it did not finish. A check killed at its
+# timeout (Docker hanging) or dying before it could say why prints nothing of
+# its own, and must not read as the last PASS.
+latest=$(jq -r '
+  if .SYSLOG_IDENTIFIER == "orbmeet-health" and (.MESSAGE | type) == "string"
+    and (.MESSAGE | startswith("PASS") or startswith("FAIL")) then .MESSAGE
+  elif .UNIT == "orbmeet-health.service" and (.MESSAGE | type) == "string"
+    and (.MESSAGE | test("Failed with result")) then
+    "FAIL readiness: the check did not finish (" + (.MESSAGE | capture("result .(?<why>[a-z-]+).") .why) + ")"
+  else empty end' "$state/entries" | tail -n 1)
 previous=$(cat "$state/health" 2>/dev/null || echo PASS)
 health=${latest%% *}
 health=${health:-$previous}
 # Seconds are enough for a heartbeat, and this format is the same in GNU and BSD date.
 now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-if [[ $health != "$previous" ]]; then
-  jq -nc --arg node "$NODE" --arg time "$now" --arg line "$latest" \
-    '{_time: $time, source: "node", node: $node, service: "health",
-      level: (if ($line | startswith("FAIL")) then "error" else "info" end), msg: $line}' >> "$state/batch"
-fi
-jq -nc --arg node "$NODE" --arg time "$now" --argjson healthy "$([[ $health == PASS ]] && echo true || echo false)" \
-  '{_time: $time, source: "node", node: $node, service: "shipper", level: "info", msg: "heartbeat", healthy: $healthy}' \
-  >> "$state/batch"
 
-jq -s . "$state/batch" \
-  | curl -fsS --max-time 30 -H "Authorization: Bearer $AXIOM_TOKEN" -H "Content-Type: application/json" \
-      --data-binary @- "https://api.axiom.co/v1/datasets/$AXIOM_DATASET/ingest" >/dev/null
+# The token goes in a header file: on curl's command line it would be in
+# /proc/<pid>/cmdline for anyone on the node to read. printf is a builtin.
+printf 'Authorization: Bearer %s\n' "$AXIOM_TOKEN" > "$state/auth"
 
-printf '%s\n' "$health" > "$state/health"
-if [[ -s $state/entries ]]; then
-  tail -n 1 "$state/entries" | jq -r .__CURSOR > "$state/cursor.new"
+post() {
+  jq -s . "$1" \
+    | curl -fsS --max-time 30 -H @"$state/auth" -H "Content-Type: application/json" \
+        --data-binary @- "https://api.axiom.co/v1/datasets/$AXIOM_DATASET/ingest" >/dev/null
+}
+
+# What closes the run: the health check's result when it changed, and the heartbeat.
+finish() {
+  if [[ $health != "$previous" ]]; then
+    jq -nc --arg node "$NODE" --arg time "$now" --arg line "$latest" \
+      '{_time: $time, source: "node", node: $node, service: "health",
+        level: (if ($line | startswith("FAIL")) then "error" else "info" end), msg: $line}' >> "$1"
+  fi
+  jq -nc --arg node "$NODE" --arg time "$now" --argjson healthy "$([[ $health == PASS ]] && echo true || echo false)" \
+    '{_time: $time, source: "node", node: $node, service: "shipper", level: "info", msg: "heartbeat", healthy: $healthy}' \
+    >> "$1"
+}
+
+# Sent in chunks, the cursor moving after each: a backlog from an outage goes
+# as several requests, each small enough to land, rather than as one that
+# grows with every failed run until none ever can. A chunk ends only between
+# whole lines, never among the parts of one Docker wrote in pieces.
+chunk_lines=${SHIP_LOGS_CHUNK_LINES:-2000}
+total=$(wc -l < "$state/entries" | tr -d ' ')
+start=1
+while (( start <= total )); do
+  end=$(( start + chunk_lines - 1 ))
+  (( end > total )) && end=$total
+  while (( end < total )) && [[ $(sed -n "${end}p" "$state/entries" \
+      | jq -r '.CONTAINER_PARTIAL_ID == null or .CONTAINER_PARTIAL_LAST == "true"') != true ]]; do
+    end=$(( end + 1 ))
+  done
+  sed -n "${start},${end}p" "$state/entries" > "$state/chunk"
+  jq -nc --arg node "$NODE" -f /usr/local/lib/orbmeet/ship-logs.jq "$state/chunk" > "$state/batch"
+  (( end == total )) && finish "$state/batch"
+  post "$state/batch"
+  tail -n 1 "$state/chunk" | jq -r .__CURSOR > "$state/cursor.new"
   mv "$state/cursor.new" "$state/cursor"
+  start=$(( end + 1 ))
+done
+if (( total == 0 )); then
+  : > "$state/batch"
+  finish "$state/batch"
+  post "$state/batch"
 fi
+printf '%s\n' "$health" > "$state/health"

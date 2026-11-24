@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PARTICIPANT_ATTRIBUTE } from "@/modules/meetings/contract/live-state";
-import { grantFor, roleOf, type MeetingSnapshot } from "./model";
+import { ABSENT_GRACE_MS, grantFor, roleOf, type MeetingSnapshot } from "./model";
 import type { Subject } from "./protocol";
 import { Meeting } from "./step-test-support";
 
@@ -199,6 +199,38 @@ describe("a Space admin outside the meeting", () => {
     expect(m.state.attempts[d.attemptId]).toMatchObject({ endReason: "meeting_finalized", endedRole: "attendee" });
   });
 
+  // dana organizes and stands in while seated; chen, who started it, is an
+  // attendee meanwhile. Ending both in one change must not hand chen the
+  // stand-in role dana's ending frees.
+  it("records each connection a presence listing ends by the role it had", () => {
+    const m = sharedMeeting({ organizerUserId: "dana" });
+    const d = m.admitted(dana);
+    m.joined(d.identity);
+    const c = m.admitted(chen);
+    m.joined(c.identity);
+    m.apply({ kind: "participantLeft", identity: d.identity, sid: `sid-${d.identity}`, at: m.now });
+    m.apply({ kind: "participantLeft", identity: c.identity, sid: `sid-${c.identity}`, at: m.now });
+    m.advance(ABSENT_GRACE_MS + 1);
+
+    m.listed([]);
+
+    expect(m.state.attempts[d.attemptId]).toMatchObject({ endReason: "participant_left", endedRole: "host" });
+    expect(m.state.attempts[c.attemptId]).toMatchObject({ endReason: "participant_left", endedRole: "attendee" });
+  });
+
+  it("records each connection a move off the node ends by the role it had", () => {
+    const m = sharedMeeting({ organizerUserId: "dana" });
+    const d = m.admitted(dana);
+    m.joined(d.identity);
+    const c = m.admitted(chen);
+    m.joined(c.identity);
+
+    m.admitted(eli, { placement: { nodeId: "node-b", from: "node-a" } });
+
+    expect(m.state.attempts[d.attemptId]).toMatchObject({ endReason: "media_node_moved", endedRole: "host" });
+    expect(m.state.attempts[c.attemptId]).toMatchObject({ endReason: "media_node_moved", endedRole: "attendee" });
+  });
+
   it("records a stand-in who leaves as the host they were", () => {
     const m = sharedMeeting();
     const c = m.admitted(chen);
@@ -240,7 +272,7 @@ function joinOf(m: Meeting, subject: Subject) {
     newAdmissionId: `admission_refused_${seq}`,
     newAttemptId: `connection_refused_${seq}`,
     newGuestSecretHash: null,
-    guestNetworkKey: null,
+    placement: null, guestNetworkKey: null,
   };
 }
 

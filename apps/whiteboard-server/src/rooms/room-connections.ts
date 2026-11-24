@@ -443,6 +443,16 @@ export class RoomConnections {
     this.retainedPresence.enforceCeilings(tldrawSessionId, userId);
   }
 
+  /** Evict a session whose presence, as its client believes it pushed it, is over the retained ceiling. */
+  evictOversizedPresence(tldrawSessionId: string, userId: string, bytes: number): void {
+    this.retainedPresence.evictRetainedPresence(
+      tldrawSessionId,
+      userId,
+      bytes,
+      "pushed a presence record over the retained presence ceiling",
+    );
+  }
+
   // ─── What holds the room open ──────────────────────────────────────────
 
   private scheduleIdleClose(): void {

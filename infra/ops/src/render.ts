@@ -4,7 +4,8 @@ import { dirname, join, relative, sep } from "node:path";
 import { parseNodes, type NodesInput } from "@orbmeet/nodes";
 import {
   ASSISTANT_MODEL, AXIOM_DATASET, BRIDGE_SUBNET, BUILD_FILES, DOCKERFILES, EGRESS, EGRESS_SECCOMP_SHA256, GATEWAY,
-  NODE_DIR, PRIVATE_DESTINATIONS, PUBLIC_PORTS, REDIS, ROOT, TRANSCRIPTION, WHITEBOARD,
+  MEMORY_LIMITS, NODE_DIR, PRIVATE_DESTINATIONS, PUBLIC_PORTS, REDIS, ROOT, TRANSCRIPTION, WHITEBOARD,
+  type Container,
 } from "./catalog.ts";
 import { mebibytes, rtcHost, turnHost, whiteboardHost, type Inventory } from "./inventory.ts";
 import { lockfileSlice } from "./lockfile.ts";
@@ -211,8 +212,11 @@ export function renderNode(inv: Inventory, c: Secrets, name: string): Map<string
     ALLOWED_ORIGINS: `${inv.appUrl},https://www.${inv.domain}`,
     NODE: name,
     CADDY_BUILD: digest([join(NODE_DIR, "caddy/Dockerfile")]),
-    ...Object.fromEntries(Object.entries(node.memoryLimits)
-      .map(([container, size]) => [`${container.toUpperCase()}_MEMORY`, size])),
+    // Every service's limit, not only this node's: Compose reads the whole of
+    // compose.yaml before it picks the services a node runs, and an unset
+    // limit fails it all. One the node does not run is never applied.
+    ...Object.fromEntries((Object.keys(MEMORY_LIMITS) as Container[])
+      .map((container) => [`${container.toUpperCase()}_MEMORY`, node.memoryLimits[container] ?? MEMORY_LIMITS[container]])),
   };
   if (containers.includes("caddy")) {
     files.set("Caddyfile", caddyfile(inv, name));

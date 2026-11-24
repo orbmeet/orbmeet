@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { meetingFollowUps, users } from "@orbmeet/db/schema";
 import { seedMeeting } from "@/test/documents-test-support";
@@ -55,7 +56,7 @@ describe("follow-ups", () => {
     const [first, ...rest] = await followUpStatements(db, "meeting_1", [
       { task: "Send the practice set to everyone", owner: "Host" },
       { task: "Book the next session" },
-    ]);
+    ], applies);
     await db.batch([first, ...rest]);
 
     const after = await selectMeetingFollowUps(db, "meeting_1");
@@ -73,7 +74,7 @@ describe("follow-ups", () => {
   it("keeps one ticked off while the Summary was being written, though the new list drops it", async () => {
     const { db } = await seedFollowUps();
     // The statements are planned while "Review Bayes' rule" is still open…
-    const [first, ...rest] = await followUpStatements(db, "meeting_1", [{ task: "Send the practice set", owner: "Host" }]);
+    const [first, ...rest] = await followUpStatements(db, "meeting_1", [{ task: "Send the practice set", owner: "Host" }], applies);
     // …and someone ticks it off before they run.
     await setFollowUpDoneImpl({ data: { followUpId: "follow_up_2", done: true }, context: contextFor(db, "user_host") });
     await db.batch([first, ...rest]);
@@ -81,4 +82,19 @@ describe("follow-ups", () => {
     const after = await selectMeetingFollowUps(db, "meeting_1");
     expect(after.find((followUp) => followUp.id === "follow_up_2")).toMatchObject({ done: true });
   });
+
+  it("changes nothing once the request it was written for no longer applies", async () => {
+    const { db } = await seedFollowUps();
+    const before = await selectMeetingFollowUps(db, "meeting_1");
+
+    const [first, ...rest] = await followUpStatements(db, "meeting_1", [
+      { task: "Send the practice set to everyone", owner: "Host" },
+      { task: "Something new entirely" },
+    ], sql`0 = 1`);
+    await db.batch([first, ...rest]);
+
+    expect(await selectMeetingFollowUps(db, "meeting_1")).toEqual(before);
+  });
 });
+
+const applies = sql`1 = 1`;

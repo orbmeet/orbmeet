@@ -341,6 +341,68 @@ describe("Board", () => {
       expect(board.slots).toEqual(["free", "free", "free"]);
     });
 
+    it("admits nothing onto it while it is being destroyed", async () => {
+      const { container, run, settled } = setup();
+      let destroyed!: () => void;
+      const destroying = new Promise<void>((resolve) => void (destroyed = resolve));
+      container.destroy = async (reason?: unknown) => {
+        container.destroyed.push(String(reason));
+        await destroying;
+        container.running = false;
+      };
+      container.onExec = (supervisor) => {
+        supervisor.report(new Uint8Array(0), "cellrun: slot 0: processes survived SIGKILL\n");
+        supervisor.exit(70);
+      };
+      await expect(run("unfit")).rejects.toBeInstanceOf(RunnerUnavailableError);
+      await vi.waitFor(() => expect(container.destroyed).toHaveLength(1));
+
+      container.onExec = (supervisor) => {
+        supervisor.report(report());
+        supervisor.exit(0);
+      };
+      const next = run("next");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      // Still waiting for the old container to go, not running in it.
+      expect(container.supervisors).toHaveLength(1);
+
+      destroyed();
+      await expect(next).resolves.toMatchObject({ kind: "result" });
+      expect(container.starts).toBe(2);
+      await settled();
+    });
+
+    it("is not reused when it could not be destroyed, and is destroyed again by the next run", async () => {
+      const { container, board, run, settled } = setup();
+      let failDestroy = true;
+      container.destroy = async (reason?: unknown) => {
+        container.destroyed.push(String(reason));
+        if (failDestroy) throw new Error("destroy failed");
+        container.running = false;
+      };
+      container.onExec = (supervisor) => {
+        supervisor.report(new Uint8Array(0), "cellrun: slot 0: processes survived SIGKILL\n");
+        supervisor.exit(70);
+      };
+      await expect(run("unfit")).rejects.toBeInstanceOf(RunnerUnavailableError);
+      await settled();
+      expect(container.destroyed).toHaveLength(1);
+
+      // Destroying fails again: the run is refused, and nothing runs in it.
+      await expect(run("refused")).rejects.toBeInstanceOf(RunnerUnavailableError);
+      expect(container.destroyed).toHaveLength(2);
+      expect(container.supervisors).toHaveLength(1);
+
+      failDestroy = false;
+      container.onExec = (supervisor) => {
+        supervisor.report(report());
+        supervisor.exit(0);
+      };
+      await expect(run("fresh")).resolves.toMatchObject({ kind: "result" });
+      expect(container.destroyed).toHaveLength(3);
+      expect(board.slots).toEqual(["free", "free", "free"]);
+    });
+
     it("is replaced when the supervisor is killed mid-run, leaving its slot's processes behind", async () => {
       const { container, board, run, settled, logs } = setup();
       container.onExec = (supervisor) => {

@@ -135,6 +135,26 @@ describe("document commands", () => {
     expect(pageCount(manager, "meet-b", "wb_b")).toBe(1);
   });
 
+  it("seeds from a board that just moved here, loading its saved copy first", async () => {
+    const { manager: from, objects } = setup();
+    const otherDir = mkdtempSync(join(tmpdir(), "wb-commands-"));
+    dirs.push(otherDir);
+    const to = startManager(otherDir, objects);
+    await dispatchSyncCommand("open", { ...target("meet-a", "wb_a", "cmd-open-a"), generation: 1 }, from);
+    // The Worker moves the board on: its node saves it and lets it go, and
+    // nobody has opened it on the new node yet.
+    await expect(dispatchSyncCommand("handoff", { whiteboardRoomId: "meet-a", whiteboardId: "wb_a", generation: 1 }, from))
+      .resolves.toMatchObject({ ok: true });
+
+    const seed = {
+      ...target("meet-b", "wb_b", "cmd-seed-b"),
+      generation: 1,
+      source: { whiteboardRoomId: "meet-a", whiteboardId: "wb_a", generation: 2 },
+    };
+    await expect(dispatchSyncCommand("seed", seed, to)).resolves.toMatchObject({ ok: true });
+    expect(pageCount(to, "meet-b", "wb_b")).toBe(1);
+  });
+
   it("never seeds over a board that already has state", async () => {
     const { manager } = setup();
     await dispatchSyncCommand("open", target("meet-a", "wb_a", "cmd-open-a"), manager);

@@ -152,11 +152,10 @@ export class MeetingRoomHost {
   private async join(join: JoinRequest, deadline: number | undefined): Promise<JoinReply> {
     const newAdmissionId = generateId("MEETING_ADMISSION");
     const newAttemptId = generateId("MEETING_CONNECTION");
-    const placed = await this.placementFor(join);
+    const placement = await this.placementFor(join);
 
     const reply = await this.apply(async (state) => {
       const { subject, inputs } = await this.resolveSubject(state, join.subject, join.admissionId);
-      if (placed) inputs.push(placed);
       inputs.push({
         kind: "join",
         subject,
@@ -169,6 +168,7 @@ export class MeetingRoomHost {
         newAttemptId,
         newGuestSecretHash: join.newGuestSecretHash,
         guestNetworkKey: join.subject.kind === "guest" ? join.guestNetworkKey : null,
+        placement,
       });
       return inputs;
     }, { deadline });
@@ -186,19 +186,21 @@ export class MeetingRoomHost {
    * queue: placement reads node health and load from D1 and may probe a node,
    * for up to seconds when the node is down, and nothing else the meeting
    * hears should wait on that. It is decided from the node the meeting was on
-   * when it looked, and the `placed` input moves the meeting only if it is
-   * still there when the join commits: a join that commits in between has
-   * placed it already. A meeting with no state yet is where D1 has it, which
-   * is where its first commit starts it.
+   * when it looked; the join carries it, and moves the meeting only if the
+   * join is let in and the meeting is still there when it commits. A meeting
+   * with no state yet is where D1 has it, which is where its first commit
+   * starts it.
+   *
+   * Every join asks, not only a rejoin that names a node it could not reach:
+   * a node the minutely probe has found down is left by the next join, rather
+   * than handed to every newcomer until each of them fails to reach it too.
    */
-  private async placementFor(join: JoinRequest): Promise<Extract<Input, { kind: "placed" }> | null> {
+  private async placementFor(join: JoinRequest): Promise<{ nodeId: string; from: string | null } | null> {
     const seen = await this.peek((state) => (state === null ? null : { open: isOpen(state), nodeId: state.meta.nodeId }));
     if (seen && !seen.open) return null;
     const from = seen ? seen.nodeId : (await this.snapshot()).nodeId;
-    const current = from ? mediaNodes(this.env).get(from) : undefined;
-    if (current && join.unreachableMediaUrl !== current.url) return null;
     const node = await choosePlacement(this.db, this.env, from, join.unreachableMediaUrl, join.nodeLatencies);
-    return { kind: "placed", nodeId: node.id, from };
+    return node.id === from ? null : { nodeId: node.id, from };
   }
 
   private async command(command: CoordinatorCommand, deadline: number | undefined): Promise<CoordinatorReply> {
@@ -253,7 +255,10 @@ export class MeetingRoomHost {
     const base = before ?? initialState(await this.snapshot(), this.now());
     const inputs = await build(base);
     const now = this.now();
-    const { state: draft, reply, once, refusal } = applyInputs(base, inputs, now);
+    // With D1 behind, nothing settled is forgotten until it catches up.
+    const { state: draft, reply, once, refusal } = applyInputs(base, inputs, now, {
+      forgetSettled: this.projectedFrom === undefined,
+    });
 
     // A request that finds the room as it was keeps nothing.
     if (!before || JSON.stringify(before) !== JSON.stringify(draft)) {

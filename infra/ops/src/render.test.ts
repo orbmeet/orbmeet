@@ -97,7 +97,8 @@ describe("rendering", () => {
     const my1 = env(nodes.my1["compose.env"]);
     expect(my1).toMatchObject({ CADDY_MEMORY: "256m", LIVEKIT_MEMORY: "2g", REDIS_MEMORY: "512m", EGRESS_MEMORY: "3g",
       TRANSCRIPTION_MEMORY: "1536m" });
-    expect(my1).not.toHaveProperty("WHITEBOARD_MEMORY");
+    // Not run there, but defined: Compose reads every service's limit.
+    expect(my1).toMatchObject({ WHITEBOARD_MEMORY: "2g" });
     // Egress refuses work beyond a gigabyte under its limit.
     expect(JSON.parse(nodes.my1["egress.json"]).cpu_cost.max_memory).toBe(2);
     expect(JSON.parse(nodes.sg1["egress.json"]).cpu_cost.max_memory).toBe(3);

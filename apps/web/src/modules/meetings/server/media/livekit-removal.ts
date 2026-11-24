@@ -36,6 +36,18 @@ export function isLiveKitMissingError(err: unknown): boolean {
 }
 
 /**
+ * Whether LiveKit refused to stop an egress because it is no longer running:
+ * it completed, failed or was aborted on its own. LiveKit answers that with
+ * FailedPrecondition ("egress with status … cannot be stopped"), not
+ * NotFound, and it means what a stop was for has already happened.
+ */
+export function isLiveKitEgressOverError(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const code = (err as { code?: unknown }).code;
+  return typeof code === "string" && code.toLowerCase() === "failed_precondition";
+}
+
+/**
  * Self-hosted LiveKit cannot revoke already-issued reconnect tokens immediately.
  * Zero permissions before kicking so a participant who reconnects on a cached
  * LiveKit refresh token cannot publish, subscribe, or send data while the app's

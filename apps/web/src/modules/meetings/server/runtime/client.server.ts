@@ -73,7 +73,7 @@ export async function authorizeInMeeting(env: Env, meetingId: string, userId: st
   await callCoordinator(env, {
     kind: "command",
     meetingId,
-    command: { kind: "authorize", subject: userSubject(userId) },
+    command: { kind: "authorize", subject: userSubject(userId), as: "moderator" },
   });
 }
 

@@ -76,6 +76,29 @@ describe("shipJournalBatch", () => {
     expect(journal.pending(100, now + 5_000).map((row) => row.payload.segments[0].segmentId)).toEqual(["a", "c"]);
   });
 
+  it("lets other meetings through however large a throttled meeting's backlog", async () => {
+    let now = 10_000;
+    // More than a pass reads, all older than the quiet meeting's one row.
+    for (let index = 0; index < 1_000; index++) appendIn("busy", `p${index % 7}`, `busy-${index}`);
+    appendIn("quiet", "p1", "quiet");
+    const delivered: string[] = [];
+    const deliver = async (payload: TranscriptPayload): Promise<DeliveryOutcome> => {
+      if (payload.meetingId === "busy") return { kind: "throttled", reason: "429", retryAfterMs: 60_000 };
+      delivered.push(...ids(payload));
+      return { kind: "committed" };
+    };
+
+    // The first pass reads only the busy meeting's rows, is throttled, and
+    // takes the whole meeting out of the queue; the next reaches the rest.
+    await shipJournalBatch(journal, deliver, { maxUnresolvedAgeMs: 60_000, now: () => now });
+    now += 1_000;
+    await shipJournalBatch(journal, deliver, { maxUnresolvedAgeMs: 60_000, now: () => now });
+
+    expect(delivered).toEqual(["quiet"]);
+    expect(journal.pending(100, now)).toEqual([]);
+    expect(journal.pending(1_000, 10_000 + 60_000)).toHaveLength(1_000);
+  });
+
   it("keeps every row while the app is unavailable, and stops the pass", async () => {
     append("p1", "a");
     append("p2", "b");

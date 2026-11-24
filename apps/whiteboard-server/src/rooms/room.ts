@@ -184,6 +184,8 @@ export class Room {
       reserveFanout: (userId, bytes) => this.connections.reservePresenceFanout(userId, bytes),
       requestResync: (tldrawSessionId) =>
         this.connections.send(tldrawSessionId, { type: WHITEBOARD_EVENTS.PRESENCE_RESYNC }),
+      evictOversized: (tldrawSessionId, userId, bytes) =>
+        this.connections.evictOversizedPresence(tldrawSessionId, userId, bytes),
     });
     this.connections = new RoomConnections({
       whiteboardRoomId,

@@ -858,6 +858,38 @@ describe("manager lookup fencing", () => {
     await manager.closeAll();
   });
 
+  it("holds the data directory until work already on its way has finished", async () => {
+    const whiteboardRoomId = "meet-late-save" as WhiteboardRoomId;
+    const objects = createMemoryObjectStore();
+    let releaseUpload!: () => void;
+    const uploadHeld = new Promise<void>((resolve) => { releaseUpload = resolve; });
+    const put = objects.put.bind(objects);
+    let uploading = false;
+    objects.put = async (...args) => {
+      uploading = true;
+      await uploadHeld;
+      return put(...args);
+    };
+    const manager = new RoomManager(makeDataDir(), { objects, authority: fakeAuthority() });
+    manager.withRoom(whiteboardRoomId, BOARD, () => null);
+    // A move off this node: its save is mid-upload when the process stops.
+    const handoff = manager.handoff(whiteboardRoomId, BOARD, undefined);
+    await vi.waitFor(() => expect(uploading).toBe(true));
+
+    let closed = false;
+    const closing = manager.closeAll().then(() => { closed = true; });
+    const settledHandoff = handoff.then(() => "saved", () => "refused");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(closed).toBe(false);
+
+    releaseUpload();
+    for (let tick = 0; tick < 100 && !closed; tick++) await vi.advanceTimersByTimeAsync(100);
+    await closing;
+    expect(closed).toBe(true);
+    // Stopping came first: the handoff's save landed, and the rest of it was refused.
+    expect(await settledHandoff).toBe("refused");
+  });
+
   it("stops room background work immediately when writer ownership is lost", async () => {
     const whiteboardRoomId = "meet-writer-lost" as WhiteboardRoomId;
     const manager = new RoomManager(makeDataDir(), {

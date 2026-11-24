@@ -140,6 +140,16 @@ export class TranscriptJournal {
   }
 
   /** Leave these rows out of delivery until `until`, so rows behind them are not held up. */
+  /**
+   * Hold back every row of `meetingId` until `until`, those not read yet
+   * among them: a throttled meeting steps out of the queue as a whole, so
+   * its backlog cannot fill each pass's oldest rows and keep every other
+   * meeting waiting behind it.
+   */
+  deferMeeting(meetingId: string, until: number): void {
+    this.db.prepare("UPDATE segments SET next_attempt_at = MAX(next_attempt_at, ?) WHERE meeting_id = ?").run(until, meetingId);
+  }
+
   defer(ids: readonly number[], until: number): void {
     this.transaction(() => {
       const update = this.db.prepare("UPDATE segments SET next_attempt_at = ? WHERE id = ?");

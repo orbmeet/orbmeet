@@ -121,10 +121,15 @@ export interface SyncCommands {
    * Give a new board its first state: a stored snapshot (`key`), or another
    * board's current state. Refused with `conflict` when the board already has
    * a document that no earlier run of this command put there.
+   *
+   * A board source carries the generation D1 gives it, as every command for a
+   * board does: the node loads that generation's saved copy first when its
+   * own is older or absent (a board that just moved here), rather than
+   * copying a stale or empty board.
    */
   seed: {
     request: DocumentTarget & {
-      source: { key: string } | { whiteboardRoomId: WhiteboardRoomId; whiteboardId: string };
+      source: { key: string } | { whiteboardRoomId: WhiteboardRoomId; whiteboardId: string; generation?: number };
     };
     result: { assetKeys: string[] };
   };
@@ -320,7 +325,13 @@ export const SYNC_COMMAND_REQUESTS = {
   restore: v.object({ ...documentTarget, sourceKey: objectKey, restorePointKey: objectKey }),
   seed: v.object({
     ...documentTarget,
-    source: v.union([v.object({ key: objectKey }), v.object({ whiteboardRoomId, whiteboardId })], "Invalid seed source"),
+    source: v.union(
+      [
+        v.object({ key: objectKey }),
+        v.object({ whiteboardRoomId, whiteboardId, generation: v.optional(nonNegativeInteger) }),
+      ],
+      "Invalid seed source",
+    ),
   }),
   handoff: v.object({ ...roomTarget, whiteboardId, ifIdle: v.optional(v.boolean()) }),
   purge: v.object({ ...roomTarget, whiteboardId }),

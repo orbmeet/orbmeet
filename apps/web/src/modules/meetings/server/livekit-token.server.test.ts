@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { TrackSource } from "livekit-server-sdk";
+import { MEDIA_TOKEN_TTL_MS } from "./runtime/model";
 import {
   createLiveKitAccess,
   createLiveKitToken,
-  TOKEN_TTL_SECONDS,
 } from "./livekit-token.server";
 
 const API_KEY = "devkey";
@@ -69,8 +69,10 @@ describe("LiveKit token grants", () => {
   it("issues a short-lived token that no caller can lengthen", async () => {
     const claims = await mintToken();
     const lifetimeSeconds = (claims.exp as number) - (claims.nbf as number);
-    expect(lifetimeSeconds).toBe(TOKEN_TTL_SECONDS);
-    expect(TOKEN_TTL_SECONDS).toBeLessThanOrEqual(10 * 60);
+    // The lifetime the meeting assumes when it decides a token can no longer
+    // make its room.
+    expect(lifetimeSeconds).toBe((MEDIA_TOKEN_TTL_MS / 1000));
+    expect((MEDIA_TOKEN_TTL_MS / 1000)).toBeLessThanOrEqual(10 * 60);
 
     const access = await createLiveKitAccess({
       apiKey: API_KEY,
@@ -81,8 +83,8 @@ describe("LiveKit token grants", () => {
       // A stale caller passing the removed knob must not widen anything.
       ...({ ttl: "999h" } as Record<string, unknown>),
     });
-    expect(access.expiresIn).toBe(TOKEN_TTL_SECONDS);
+    expect(access.expiresIn).toBe((MEDIA_TOKEN_TTL_MS / 1000));
     const replayed = decodeClaims(access.token);
-    expect((replayed.exp as number) - (replayed.nbf as number)).toBe(TOKEN_TTL_SECONDS);
+    expect((replayed.exp as number) - (replayed.nbf as number)).toBe((MEDIA_TOKEN_TTL_MS / 1000));
   });
 });

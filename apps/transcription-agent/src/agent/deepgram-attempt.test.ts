@@ -225,6 +225,32 @@ describe("DeepgramAttempt", () => {
     expect(await failure).toMatchObject({ message: expect.stringContaining("stopped answering") });
   });
 
+  it("waits for Deepgram to answer speech that began just before its quiet stretch ran out", async () => {
+    vi.useFakeTimers();
+    const socket = new FakeSocket("en-US");
+    const source = sourceWith();
+    const running = new DeepgramAttempt({
+      open: async () => socket,
+      language: "en-US",
+      source,
+      signal: new AbortController().signal,
+      onEvent: () => undefined,
+    }).run();
+    let failure: unknown = null;
+    running.catch((error: unknown) => { failure = error; });
+    socket.opened();
+    // Quiet for just under the timeout, then someone starts talking, and
+    // keeps talking across the moment the quiet stretch runs out.
+    await vi.advanceTimersByTimeAsync(19_900);
+    for (let index = 0; index < 20; index++) {
+      pushChunk(source, { capturedAt: Date.now(), speech: true });
+      await vi.advanceTimersByTimeAsync(20);
+    }
+
+    expect(failure).toBeNull();
+    expect(socket.sent).toHaveLength(20);
+  });
+
   it("does not accumulate waiters or listeners while the microphone is muted", async () => {
     vi.useFakeTimers();
     const socket = new FakeSocket("en-US");

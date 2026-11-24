@@ -1,4 +1,5 @@
 import { AccessToken, TrackSource } from "livekit-server-sdk";
+import { MEDIA_TOKEN_TTL_MS } from "./runtime/model";
 
 /**
  * Token TTL for self-hosted LiveKit deployments.
@@ -9,7 +10,7 @@ import { AccessToken, TrackSource } from "livekit-server-sdk";
  * control is enforced server-side on each refresh (membership/capacity/status)
  * and by the `participant_joined` webhook backstop, not by the token itself.
  */
-export const TOKEN_TTL_SECONDS = 5 * 60;
+const TOKEN_TTL_SECONDS = MEDIA_TOKEN_TTL_MS / 1000;
 const TOKEN_TTL = `${TOKEN_TTL_SECONDS}s`;
 
 export interface CreateTokenParams {

@@ -6,7 +6,7 @@
 
 import type { Database } from "@orbmeet/db";
 import { meetingConnections, meetingFollowUps, meetingSummaries, meetings, transcripts, type MeetingMoment } from "@orbmeet/db/schema";
-import { and, countDistinct, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, countDistinct, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import * as v from "valibot";
 import { toStandardJsonSchema } from "@valibot/to-json-schema";
 import { MEETING_SUMMARY_MAX_LENGTH } from "@/modules/meetings/contract/constants";
@@ -461,8 +461,9 @@ function serializePromptSource(value: unknown): string {
 export async function generateMeetingSummaryForMeeting(
   db: Database,
   env: Env,
-  meetingId: string,
+  request: SummaryRequest,
 ) {
+  const { meetingId } = request;
   const ai = aiConfig(env);
   if (!ai) {
     return { summary: null, generated: false, error: "ai_not_configured" as const };
@@ -559,10 +560,6 @@ export async function generateMeetingSummaryForMeeting(
     );
   }
   if (!object) return { summary: null, generated: false, error: "llm_failed" as const };
-  // An untitled meeting takes the name the summary gives it, so Meetings
-  // lists what it was about rather than "7:52 – 8:03 AM". A title someone
-  // chose is never replaced.
-  if (!meeting.title && object.title) await nameUntitledMeeting(db, meetingId, object.title);
 
   const finalSnapshot = await getTranscriptSnapshot(db, meetingId);
   if (
@@ -579,23 +576,35 @@ export async function generateMeetingSummaryForMeeting(
 
   const participantCount = await countMeetingParticipants(db, meetingId);
   const moments = toMoments(object.moments, durationSeconds);
-  // The Summary and its follow-ups land together or not at all.
-  const followUpChanges = await followUpStatements(db, meetingId, object.followUps ?? []);
+  // The Summary and its follow-ups land together or not at all, and only
+  // while this request is still the one owed a Summary: a newer request may
+  // have started its own job while this one's model ran, and two jobs that
+  // both wrote would add each follow-up twice, or leave the older Summary
+  // over the newer.
+  const owed = summaryStillOwed(request);
+  const followUpChanges = await followUpStatements(db, meetingId, object.followUps ?? [], owed);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const lastUpdatedSeconds = transcript.lastUpdatedAt ? Math.floor(transcript.lastUpdatedAt.getTime() / 1000) : null;
   const [[inserted]] = await db.batch([
     db
       .insert(meetingSummaries)
-      .values({
-        id: generateId("MEETING_SUMMARY"),
-        meetingId: meetingId,
-        summary: object.summary,
-        moments,
-        durationSeconds,
-        participantCount,
-        transcribedParticipantCount: transcript.participantNames.length,
-        transcriptSegmentCount: transcript.segmentCount,
-        transcriptLastUpdatedAt: transcript.lastUpdatedAt,
-        createdAt: new Date(),
-      })
+      .select(
+        db
+          .select({
+            id: sql`${generateId("MEETING_SUMMARY")}`.as("id"),
+            meetingId: sql`${meetingId}`.as("meeting_id"),
+            summary: sql`${object.summary}`.as("summary"),
+            moments: sql`${JSON.stringify(moments)}`.as("moments"),
+            durationSeconds: sql`${durationSeconds}`.as("duration_seconds"),
+            participantCount: sql`${participantCount}`.as("participant_count"),
+            transcribedParticipantCount: sql`${transcript.participantNames.length}`.as("transcribed_participant_count"),
+            transcriptSegmentCount: sql`${transcript.segmentCount}`.as("transcript_segment_count"),
+            transcriptLastUpdatedAt: sql`${lastUpdatedSeconds}`.as("transcript_last_updated_at"),
+            createdAt: sql`${nowSeconds}`.as("created_at"),
+          })
+          .from(sql`(select 1)`)
+          .where(owed),
+      )
       .onConflictDoUpdate({
         target: meetingSummaries.meetingId,
         set: {
@@ -606,17 +615,40 @@ export async function generateMeetingSummaryForMeeting(
           transcribedParticipantCount: transcript.participantNames.length,
           transcriptSegmentCount: transcript.segmentCount,
           transcriptLastUpdatedAt: transcript.lastUpdatedAt,
-          createdAt: new Date(),
+          createdAt: new Date(nowSeconds * 1000),
         },
       })
       .returning(),
     ...followUpChanges,
   ]);
+  if (!inserted) return { summary: null, generated: false, error: "superseded" as const };
+
+  // An untitled meeting takes the name the summary gives it, so Meetings
+  // lists what it was about rather than "7:52 – 8:03 AM". A title someone
+  // chose is never replaced, and only a Summary that was kept names it: one
+  // of a transcript still changing, or a superseded request, is not.
+  if (!meeting.title && object.title) await nameUntitledMeeting(db, meetingId, object.title);
 
   return {
     summary: inserted,
     generated: true,
   };
+}
+
+/** Which Summary request a generation answers: the meeting, and the request's number. */
+export interface SummaryRequest {
+  meetingId: string;
+  seq: number;
+}
+
+/** True while `request` is the one the meeting is owed a Summary for. */
+function summaryStillOwed(request: SummaryRequest): SQL {
+  return sql`exists (
+    select 1 from ${meetings}
+    where ${meetings.id} = ${request.meetingId}
+      and ${meetings.summaryRequestSeq} = ${request.seq}
+      and ${meetings.summaryStatus} = 'pending'
+  )`;
 }
 
 /**
@@ -650,6 +682,8 @@ export async function followUpStatements(
   db: Database,
   meetingId: string,
   followUps: NonNullable<SummaryObject["followUps"]>,
+  /** Every change applies only while this holds, checked as it is written. */
+  applies: SQL,
 ) {
   const previous = await db
     .select({ id: meetingFollowUps.id, text: meetingFollowUps.text, doneAt: meetingFollowUps.doneAt })
@@ -663,33 +697,36 @@ export async function followUpStatements(
     previous.map((row) => ({ id: row.id, text: row.text, done: row.doneAt !== null })),
     drafts,
   );
-  const now = new Date();
+  const nowSeconds = Math.floor(Date.now() / 1000);
   return [
     // Only while still open: one ticked off since the read above was done
     // work, and done work stays.
     ...(plan.remove.length > 0
-      ? [db.delete(meetingFollowUps).where(and(inArray(meetingFollowUps.id, plan.remove), isNull(meetingFollowUps.doneAt)))]
+      ? [db.delete(meetingFollowUps).where(and(inArray(meetingFollowUps.id, plan.remove), isNull(meetingFollowUps.doneAt), applies))]
       : []),
     ...plan.keep.map((row) =>
       db
         .update(meetingFollowUps)
         .set(row.rewritten ? { text: row.text, ownerName: row.ownerName, position: row.position } : { position: row.position })
-        .where(eq(meetingFollowUps.id, row.id)),
+        .where(and(eq(meetingFollowUps.id, row.id), applies)),
     ),
-    ...(plan.add.length > 0
-      ? [
-          db.insert(meetingFollowUps).values(
-            plan.add.map((row) => ({
-              id: generateId("MEETING_FOLLOW_UP"),
-              meetingId,
-              position: row.position,
-              text: row.text,
-              ownerName: row.ownerName,
-              createdAt: now,
-            })),
-          ),
-        ]
-      : []),
+    ...plan.add.map((row) =>
+      db.insert(meetingFollowUps).select(
+        db
+          .select({
+            id: sql`${generateId("MEETING_FOLLOW_UP")}`.as("id"),
+            meetingId: sql`${meetingId}`.as("meeting_id"),
+            position: sql`${row.position}`.as("position"),
+            text: sql`${row.text}`.as("text"),
+            ownerName: sql`${row.ownerName}`.as("owner_name"),
+            doneAt: sql`null`.as("done_at"),
+            doneByUserId: sql`null`.as("done_by_user_id"),
+            createdAt: sql`${nowSeconds}`.as("created_at"),
+          })
+          .from(sql`(select 1)`)
+          .where(applies),
+      ),
+    ),
   ];
 }
 

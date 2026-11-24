@@ -72,6 +72,8 @@ export class Meeting {
       replacesAttemptId?: string;
       guestSecretHash?: string;
       guestNetworkKey?: string;
+      /** Where placement would move the meeting: a rejoin that reports its node unreachable. */
+      placement?: { nodeId: string; from: string | null };
     } = {},
   ) {
     this.seq += 1;
@@ -87,6 +89,7 @@ export class Meeting {
       newAttemptId: `connection_${this.seq}`,
       newGuestSecretHash: subject.kind === "guest" ? options.guestSecretHash ?? "hash" : null,
       guestNetworkKey: subject.kind === "guest" ? options.guestNetworkKey ?? null : null,
+      placement: options.placement ?? null,
     });
     return outcome.reply!;
   }

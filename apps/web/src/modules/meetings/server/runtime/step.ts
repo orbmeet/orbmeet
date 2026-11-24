@@ -9,6 +9,7 @@ import {
   EFFECT_RETRY_MAX_MS,
   EGRESS_START_TIMEOUT_MS,
   EMPTY_MEETING_GRACE_MS,
+  MAX_PENDING_ADMISSIONS,
   ISSUE_GRACE_MS,
   MEDIA_NODE_UNREACHABLE_GRACE_MS,
   PRUNED_ATTEMPT_MEMORY,
@@ -63,23 +64,41 @@ export interface Applied {
   refusal?: unknown;
 }
 
+/** How a change is applied, as the room's storage allows. */
+export interface StepOptions {
+  /**
+   * Whether settled records may be forgotten (`pruneSettled`): only while D1
+   * shows the state the change starts from. A record forgotten while D1 lags
+   * would never reach it, and D1 would keep showing it as it last saw it — a
+   * departed participant still live, for good.
+   */
+  forgetSettled: boolean;
+}
+
+const DEFAULT_STEP_OPTIONS: StepOptions = { forgetSettled: true };
+
 /**
  * Apply a request's inputs in order, the way the room commits them. Each input
  * steps its own copy, kept only when it returns, so a refused input keeps
  * nothing it did before refusing; the inputs before it are kept, and time
  * still moves on. `state` itself is never changed.
  */
-export function applyInputs(state: MeetingState, inputs: readonly Input[], now: number): Applied {
+export function applyInputs(
+  state: MeetingState,
+  inputs: readonly Input[],
+  now: number,
+  options: StepOptions = DEFAULT_STEP_OPTIONS,
+): Applied {
   const applied: Applied = { state, once: [] };
   for (const input of inputs) {
     try {
-      const stepped = step(structuredClone(applied.state), input, now);
+      const stepped = step(structuredClone(applied.state), input, now, options);
       applied.state = stepped.state;
       applied.reply = stepped.outcome.reply;
       applied.once.push(...stepped.outcome.once);
     } catch (error) {
       applied.refusal = error;
-      const ticked = step(structuredClone(applied.state), { kind: "tick" }, now);
+      const ticked = step(structuredClone(applied.state), { kind: "tick" }, now, options);
       applied.state = ticked.state;
       applied.once.push(...ticked.outcome.once);
       break;
@@ -95,7 +114,12 @@ export function applyInputs(state: MeetingState, inputs: readonly Input[], now: 
  * Time moves first (`advance`), so every input sees expired waiters, lapsed
  * seats and a reached duration limit before it acts.
  */
-export function step(state: MeetingState | null, input: Input, now: number): {
+export function step(
+  state: MeetingState | null,
+  input: Input,
+  now: number,
+  options: StepOptions = DEFAULT_STEP_OPTIONS,
+): {
   state: MeetingState;
   outcome: Outcome;
 } {
@@ -104,9 +128,9 @@ export function step(state: MeetingState | null, input: Input, now: number): {
   }
   if (!state) throw Errors.NOT_FOUND("Meeting");
   const outcome: Outcome = { once: [] };
-  advance(state, now, outcome);
+  advance(state, now, outcome, options);
   dispatch(state, input, now, outcome);
-  advance(state, now, outcome);
+  advance(state, now, outcome, options);
   pruneRetries(state, now);
   return { state, outcome };
 }
@@ -131,7 +155,6 @@ function dispatch(
     case "egressObserved":
       observe(state, input, now);
       break;
-    case "placed":
     case "grantApplied":
     case "removed":
     case "participantsListed":
@@ -171,8 +194,8 @@ const ROOM_LOOKS = new Set(["presence", "egress.list", "room.delete"]);
 
 // ─── Time ────────────────────────────────────────────────────────────────────
 
-function advance(state: MeetingState, now: number, outcome: Outcome): void {
-  pruneSettled(state, now);
+function advance(state: MeetingState, now: number, outcome: Outcome, options: StepOptions): void {
+  if (options.forgetSettled) pruneSettled(state, now);
   if (!isOpen(state)) {
     stopEgressWhenEnded(state);
     // An ended meeting's room dies with its node; waiting for it would
@@ -225,17 +248,32 @@ function advance(state: MeetingState, now: number, outcome: Outcome): void {
   planEgressStart(state, now, outcome);
 }
 
+function pendingCount(state: MeetingState): number {
+  let count = 0;
+  for (const admission of Object.values(state.admissions)) if (admission.status === "pending") count += 1;
+  return count;
+}
+
 /**
- * Forget what is over: attempts that ended and left the room, and approval
- * requests that expired (a pending admission never has attempts). Their rows
- * are final in D1, so keeping them would only grow the state for as long as
- * the meeting runs — with every request anyone ever made. A late webhook for a
+ * Forget what is over: attempts that ended and left the room, approval
+ * requests that expired (a pending admission never has attempts), and
+ * guests' admissions none of whose attempts is remembered. Their rows are
+ * final in D1, so keeping them would only grow the state for as long as the
+ * meeting runs — with every request anyone ever made. A late webhook for a
  * forgotten identity is treated like any unknown one: removed from the room;
  * a guest naming a forgotten request asks again, as a signed-in user does.
  */
 function pruneSettled(state: MeetingState, now: number): void {
+  const withAttempts = new Set(Object.values(state.attempts).map((attempt) => attempt.admissionId));
   for (const [id, admission] of Object.entries(state.admissions)) {
-    if (admission.status === "expired" && now - admission.updatedAt >= SETTLED_ATTEMPT_RETENTION_MS) {
+    if (now - admission.updatedAt < SETTLED_ATTEMPT_RETENTION_MS) continue;
+    if (admission.status === "expired") delete state.admissions[id];
+    // A guest's admission is a cookie's, and every first join with a new
+    // cookie makes one: kept for good, they would grow the state with every
+    // visit for as long as the meeting runs. Once none of its attempts is
+    // remembered it is forgotten like an expired request; the guest asks
+    // again. A bar is kept on the guest's network, not on the admission.
+    else if (admission.userId === null && admission.status !== "pending" && !withAttempts.has(id)) {
       delete state.admissions[id];
     }
   }
@@ -280,7 +318,8 @@ function command(
       return { kind: "left", found: attempt.endReason === "voluntary" };
     }
     case "authorize": {
-      requireModerator(state, input.subject);
+      if (input.as === "host") requireHost(state, input.subject);
+      else requireModerator(state, input.subject);
       return { kind: "ok" };
     }
     case "listPending": {
@@ -601,6 +640,9 @@ function join(
     const hosting = hosts(created);
     if (meta.joinPolicy === "closed" && !hosting) throw Errors.MEETING_CLOSED();
     const approved = hosting || meta.joinPolicy === "open";
+    if (!approved && pendingCount(state) >= MAX_PENDING_ADMISSIONS) {
+      throw Errors.PLAN_LIMIT_REACHED("Too many people are waiting to join. Try again in a few minutes.");
+    }
     if (approved) {
       created.status = "approved";
       created.decidedByUserId = subject.kind === "user" ? subject.userId : null;
@@ -646,6 +688,11 @@ function join(
     return { kind: "admitted", participant: view(state, admission, existing), newGuestAdmission };
   }
 
+  // Placement goes with the join it came with: this join is let in, so the
+  // meeting goes where it said, unless a join committed meanwhile placed or
+  // moved it already. A move ends the attempts on the node it leaves, which
+  // frees their seats before this one asks for its own.
+  if (input.placement && meta.nodeId === input.placement.from) place(state, input.placement.nodeId, now);
   if (!holdsSeat(state, admission.id) && !seatAvailable(state, admission)) {
     throw Errors.PLAN_LIMIT_REACHED("Meeting is full");
   }
@@ -870,6 +917,11 @@ function observeEgress(
   const startUnanswered = egress.op !== null && !egress.egressId;
   for (const info of observed) {
     if (info.egressId === egress.egressId) continue;
+    // A stray that ended on its own needs no stop: LiveKit would refuse one.
+    if (info.status === "complete" || info.status === "failed") {
+      egress.strays = egress.strays.filter((egressId) => egressId !== info.egressId);
+      continue;
+    }
     if (startUnanswered) continue;
     // Every egress in the room is this coordinator's: one it no longer tracks
     // is left over from a lost result or an earlier failure.
@@ -966,10 +1018,6 @@ function applyResult(state: MeetingState, input: EffectResult, now: number): voi
     return;
   }
   switch (input.kind) {
-    case "placed":
-      // A concurrent join may have placed or moved the meeting meanwhile.
-      if (state.meta.nodeId === input.from) place(state, input.nodeId, now);
-      return;
     case "grantApplied": {
       // Applied to the session it was planned for. A session that has
       // replaced it since holds an unknown grant, which is planned anew.
@@ -1103,6 +1151,8 @@ function reconcilePresence(
   // person may have left after it was taken. The attempt stays absent, and
   // the listing is not the fresh look the departure asked for.
   let predatesDeparture = false;
+  // One listing can end several attempts at once.
+  const roles = liveRoles(state);
 
   for (const attempt of Object.values(state.attempts)) {
     if (attempt.endedAt !== null) continue;
@@ -1117,12 +1167,12 @@ function reconcilePresence(
     }
     if (attempt.joinedAt === null) {
       // If it arrives later anyway, its join is refused and it is removed.
-      if (requestedAt - attempt.issuedAt >= ISSUE_GRACE_MS) endAttempt(state, attempt, "unused", now);
+      if (requestedAt - attempt.issuedAt >= ISSUE_GRACE_MS) endAttempt(state, attempt, "unused", now, roles.get(attempt.id));
       continue;
     }
     attempt.absentSince ??= now;
     if (now - attempt.absentSince >= ABSENT_GRACE_MS) {
-      endAttempt(state, attempt, "participant_left", now);
+      endAttempt(state, attempt, "participant_left", now, roles.get(attempt.id));
       attempt.removed = true;
     }
   }
@@ -1175,6 +1225,18 @@ function decide(
  * End an attempt. `role` is the role it held, read before anything this
  * change ends unseats it; by default, as the meeting stands now.
  */
+/**
+ * Each live attempt's role as the meeting stands now. A change that ends
+ * several attempts reads them first: ending one before reading the next could
+ * move the stand-in to an attempt ending in the same change, and record it as
+ * the host it never was.
+ */
+function liveRoles(state: MeetingState): Map<string, MeetingRole> {
+  return new Map(Object.values(state.attempts)
+    .filter((attempt) => attempt.endedAt === null)
+    .map((attempt) => [attempt.id, roleOf(state, state.admissions[attempt.admissionId])]));
+}
+
 function endAttempt(
   state: MeetingState,
   attempt: Attempt,
@@ -1205,11 +1267,7 @@ function endMeeting(state: MeetingState, reason: EndReason, now: number): void {
   bumpRoom(state);
   // Everyone still in the room is removed now, not when the room is
   // deleted: deleting it waits for a running egress to stop.
-  // Roles are read before anyone is unseated: ending one attempt first could
-  // move the stand-in to another, and record them as the host they never were.
-  const roles = new Map(Object.values(state.attempts)
-    .filter((attempt) => attempt.endedAt === null)
-    .map((attempt) => [attempt.id, roleOf(state, state.admissions[attempt.admissionId])]));
+  const roles = liveRoles(state);
   for (const attempt of Object.values(state.attempts)) {
     endAttempt(state, attempt, "meeting_finalized", now, roles.get(attempt.id));
   }
@@ -1327,9 +1385,10 @@ function place(state: MeetingState, nodeId: string, now: number): void {
  * attempts end there with nothing left to remove, and so does any egress.
  */
 function abandonNode(state: MeetingState, reason: string, now: number): void {
+  const roles = liveRoles(state);
   for (const attempt of Object.values(state.attempts)) {
     if (attempt.nodeId !== state.meta.nodeId) continue;
-    endAttempt(state, attempt, reason, now);
+    endAttempt(state, attempt, reason, now, roles.get(attempt.id));
     attempt.removed = true;
   }
   const egress = state.egress;

@@ -67,6 +67,14 @@ export interface DeepgramAttemptOptions {
  * The attempt owns its timeline: Deepgram's offsets restart on every
  * connection, and only the audio this connection sent can place them.
  */
+/** What the socket has said lately, to tell a quiet socket from a dead one. */
+interface Liveness {
+  /** When Deepgram last sent anything. */
+  lastInboundAt: number;
+  /** When the oldest speech sent since then went out; null when all it was sent is answered. */
+  unansweredSpeechSince: number | null;
+}
+
 export class DeepgramAttempt {
   private socket: DeepgramSocket | null = null;
 
@@ -111,9 +119,10 @@ export class DeepgramAttempt {
       wake.abort();
     });
     const timeline = new AudioTimeline();
-    const liveness = { lastInboundAt: now(), lastSpeechSentAt: 0 };
+    const liveness: Liveness = { lastInboundAt: now(), unansweredSpeechSince: null };
     socket.onMessage((message) => {
       liveness.lastInboundAt = now();
+      liveness.unansweredSpeechSince = null;
       this.handleMessage(message, timeline);
     });
 
@@ -129,6 +138,8 @@ export class DeepgramAttempt {
     }
 
     this.socket = socket;
+    // Its silence is counted from when it could first have spoken.
+    liveness.lastInboundAt = now();
     this.options.onOpen?.();
     logInfo("Deepgram transcription stream connected", { language });
     const keepAlive = setInterval(() => {
@@ -164,7 +175,7 @@ export class DeepgramAttempt {
   private async pump(
     socket: DeepgramSocket,
     timeline: AudioTimeline,
-    liveness: { lastInboundAt: number; lastSpeechSentAt: number },
+    liveness: Liveness,
     isClosed: () => boolean,
     wake: AbortSignal,
   ): Promise<void> {
@@ -173,8 +184,12 @@ export class DeepgramAttempt {
     while (!signal.aborted) {
       if (isClosed()) throw new Error("Deepgram connection closed unexpectedly");
       const silentFor = now() - liveness.lastInboundAt;
-      if (liveness.lastSpeechSentAt >= liveness.lastInboundAt && silentFor >= INBOUND_LIVENESS_TIMEOUT_MS) {
-        throw new Error(`Deepgram stopped answering ${silentFor}ms after speech audio`);
+      // Deepgram answers speech; a KeepAlive gets no answer. So only speech
+      // it has had the whole timeout to answer says the socket is gone: not
+      // speech sent a moment ago, after a long quiet stretch.
+      const unansweredFor = liveness.unansweredSpeechSince === null ? 0 : now() - liveness.unansweredSpeechSince;
+      if (unansweredFor >= INBOUND_LIVENESS_TIMEOUT_MS) {
+        throw new Error(`Deepgram stopped answering ${unansweredFor}ms after speech audio`);
       }
 
       const chunk = source.peek();
@@ -187,8 +202,9 @@ export class DeepgramAttempt {
       // After a long quiet stretch nothing proves the socket is still there.
       // Reconnect before sending the first speech rather than feeding the
       // opening of an utterance into a half-open socket; the chunk stays
-      // buffered for the next connection.
-      if (likelySpeech && silentFor >= INBOUND_LIVENESS_TIMEOUT_MS) {
+      // buffered for the next connection. Speech already on its way is past
+      // that choice: it is waited on, above, rather than cut off mid-word.
+      if (likelySpeech && liveness.unansweredSpeechSince === null && silentFor >= INBOUND_LIVENESS_TIMEOUT_MS) {
         throw new Error(`Deepgram was silent for ${silentFor}ms before speech resumed`);
       }
       try {
@@ -196,7 +212,7 @@ export class DeepgramAttempt {
       } catch (error) {
         throw new Error("Deepgram connection refused audio", { cause: error });
       }
-      if (likelySpeech) liveness.lastSpeechSentAt = now();
+      if (likelySpeech) liveness.unansweredSpeechSince ??= now();
       timeline.record(chunk);
       source.shift();
       if (source.bufferedMs > chunk.durationMs) {

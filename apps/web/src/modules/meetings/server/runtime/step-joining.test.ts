@@ -129,7 +129,7 @@ describe("joining", () => {
 
     expect(m.refuse({
       kind: "join", subject: ada, admissionId: older.admissionId, clientAttemptId: "recheck", displayName: "ada",
-      captionLanguage: "en", replacesAttemptId: older.attemptId, newAdmissionId: "x", newAttemptId: "y", newGuestSecretHash: null, guestNetworkKey: null,
+      captionLanguage: "en", replacesAttemptId: older.attemptId, newAdmissionId: "x", newAttemptId: "y", newGuestSecretHash: null, placement: null, guestNetworkKey: null,
     }).code).toBe("MEETING_OPEN_ELSEWHERE");
     expect(m.state.attempts[newer.attemptId].endedAt).toBeNull();
 
@@ -150,16 +150,43 @@ describe("joining", () => {
 
     expect(m.refuse({
       kind: "join", subject: ada, admissionId: older.admissionId, clientAttemptId: "recheck", displayName: "ada",
-      captionLanguage: "en", replacesAttemptId: older.attemptId, newAdmissionId: "x", newAttemptId: "y", newGuestSecretHash: null, guestNetworkKey: null,
+      captionLanguage: "en", replacesAttemptId: older.attemptId, newAdmissionId: "x", newAttemptId: "y", newGuestSecretHash: null, placement: null, guestNetworkKey: null,
     }).code).toBe("MEETING_OPEN_ELSEWHERE");
     expect(m.state.attempts[newer.attemptId].endedAt).toBeNull();
+  });
+
+  it("moves the meeting only for a join it lets in", () => {
+    const m = new Meeting({ allowGuests: false, spaceKind: "shared" });
+    const h = m.admitted(host);
+    m.joined(h.identity);
+    const placement = { nodeId: "node-b", from: "node-a" };
+
+    // Refused: the guest's report of an unreachable node moves no one.
+    m.refuse({
+      kind: "join", subject: { kind: "guest", admissionId: null, verified: false }, admissionId: null,
+      clientAttemptId: "guest", displayName: "Guest", captionLanguage: "en-US", replacesAttemptId: null,
+      newAdmissionId: "admission_guest", newAttemptId: "connection_guest", newGuestSecretHash: "hash",
+      guestNetworkKey: null, placement,
+    });
+    expect(m.state.meta.nodeId).toBe("node-a");
+    expect(m.state.attempts[h.attemptId].endedAt).toBeNull();
+
+    // Left waiting: no seat yet, so no move either.
+    const lobby = new Meeting({ joinPolicy: "approval_required" });
+    expect(lobby.join(ada, { placement }).kind).toBe("waiting");
+    expect(lobby.state.meta.nodeId).toBe("node-a");
+
+    // Let in: the meeting goes where placement said.
+    const back = m.admitted(host, { admissionId: h.admissionId, placement });
+    expect(m.state.meta.nodeId).toBe("node-b");
+    expect(back.nodeId).toBe("node-b");
   });
 
   it("keeps a closed door closed except to a manager", () => {
     const m = new Meeting({ joinPolicy: "closed" });
     expect(m.refuse({
       kind: "join", subject: ada, admissionId: null, clientAttemptId: "c", displayName: "Ada",
-      captionLanguage: "en", replacesAttemptId: null, newAdmissionId: "x", newAttemptId: "y", newGuestSecretHash: null, guestNetworkKey: null,
+      captionLanguage: "en", replacesAttemptId: null, newAdmissionId: "x", newAttemptId: "y", newGuestSecretHash: null, placement: null, guestNetworkKey: null,
     }).code).toBe("MEETING_CLOSED");
     expect(m.admitted(host).role).toBe("host");
   });
@@ -169,7 +196,7 @@ describe("joining", () => {
     const a = m.admitted(ada);
     expect(m.refuse({
       kind: "join", subject: bob, admissionId: a.admissionId, clientAttemptId: "c", displayName: "Bob",
-      captionLanguage: "en", replacesAttemptId: null, newAdmissionId: "x", newAttemptId: "y", newGuestSecretHash: null, guestNetworkKey: null,
+      captionLanguage: "en", replacesAttemptId: null, newAdmissionId: "x", newAttemptId: "y", newGuestSecretHash: null, placement: null, guestNetworkKey: null,
     }).code).toBe("FORBIDDEN");
   });
 
@@ -178,7 +205,7 @@ describe("joining", () => {
     m.admitted(ada);
     expect(m.refuse({
       kind: "join", subject: bob, admissionId: null, clientAttemptId: "c", displayName: "Bob",
-      captionLanguage: "en", replacesAttemptId: null, newAdmissionId: "x", newAttemptId: "y", newGuestSecretHash: null, guestNetworkKey: null,
+      captionLanguage: "en", replacesAttemptId: null, newAdmissionId: "x", newAttemptId: "y", newGuestSecretHash: null, placement: null, guestNetworkKey: null,
     }).code).toBe("PLAN_LIMIT_REACHED");
     expect(m.admitted(host).role).toBe("host");
   });
@@ -190,7 +217,7 @@ describe("joining", () => {
     for (const attempt of ["g1", "g2", "g3"]) {
       expect(m.refuse({
         kind: "join", subject: guest, admissionId: null, clientAttemptId: attempt, displayName: "Guest",
-        captionLanguage: "en", replacesAttemptId: null, newAdmissionId: `adm-${attempt}`, newAttemptId: `att-${attempt}`, newGuestSecretHash: "hash", guestNetworkKey: null,
+        captionLanguage: "en", replacesAttemptId: null, newAdmissionId: `adm-${attempt}`, newAttemptId: `att-${attempt}`, newGuestSecretHash: "hash", placement: null, guestNetworkKey: null,
       }).code).toBe("PLAN_LIMIT_REACHED");
     }
     expect(Object.keys(m.state.admissions)).toHaveLength(1);

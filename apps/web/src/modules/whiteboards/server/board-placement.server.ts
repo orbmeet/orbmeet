@@ -123,7 +123,13 @@ async function chooseBoardNode(
       return { node: nearest, ifIdle: true };
     }
   }
-  if (holderUp && (holder.weight > 0 || intent.kind === "service")) return { node: holder, ifIdle: false };
+  // A retiring node keeps the Meetings it has, so it keeps the boards they
+  // show too: moving one off would only bring it straight back with the
+  // Meeting's next join, disconnecting everyone on it each time.
+  const holderHostsMeeting = intent.kind === "meeting" && intent.mediaNodeId === holder?.id;
+  if (holderUp && (holder.weight > 0 || intent.kind === "service" || holderHostsMeeting)) {
+    return { node: holder, ifIdle: false };
+  }
   // Nothing answers: leave the board where it is rather than move it blind.
   const fallback = pickNode(nodes, up, intent.kind === "editor" ? intent.latencies : {}, board.id) ?? holder;
   return fallback && { node: fallback, ifIdle: false };
@@ -168,8 +174,12 @@ export async function placeBoard(
       // where it is, which costs the editor only distance.
       if (!handoff.ok && choice.ifIdle) return { node: holder, generation: board.syncGeneration };
       // A node that answered but could not save keeps the board: moving it
-      // would lose what it holds. One whose sync server cannot be reached is
-      // moved off, and its sockets are refused at their next authority check.
+      // would lose what it holds. So does one that took the handoff but did
+      // not answer in time: it may still be saving, and the next placement
+      // asks again, which joins that handoff or finds it done. One whose sync
+      // server cannot be reached is moved off, and its sockets are refused at
+      // their next authority check; one that hangs is moved off once its
+      // probes mark it down.
       if (!handoff.ok && !isUnreachable(handoff)) {
         logWarn("[whiteboard] board kept on its node: the handoff failed", {
           whiteboardId: board.id,

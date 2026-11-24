@@ -46,15 +46,23 @@ export type Command =
       newGuestSecretHash: string | null;
       /** A guest's network key (../access/guest-network.server.ts); null for a user. */
       guestNetworkKey: string | null;
+      /**
+       * Where placement, decided outside the room's queue, would have the
+       * meeting go, given the node it saw it on (`from`). Only a join that is
+       * let in moves the meeting, and only if it is still on `from`: one
+       * refused, or left waiting, changes nothing.
+       */
+      placement: { nodeId: string; from: string | null } | null;
     }
   | { kind: "release"; subject: Subject; attemptId: string }
   | { kind: "leave"; subject: Subject; attemptId: string }
   | { kind: "listPending"; subject: Subject }
   /**
-   * Whether `subject` may act as a moderator or manager of this meeting now.
-   * Changes nothing; work outside the room asks before it writes.
+   * Whether `subject` may act as a moderator, or as a host, of this meeting
+   * now. Changes nothing; work outside the room asks before it writes, or
+   * before it does work only that role may ask for.
    */
-  | { kind: "authorize"; subject: Subject }
+  | { kind: "authorize"; subject: Subject; as: "moderator" | "host" }
   | { kind: "decideAdmission"; subject: Subject; admissionId: string; approve: boolean }
   | { kind: "setJoinPolicy"; subject: Subject; joinPolicy: JoinPolicy }
   /** Rename the occurrence, if its title is still the one the caller saw. */
@@ -140,8 +148,6 @@ export type Observation =
  * about the room it is in now, and is ignored.
  */
 export type EffectResult =
-  /** Placement chose `nodeId` for a meeting it saw on `from`. */
-  | { kind: "placed"; nodeId: string; from: string | null }
   | { kind: "grantApplied"; placement: Placement; attemptId: string; sid: string | null; hash: string }
   | { kind: "removed"; placement: Placement; identity: string }
   /** The room as a listing requested at `requestedAt` saw it. */

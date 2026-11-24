@@ -415,8 +415,8 @@ export class RoomManager {
   }
 
   /**
-   * Give a new board its first state. The source is read first, and the
-   * only await is that read; whether the board is new is decided after it.
+   * Give a new board its first state. The source is read first, and only
+   * reading it awaits; whether the board is new is decided after it.
    */
   async seed(
     whiteboardRoomId: WhiteboardRoomId,
@@ -441,14 +441,21 @@ export class RoomManager {
         logError(`[RoomManager] Reading seed ${source.key} failed:`, error);
         return syncCommandFailure("unavailable", "Source snapshot could not be read");
       }
-    } else if (this.rooms.has(source.whiteboardRoomId) || roomDatabaseExists(this.dataDir, source.whiteboardRoomId)) {
-      const sourceRoom = this.openRoom(source.whiteboardRoomId, source.whiteboardId);
-      if (!sourceRoom) return syncCommandFailure("unavailable", "Source whiteboard could not be loaded");
-      snapshot = sourceRoom.document.currentSnapshot();
+    } else {
+      // The source at the generation D1 gives it, as any command for it
+      // would be: a board that just moved here has no database until its
+      // saved copy is loaded, and one that came back holds an older one.
+      const failure = await this.prepare(source.whiteboardRoomId, source.generation);
+      if (failure) return failure;
+      if (this.rooms.has(source.whiteboardRoomId) || roomDatabaseExists(this.dataDir, source.whiteboardRoomId)) {
+        const sourceRoom = this.openRoom(source.whiteboardRoomId, source.whiteboardId);
+        if (!sourceRoom) return syncCommandFailure("unavailable", "Source whiteboard could not be loaded");
+        snapshot = sourceRoom.document.currentSnapshot();
+      }
+      // Otherwise the source has no database here or in R2: nobody has
+      // opened it, so it is empty and so is its copy. The source itself is
+      // left as it is; reading it must not create it.
     }
-    // Otherwise the source has no database: nobody has opened it, so it is
-    // empty and so is its copy. The source itself is left as it is; reading
-    // it must not create it.
 
     if (this.purges.has(whiteboardRoomId) || this.handoffs.has(whiteboardRoomId)) {
       return syncCommandFailure("conflict", "The destination whiteboard is being deleted or moved");
@@ -641,6 +648,16 @@ export class RoomManager {
     // What the closed rooms did since their last save goes to R2 before the
     // process stops: the next node to hold them starts from it.
     if (!this.writerLockLost) await this.saveRooms(rooms.map((room) => room.whiteboardRoomId), { fresh: true });
+    // So does what is already on its way: a room that went idle just before
+    // has its save running on its own, and a handoff, purge or load may still
+    // be writing the data directory. The lock is held until all of it is
+    // done, so the next process never shares the directory with this one.
+    await Promise.allSettled([
+      ...this.saves.values(),
+      ...this.handoffs.values(),
+      ...this.purges.values(),
+      ...this.preparing.values(),
+    ]);
     this.writerLock?.release();
     this.writerLock = null;
     this.lifecycle = "closed";

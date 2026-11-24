@@ -170,7 +170,13 @@ export class RoomRetainedPresenceGuard {
    * is the only new bytes), log once per window, then transiently close — the
    * close is what deletes the record and broadcasts its removal to every peer.
    */
-  private evictRetainedPresence(
+  /**
+   * Evict a session's presence: the removal reaches every peer, as at session
+   * close, and the client republishes fresh state on reconnect. Also used by
+   * the presence lane for the record a client believes it pushed, which can
+   * outgrow the ceiling before anything of it reaches the store.
+   */
+  evictRetainedPresence(
     tldrawSessionId: string,
     userId: string,
     retainedBytes: number,

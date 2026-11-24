@@ -5,6 +5,7 @@ import {
   CONVERGING_TICK_MS,
   EGRESS_START_RESULT_TIMEOUT_MS,
   EMPTY_MEETING_GRACE_MS,
+  tokensUsableUntil,
   END_NOTICE_GRACE_MS,
   ISSUE_GRACE_MS,
   MEDIA_NODE_UNREACHABLE_GRACE_MS,
@@ -177,7 +178,10 @@ function wantedEffects(state: MeetingState, now: number): Effect[] {
   if (meta.phase === "ended") {
     const egressIdle = !egress.egressId && !egress.op;
     if (meta.endReason === "discarded") {
-      if (!state.finalized) add({ key: "discard", kind: "meeting.discard" });
+      // Discarding forgets the meeting, and with it the one thing that
+      // answers for its LiveKit room: wait until no token it issued could
+      // bring that room back. A late arrival meanwhile is removed as a stray.
+      if (!state.finalized && now >= tokensUsableUntil(state)) add({ key: "discard", kind: "meeting.discard" });
     } else {
       if (!state.finalized) add({ key: "finalize", kind: "meeting.finalize", reason: meta.endReason ?? "system" });
       else {
@@ -337,6 +341,7 @@ export function nextWakeAt(state: MeetingState, now: number): number | null {
   if (room.unreachableSince !== null) at(room.unreachableSince + MEDIA_NODE_UNREACHABLE_GRACE_MS);
   // Removals held for the end notice go once its grace runs out.
   if (endNoticePending(state, now)) at(meta.endedAt! + END_NOTICE_GRACE_MS);
+  if (meta.phase === "ended" && meta.endReason === "discarded" && !state.finalized) at(tokensUsableUntil(state));
   if (meta.phase === "ended") at(now + 60_000);
   return candidates.length > 0 ? Math.min(...candidates) : null;
 }

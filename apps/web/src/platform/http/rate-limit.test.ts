@@ -79,6 +79,7 @@ describe("webhook rate limiting", () => {
 
   it("distinguishes exhausted capacity from unavailable limiter infrastructure", () => {
     expect(rateLimitErrorResponse({ code: "RATE_LIMITED" }, "test").status).toBe(429);
+    expect(rateLimitErrorResponse({ code: "RATE_LIMITED" }, "test").headers.get("Retry-After")).toBe("60");
     expect(rateLimitErrorResponse({ code: "CONFIG_ERROR" }, "test").status).toBe(503);
   });
 });

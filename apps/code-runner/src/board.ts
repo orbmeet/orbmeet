@@ -97,6 +97,10 @@ export class Board {
   readonly #log: (message: string, detail?: unknown) => void;
   readonly #info: (message: string, detail?: unknown) => void;
   #starting: Promise<void> | null = null;
+  /** The container's replacement while it runs: no run starts until it is done. */
+  #replacing: Promise<void> | null = null;
+  /** Why the container is unfit, while a replacement could not destroy it. */
+  #unfit: string | null = null;
 
   constructor(container: BoardContainer, options: BoardOptions = {}) {
     this.#container = container;
@@ -112,6 +116,11 @@ export class Board {
 
   async run(request: CodeRunnerRequest): Promise<CodeRunOutcome> {
     const { runId } = request;
+    // No run is admitted onto a container being replaced, or one that could
+    // not be destroyed: it would land in a slot that failed its reset.
+    if (this.#replacing) await this.#replacing;
+    if (this.#unfit) await this.#replaceContainer(this.#unfit);
+    if (this.#unfit) throw new RunnerUnavailableError("The sandbox is being replaced");
     const admission = this.#table.admit(runId);
     if (admission.kind !== "admitted") return admission;
     const { slot, generation } = admission;
@@ -241,15 +250,29 @@ export class Board {
     }
   }
 
-  async #replaceContainer(reason: string, cause?: unknown): Promise<void> {
-    this.#log(`replacing the container: ${reason}`, cause);
-    this.#table.reset();
-    this.#starting = null;
-    try {
-      await this.#container.destroy(reason);
-    } catch (error) {
-      this.#log("destroying the container failed", error);
-    }
+  /**
+   * Replace the container: destroy it, then forget its runs and slots. One
+   * replacement at a time; a second asking joins it. The slots are freed only
+   * once the container is gone, so nothing is admitted onto it meanwhile, and
+   * a container that could not be destroyed stays unfit: the next run tries
+   * again rather than running in it.
+   */
+  #replaceContainer(reason: string, cause?: unknown): Promise<void> {
+    this.#replacing ??= (async () => {
+      this.#log(`replacing the container: ${reason}`, cause);
+      this.#starting = null;
+      try {
+        await this.#container.destroy(reason);
+        this.#unfit = null;
+      } catch (error) {
+        this.#log("destroying the container failed", error);
+        this.#unfit = reason;
+      }
+      this.#table.reset();
+    })().finally(() => {
+      this.#replacing = null;
+    });
+    return this.#replacing;
   }
 
   /** Logs what this container's kernel provides. Best effort: runs never wait on it. */

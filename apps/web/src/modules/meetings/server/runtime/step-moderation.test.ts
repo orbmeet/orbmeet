@@ -184,6 +184,22 @@ describe("moderation state is server-owned", () => {
   });
 });
 
+describe("asking the room before working outside it", () => {
+  it("tells a moderator from a host", () => {
+    const m = new Meeting();
+    m.joined(m.admitted(host).identity);
+    const a = m.admitted(ada);
+    m.joined(a.identity);
+    m.apply({ kind: "setModerator", subject: host, identity: a.identity, moderator: true });
+
+    expect(m.apply({ kind: "authorize", subject: ada, as: "moderator" }).reply).toEqual({ kind: "ok" });
+    // Recording and streaming are a host's to run.
+    expect(m.refuse({ kind: "authorize", subject: ada, as: "host" }).code).toBe("FORBIDDEN");
+    expect(m.refuse({ kind: "authorize", subject: bob, as: "moderator" }).code).toBe("FORBIDDEN");
+    expect(m.apply({ kind: "authorize", subject: host, as: "host" }).reply).toEqual({ kind: "ok" });
+  });
+});
+
 describe("removing a participant", () => {
   const guest: Subject = { kind: "guest", admissionId: null, verified: false };
 
@@ -202,7 +218,7 @@ describe("removing a participant", () => {
     const refused = m.refuse({
       kind: "join", subject: ada, admissionId: null, clientAttemptId: "ada-again", displayName: "ada",
       captionLanguage: "en", replacesAttemptId: null, newAdmissionId: "adm-again", newAttemptId: "att-again",
-      newGuestSecretHash: null, guestNetworkKey: null,
+      newGuestSecretHash: null, placement: null, guestNetworkKey: null,
     });
     expect(refused).toMatchObject({ code: "MEETING_ADMISSION_DENIED", message: "A moderator removed you from this meeting." });
     // Anyone else still joins.
@@ -221,7 +237,7 @@ describe("removing a participant", () => {
       captionLanguage: "en", replacesAttemptId: null, newAdmissionId: "adm-new", newAttemptId: "att-new",
       newGuestSecretHash: "cleared-cookie",
     };
-    expect(m.refuse({ ...again, guestNetworkKey: "network-a" }).code).toBe("MEETING_ADMISSION_DENIED");
+    expect(m.refuse({ ...again, placement: null, guestNetworkKey: "network-a" }).code).toBe("MEETING_ADMISSION_DENIED");
     // Another network, or a signed-in user on the same one, is not barred.
     expect(m.join(guest, { guestSecretHash: "other-guest", guestNetworkKey: "network-b" }).kind).toBe("admitted");
     expect(m.join(ada).kind).toBe("admitted");
@@ -277,7 +293,7 @@ describe("removing a participant", () => {
       kind: "join", subject: { kind: "guest", admissionId: second.admissionId, verified: true },
       admissionId: second.admissionId, clientAttemptId: "back", displayName: "Guest", captionLanguage: "en",
       replacesAttemptId: null, newAdmissionId: "adm-back", newAttemptId: "att-back", newGuestSecretHash: null,
-      guestNetworkKey: "network-a",
+      placement: null, guestNetworkKey: "network-a",
     });
     expect(rejoin.code).toBe("MEETING_ADMISSION_DENIED");
   });
@@ -292,7 +308,7 @@ describe("removing a participant", () => {
     expect(m.refuse({
       kind: "join", subject, admissionId: elsewhere.admissionId, clientAttemptId: "moved", displayName: "Guest",
       captionLanguage: "en", replacesAttemptId: null, newAdmissionId: "adm-moved", newAttemptId: "att-moved",
-      newGuestSecretHash: null, guestNetworkKey: "network-a",
+      newGuestSecretHash: null, placement: null, guestNetworkKey: "network-a",
     }).code).toBe("MEETING_ADMISSION_DENIED");
   });
 

@@ -28,6 +28,13 @@ import {
  * room requested after it that does not find the attempt ends it as unused.
  */
 export const ISSUE_GRACE_MS = 60_000;
+/**
+ * How long a LiveKit token the meeting hands out stays usable. LiveKit makes
+ * a room for anyone presenting one that has not expired, and self-hosted
+ * LiveKit cannot revoke it, so the meeting answers for every room a token it
+ * issued can still make: it is not discarded while one could.
+ */
+export const MEDIA_TOKEN_TTL_MS = 5 * 60_000;
 /** A joined attempt missing from the room this long has left. */
 export const ABSENT_GRACE_MS = 30_000;
 /** A waiter nobody decides on is turned away after this. */
@@ -67,6 +74,13 @@ export const MEDIA_NODE_UNREACHABLE_GRACE_MS = 5 * 60_000;
 export const END_NOTICE_GRACE_MS = 5_000;
 /** An attempt that ended and left the room is forgotten after this; D1 keeps its row. */
 export const SETTLED_ATTEMPT_RETENTION_MS = 10 * 60_000;
+/**
+ * How many may wait for approval at once. Each waiter is kept in the
+ * meeting's state, which is stored as one value, so the queue is bounded;
+ * far more than a moderator can work through before a waiter's request
+ * expires (ADMISSION_PENDING_TTL_MS).
+ */
+export const MAX_PENDING_ADMISSIONS = 100;
 /** How many forgotten attempts are still recognized, so a late request gets a graceful answer. */
 export const PRUNED_ATTEMPT_MEMORY = 500;
 /** How many barred users, and barred guest networks, a meeting remembers; the oldest go first. */
@@ -699,4 +713,16 @@ export function surfaceViewFor(state: MeetingState): MeetingRoomState["surface"]
     revision: surface.revision,
     openRevision: surface.openRevision,
   };
+}
+
+/**
+ * Until when a LiveKit token this meeting issued could still make its room:
+ * the newest attempt's issue, plus a token's lifetime. Attempts are kept well
+ * past that (SETTLED_ATTEMPT_RETENTION_MS), so none whose token is still
+ * usable has been forgotten.
+ */
+export function tokensUsableUntil(state: MeetingState): number {
+  let newest = Number.NEGATIVE_INFINITY;
+  for (const attempt of Object.values(state.attempts)) newest = Math.max(newest, attempt.issuedAt);
+  return newest + MEDIA_TOKEN_TTL_MS;
 }

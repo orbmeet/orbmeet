@@ -80,6 +80,20 @@ describe("egress", () => {
     expect(stops()).toEqual([]);
   });
 
+  // LiveKit refuses to stop an egress that already ended, so a stray that
+  // ends on its own must stop being stopped, or the meeting never drains.
+  it("forgets a stray that ends on its own", () => {
+    const { m } = recording();
+    m.apply({ kind: "egressObserved", complete: true, egresses: [
+      { egressId: "EG_stray", status: "active", streamActive: false, streamFailure: null, error: null },
+    ] });
+    m.apply({ kind: "egressObserved", complete: false, egresses: [
+      { egressId: "EG_stray", status: "complete", streamActive: false, streamFailure: null, error: null },
+    ] });
+    expect(m.state.egress.strays).toEqual([]);
+    expect(m.plan().filter((effect) => effect.kind === "livekit.stopEgress")).toEqual([]);
+  });
+
   it("keeps the egress its unanswered start created when a webhook reports it first", () => {
     const { m } = recording();
     const started = m.apply({ kind: "setEgress", subject: host, mode: "recording", on: true, target: null });
@@ -165,7 +179,7 @@ describe("egress", () => {
   it("fails the egress and ends old-node attempts when the meeting moves", () => {
     const { m, h } = recording();
     m.apply({ kind: "setEgress", subject: host, mode: "recording", on: true, target: null });
-    m.apply({ kind: "placed", nodeId: "node-b", from: "node-a" });
+    m.admitted(host, { admissionId: h.admissionId, placement: { nodeId: "node-b", from: "node-a" } });
     expect(m.state.attempts[h.attemptId].endReason).toBe("media_node_moved");
     expect(m.state.egress.lastFailure).toMatch(/unreachable/);
     expect(m.state.meta.phase).toBe("live");
@@ -181,8 +195,7 @@ describe("results from a placement the meeting has left", () => {
     const onA = m.here();
     const metadata = m.plan().find((effect) => effect.kind === "livekit.roomMetadata");
     if (metadata?.kind !== "livekit.roomMetadata") throw new Error("expected a metadata push");
-    m.apply({ kind: "placed", nodeId: "node-b", from: "node-a" });
-    const b = m.admitted(host, { admissionId: a.admissionId });
+    const b = m.admitted(host, { admissionId: a.admissionId, placement: { nodeId: "node-b", from: "node-a" } });
     m.joined(b.identity);
     return { m, onA, metadata, b };
   }
@@ -212,10 +225,11 @@ describe("results from a placement the meeting has left", () => {
 
   it("tells a return to the same node from the placement it left", () => {
     const m = new Meeting();
-    m.joined(m.admitted(host).identity);
+    const h = m.admitted(host);
+    m.joined(h.identity);
     const first = m.here();
-    m.apply({ kind: "placed", nodeId: "node-b", from: "node-a" });
-    m.apply({ kind: "placed", nodeId: "node-a", from: "node-b" });
+    m.admitted(host, { admissionId: h.admissionId, placement: { nodeId: "node-b", from: "node-a" } });
+    m.admitted(host, { admissionId: h.admissionId, placement: { nodeId: "node-a", from: "node-b" } });
     expect(m.here()).toMatchObject({ nodeId: "node-a" });
     expect(m.here().generation).not.toBe(first.generation);
   });

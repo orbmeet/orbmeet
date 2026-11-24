@@ -119,7 +119,7 @@ class Run {
         const own = Object.values(this.state.admissions).filter((admission) => admission.userId === userId);
         const admissionId = own.length > 0 && rng.chance(0.4) ? rng.pick(own).id : null;
         return {
-          inputs: [authority, { kind: "join", subject, admissionId, ...ids, ...base, newGuestSecretHash: null, guestNetworkKey: null }],
+          inputs: [authority, { kind: "join", subject, admissionId, ...ids, ...base, newGuestSecretHash: null, placement: null, guestNetworkKey: null }],
           check: (before) => {
             const reply = this.lastReply;
             if (!reply || (reply.kind !== "admitted" && reply.kind !== "waiting")) return;
@@ -139,7 +139,7 @@ class Run {
         return {
           inputs: [{
             kind: "join", subject, admissionId: existing?.admissionId ?? null, ...ids, ...base,
-            newGuestSecretHash: existing ? null : `secret_${this.seq}`, guestNetworkKey: network,
+            newGuestSecretHash: existing ? null : `secret_${this.seq}`, placement: null, guestNetworkKey: network,
           }],
           check: (before) => {
             const reply = this.lastReply;

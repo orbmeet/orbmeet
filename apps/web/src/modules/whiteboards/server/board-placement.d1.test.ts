@@ -209,6 +209,18 @@ describe("placeBoard", () => {
     expect(placement).toMatchObject({ node: { id: "ams1" }, generation: 4 });
   });
 
+  it("keeps a board on a node that took the handoff but did not answer in time: it may still be saving", async () => {
+    await insertBoard("sg1", 3);
+    handoff = () => {
+      throw new DOMException("The operation timed out.", "TimeoutError");
+    };
+
+    const placement = await placeBoard(db, env(), "wb_1", { kind: "meeting", meetingId: "mtg_1", mediaNodeId: "ams1" });
+
+    expect(placement).toMatchObject({ node: { id: "sg1" }, generation: 3 });
+    expect(await boardRow()).toEqual({ syncNodeId: "sg1", syncGeneration: 3 });
+  });
+
   it("moves a board off a node that is down without asking it, to the node nearest its editor", async () => {
     await insertBoard("ams1", 3);
     await recordFailures("ams1", "whiteboard", 5);
@@ -234,6 +246,20 @@ describe("placeBoard", () => {
     expect(await placeBoard(db, retiring, "wb_1", { kind: "service" })).toMatchObject({ node: { id: "sg1" }, generation: 3 });
     expect(await placeBoard(db, retiring, "wb_1", { kind: "editor", latencies: FROM_SINGAPORE }))
       .toMatchObject({ node: { id: "ams1" }, generation: 4 });
+  });
+
+  it("keeps a board beside a Meeting that a retiring node still hosts, however many join", async () => {
+    const retiring = env({ sg1: node("sg1", 0) });
+    await insertBoard("ams1", 3);
+    await showInMeeting("mtg_abc", "sg1");
+    const intent = { kind: "meeting", meetingId: "mtg_abc", mediaNodeId: "sg1" } as const;
+
+    // The board follows the Meeting onto its node once, then stays there.
+    expect(await placeBoard(db, retiring, "wb_1", intent)).toMatchObject({ node: { id: "sg1" }, generation: 4 });
+    for (let join = 0; join < 3; join++) {
+      expect(await placeBoard(db, retiring, "wb_1", intent)).toMatchObject({ node: { id: "sg1" }, generation: 4 });
+    }
+    expect(received.filter((command) => command.name === "handoff")).toHaveLength(1);
   });
 
   it("answers null for a board with no row", async () => {

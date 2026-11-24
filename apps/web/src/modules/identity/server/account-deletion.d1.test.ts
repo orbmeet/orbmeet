@@ -4,6 +4,7 @@ import {
   meetingArtifacts,
   meetingLinks,
   meetings,
+  meetingWhiteboards,
   files,
   spaces,
   users,
@@ -260,6 +261,34 @@ describe("cleanupAccountR2Objects", () => {
 
     expect(scope).toEqual({ meetingIds: ["meeting_1"], whiteboardIds: ["whiteboard_personal"] });
     expect(keys.size).toBe(0);
+    await expect(db.select().from(whiteboards)).resolves.toEqual([]);
+    await expect(db.select().from(meetings)).resolves.toEqual([]);
+  });
+
+  it("deletes a personal board that was shown in a personal meeting", async () => {
+    const db = await seedAccountDeletionData();
+    const now = new Date();
+    await db.insert(whiteboards).values({
+      id: "whiteboard_presented",
+      syncRoomId: "whiteboard_presented",
+      spaceId: "owner_space",
+      title: "Presented",
+      createdByUserId: "owner",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(meetingWhiteboards).values({
+      id: "usage_presented",
+      meetingId: "meeting_1",
+      spaceId: "owner_space",
+      whiteboardId: "whiteboard_presented",
+      attachedAt: now,
+    });
+    const { bucket } = createBucket([]);
+
+    await releaseOwnerStorage(db, bucket);
+
+    await expect(db.select().from(meetingWhiteboards)).resolves.toEqual([]);
     await expect(db.select().from(whiteboards)).resolves.toEqual([]);
     await expect(db.select().from(meetings)).resolves.toEqual([]);
   });

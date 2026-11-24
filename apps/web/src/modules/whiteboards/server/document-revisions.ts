@@ -276,9 +276,13 @@ export async function copyWhiteboard(
     source = { key: revision.snapshotR2Key };
     node = await nodeForNewBoard(db, env, input.nodeLatencies ?? {}, `${board.id}/${input.revisionId}`);
   } else {
-    source = { whiteboardRoomId: toWhiteboardRoomId(board.syncRoomId), whiteboardId: board.id };
     const placement = await placeBoard(db, env, board.syncRoomId, { kind: "service" });
     if (!placement) throw Errors.NOT_FOUND("Whiteboard");
+    source = {
+      whiteboardRoomId: toWhiteboardRoomId(board.syncRoomId),
+      whiteboardId: board.id,
+      generation: placement.generation,
+    };
     node = placement.node;
   }
   const copyPlacement = { node, generation: 1 };

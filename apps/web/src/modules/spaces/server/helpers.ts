@@ -278,8 +278,11 @@ export type SpaceCapability =
   | "canDelete"
   | "canTransferOwnership";
 
-/** Write-time fence for content mutations available to every direct member. */
-export function retainsSpaceViewerSql(spaceId: string, userId: string) {
+/**
+ * Write-time fence for content mutations available to every direct member.
+ * `spaceId` may be a column, correlating the check with an outer query.
+ */
+export function retainsSpaceViewerSql(spaceId: string | AnyColumn, userId: string) {
   return sql`EXISTS (
     SELECT 1
     FROM space_members AS actor_membership

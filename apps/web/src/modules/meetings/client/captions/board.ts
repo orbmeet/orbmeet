@@ -12,7 +12,10 @@
  */
 
 export interface CaptionTranscriptEntry {
-  /** The segment id: stable for the life of an utterance, so an update is not a remount. */
+  /**
+   * The segment's key: its speaker and its id, stable for the life of an
+   * utterance, so an update is not a remount.
+   */
   id: string;
   participant: string;
   userName: string;
@@ -90,11 +93,22 @@ export function reduceCaptionBoard(state: CaptionBoardState, event: CaptionBoard
   }
 }
 
+/**
+ * A segment is its speaker's: a segment id is only unique within the stream of
+ * captions for one speaker, and anyone who sees a caption sees its id. Keyed by
+ * id alone, a participant who sent another's id with a higher revision could
+ * rewrite or withdraw that person's words for every viewer.
+ */
+function segmentKey(update: CaptionUpdate): string {
+  return `${update.participant}\u0000${update.segmentId}`;
+}
+
 function applyUpdate(state: CaptionBoardState, update: CaptionUpdate): CaptionBoardState {
-  const seen = state.segments.get(update.segmentId);
+  const key = segmentKey(update);
+  const seen = state.segments.get(key);
   if (seen && (seen.isFinal || update.revision <= seen.revision)) return state;
 
-  const segments = new Map(state.segments).set(update.segmentId, {
+  const segments = new Map(state.segments).set(key, {
     revision: update.revision,
     isFinal: update.isFinal,
   });
@@ -102,7 +116,7 @@ function applyUpdate(state: CaptionBoardState, update: CaptionUpdate): CaptionBo
     transcript,
     segments: boundSegments(segments, transcript),
   });
-  const index = state.transcript.findIndex((entry) => entry.id === update.segmentId);
+  const index = state.transcript.findIndex((entry) => entry.id === key);
 
   if (!update.text) {
     // Withdrawn, or an interim with nothing in it yet.
@@ -111,7 +125,7 @@ function applyUpdate(state: CaptionBoardState, update: CaptionUpdate): CaptionBo
   }
 
   const entry: CaptionTranscriptEntry = {
-    id: update.segmentId,
+    id: key,
     participant: update.participant,
     userName: update.userName,
     text: update.text,

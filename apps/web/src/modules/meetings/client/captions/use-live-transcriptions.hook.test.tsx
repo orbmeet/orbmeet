@@ -88,7 +88,7 @@ describe("useLiveTranscriptions", () => {
     await flush();
 
     expect(captions()).toEqual([
-      expect.objectContaining({ id: "job:u0", userName: "Ada", text: "hello", isFinal: true }),
+      expect.objectContaining({ id: "speaker-1\u0000job:u0", userName: "Ada", text: "hello", isFinal: true }),
     ]);
   });
 

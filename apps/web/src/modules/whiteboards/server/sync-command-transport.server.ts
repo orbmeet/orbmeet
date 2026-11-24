@@ -43,13 +43,26 @@ const COMMAND_TIMEOUT_MS: Record<SyncCommandName, number> = {
   navigationControllerRelease: SHORT_TIMEOUT_MS,
 };
 
-/** A command that never reached the node, or got no answer from it: not something the node decided. */
+/**
+ * A command that never reached the node, or that its sync server could not
+ * take: not something the node decided. A command that reached the node but
+ * ran out of time is not one: the node may still be carrying it out (a
+ * handoff mid-save), so nothing may be decided as if it never arrived.
+ */
 export function isUnreachable(result: SyncCommandResult<SyncCommandName>): boolean {
   return !result.ok && result.details?.unreachable === true;
 }
 
 function unreachable(): SyncCommandFailure {
   return syncCommandFailure("unavailable", "Whiteboard service unavailable", { unreachable: true });
+}
+
+function timedOut(): SyncCommandFailure {
+  return syncCommandFailure("unavailable", "Whiteboard service did not answer in time", { timedOut: true });
+}
+
+function isTimeout(error: unknown): boolean {
+  return error instanceof Error && error.name === "TimeoutError";
 }
 
 /** One command to one node, signed with that node's command key, answered with its typed result. */
@@ -66,6 +79,10 @@ export async function postSyncCommand<C extends SyncCommandName>(
       headers: { [SYNC_PROTOCOL_HEADER]: String(SYNC_PROTOCOL.speaks) },
     });
   } catch (error) {
+    if (isTimeout(error)) {
+      logWarn("[whiteboard] sync server did not answer a command in time", { name, node: node.id });
+      return timedOut();
+    }
     logWarn("[whiteboard] command failed to reach the sync server", { name, node: node.id }, error);
     return unreachable();
   }
@@ -77,7 +94,9 @@ export async function postSyncCommand<C extends SyncCommandName>(
   try {
     const result = parseSyncCommandResult(await response.json());
     if (result) return result;
-  } catch {
+  } catch (error) {
+    // The answer started but did not finish in time: still running there.
+    if (isTimeout(error)) return timedOut();
     // Fall through: anything but a typed result is an outage, not an answer.
   }
   logWarn("[whiteboard] sync server answered a command without a result", {

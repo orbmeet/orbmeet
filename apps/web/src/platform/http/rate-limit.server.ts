@@ -122,6 +122,9 @@ export async function enforceWebhookPreAuthRateLimit(
   );
 }
 
+/** The period of every rate-limit binding (cloudflare.config.ts). */
+const RATE_LIMIT_WINDOW_SECONDS = 60;
+
 /**
  * Convert a fail-closed limiter exception at an HTTP boundary without hiding a
  * deployment or provider failure as ordinary client throttling.
@@ -131,7 +134,12 @@ export function rateLimitErrorResponse(error: unknown, operation: string): Respo
     ? (error as { code?: unknown }).code
     : undefined;
   if (code === "RATE_LIMITED") {
-    return new Response("Too many requests", { status: 429 });
+    // When the window that refused it has passed: a caller that retries
+    // sooner only spends the next window's budget.
+    return new Response("Too many requests", {
+      status: 429,
+      headers: { "Retry-After": String(RATE_LIMIT_WINDOW_SECONDS) },
+    });
   }
   logError("[RateLimit] Limiter operation failed.", { operation, code });
   return new Response("Service unavailable", { status: 503 });

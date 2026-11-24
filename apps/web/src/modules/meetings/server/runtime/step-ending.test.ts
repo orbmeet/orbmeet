@@ -5,11 +5,14 @@ import {
   EMPTY_MEETING_GRACE_MS,
   END_NOTICE_GRACE_MS,
   MEDIA_NODE_UNREACHABLE_GRACE_MS,
+  MEDIA_TOKEN_TTL_MS,
   PRESENCE_CHECK_MS,
+  MAX_PENDING_ADMISSIONS,
   SETTLED_ATTEMPT_RETENTION_MS,
   type SurfaceFocus,
 } from "./model";
 import { nextWakeAt, readyToDrain } from "./plan";
+import { applyInputs } from "./step";
 import type { Command, Input, Subject } from "./protocol";
 import { T0, host, ada, bob, Meeting, kinds } from "./step-test-support";
 
@@ -22,8 +25,7 @@ describe("ending", () => {
 
     // The node dies; the participant's recovery issues an attempt that never
     // connects and is released.
-    m.apply({ kind: "placed", nodeId: "node-b", from: "node-a" });
-    const recovery = m.admitted(ada, { admissionId: a.admissionId });
+    const recovery = m.admitted(ada, { admissionId: a.admissionId, placement: { nodeId: "node-b", from: "node-a" } });
     m.apply({ kind: "release", subject: ada, attemptId: recovery.attemptId });
     m.advance(EMPTY_MEETING_GRACE_MS);
 
@@ -41,13 +43,23 @@ describe("ending", () => {
     expect(m.state.meta.phase).toBe("provisional");
   });
 
-  it("discards an occurrence nobody ever joined", () => {
+  it("discards an occurrence nobody ever joined, once no token it issued can still make its room", () => {
     const m = new Meeting();
     const a = m.admitted(host);
     m.apply({ kind: "release", subject: host, attemptId: a.attemptId });
     m.advance(EMPTY_MEETING_GRACE_MS);
     expect(m.state.meta.endReason).toBe("discarded");
+    // The host's token still works: forgetting the meeting now would leave a
+    // room it recreates answering to no one.
+    expect(kinds(m.plan())).not.toContain("meeting.discard");
+    expect(nextWakeAt(m.state, m.now)).toBeLessThanOrEqual(T0 + MEDIA_TOKEN_TTL_MS);
+
+    m.advance(T0 + MEDIA_TOKEN_TTL_MS - m.now);
     expect(kinds(m.plan())).toContain("meeting.discard");
+  });
+
+  it("keeps attempts longer than their tokens last, so none still usable is forgotten", () => {
+    expect(SETTLED_ATTEMPT_RETENTION_MS).toBeGreaterThan(MEDIA_TOKEN_TTL_MS);
   });
 
   it("drains only after every outside effect settled", () => {
@@ -219,6 +231,51 @@ describe("state size", () => {
     expect(m.plan()).toContainEqual(expect.objectContaining({ kind: "livekit.remove", identity: a.identity }));
   });
 
+  it("forgets nothing settled while D1 has not caught up, so D1 never keeps a departed participant live", () => {
+    const m = new Meeting();
+    m.admitted(host);
+    const a = m.admitted(ada);
+    m.joined(a.identity);
+    m.apply({ kind: "leave", subject: ada, attemptId: a.attemptId });
+    m.apply({ kind: "removed", placement: m.here(), identity: a.identity });
+    m.now += SETTLED_ATTEMPT_RETENTION_MS;
+
+    const behind = applyInputs(m.state, [{ kind: "tick" }], m.now, { forgetSettled: false });
+    expect(behind.state.attempts[a.attemptId]).toMatchObject({ endReason: "voluntary" });
+    const caughtUp = applyInputs(behind.state, [{ kind: "tick" }], m.now, { forgetSettled: true });
+    expect(caughtUp.state.attempts[a.attemptId]).toBeUndefined();
+  });
+
+  it("forgets a guest's admission once none of its attempts is remembered", () => {
+    const m = new Meeting();
+    m.joined(m.admitted(host).identity);
+    const g = m.admitted({ kind: "guest", admissionId: null, verified: false });
+    m.joined(g.identity);
+    m.apply({ kind: "leave", subject: { kind: "guest", admissionId: g.admissionId, verified: true }, attemptId: g.attemptId });
+    m.apply({ kind: "removed", placement: m.here(), identity: g.identity });
+    m.advance(SETTLED_ATTEMPT_RETENTION_MS);
+    expect(m.state.attempts[g.attemptId]).toBeUndefined();
+
+    m.advance(0);
+    expect(m.state.admissions[g.admissionId]).toBeUndefined();
+  });
+
+  it("keeps the waiting room bounded, and lets a manager in past it", () => {
+    const m = new Meeting({ joinPolicy: "approval_required" });
+    m.joined(m.admitted(host).identity);
+    for (let index = 0; index < MAX_PENDING_ADMISSIONS; index++) {
+      expect(m.join({ kind: "guest", admissionId: null, verified: false }, { guestSecretHash: `h${index}` }).kind).toBe("waiting");
+    }
+
+    expect(m.refuse({
+      kind: "join", subject: { kind: "guest", admissionId: null, verified: false }, admissionId: null,
+      clientAttemptId: "one-more", displayName: "Guest", captionLanguage: "en-US", replacesAttemptId: null,
+      newAdmissionId: "admission_more", newAttemptId: "connection_more", newGuestSecretHash: "h-more",
+      placement: null, guestNetworkKey: null,
+    }).code).toBe("PLAN_LIMIT_REACHED");
+    expect(m.admitted({ kind: "user", userId: "admin", spaceRole: "admin" })).toBeDefined();
+  });
+
   it("answers a retried leave or release for a forgotten attempt as it would an ended one", () => {
     const m = new Meeting();
     m.admitted(host);
@@ -302,7 +359,7 @@ describe("every command, repeated", () => {
     replacesAttemptId: null, newAdmissionId: retry ? "admission_retry" : "admission_new",
     newAttemptId: retry ? "attempt_retry" : "attempt_new",
     newGuestSecretHash: subject.kind === "guest" ? "guest-secret-hash" : null,
-    guestNetworkKey: subject.kind === "guest" ? "network-a" : null,
+    placement: null, guestNetworkKey: subject.kind === "guest" ? "network-a" : null,
   });
 
   const cases: Record<Command["kind"], Record<string, Case>> = {
@@ -314,7 +371,10 @@ describe("every command, repeated", () => {
     release: { "an unused attempt": ({ issued }) => ({ kind: "release", subject: ada, attemptId: issued.attemptId }) },
     leave: { "a live attempt": ({ a }) => ({ kind: "leave", subject: ada, attemptId: a.attemptId }) },
     listPending: { "the queue": () => ({ kind: "listPending", subject: host }) },
-    authorize: { "a moderator's question": () => ({ kind: "authorize", subject: host }) },
+    authorize: {
+      "a moderator's question": () => ({ kind: "authorize", subject: host, as: "moderator" }),
+      "a host's question": () => ({ kind: "authorize", subject: host, as: "host" }),
+    },
     decideAdmission: {
       "an approval": ({ pending }) => ({ kind: "decideAdmission", subject: host, admissionId: pending, approve: true }),
       "a denial": ({ pending }) => ({ kind: "decideAdmission", subject: host, admissionId: pending, approve: false }),

@@ -18,6 +18,7 @@ const USER = "user-1";
 function createLane(budget: { allow: boolean } = { allow: true }) {
   const resyncs: string[] = [];
   const charged: number[] = [];
+  const evicted: Array<{ sessionId: string; bytes: number }> = [];
   const lane = new RoomPresenceLane({
     reserveFanout: (_userId, bytes) => {
       if (!budget.allow) return false;
@@ -25,8 +26,9 @@ function createLane(budget: { allow: boolean } = { allow: true }) {
       return true;
     },
     requestResync: (sessionId) => resyncs.push(sessionId),
+    evictOversized: (sessionId, _userId, bytes) => evicted.push({ sessionId, bytes }),
   });
-  return { lane, resyncs, charged, budget };
+  return { lane, resyncs, charged, budget, evicted };
 }
 
 const record = { typeName: "instance_presence", cursor: { x: 0, y: 0 }, selectedShapeIds: [], scribbles: [], brush: null };
@@ -35,6 +37,30 @@ const move = (x: number): PresenceOp => ["patch", { cursor: ["put", { x, y: 0 }]
 describe("RoomPresenceLane", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
+
+  // A record over the message ceiling is never forwarded, so the room's own
+  // retained-presence ceiling never sees it: the lane's copy must be bounded
+  // where it is kept, or a viewer's patches grow it without end.
+  it("evicts a session whose presence outgrows the retained ceiling, and forgets its record", () => {
+    const { lane, evicted, charged } = createLane();
+    const chunk = "x".repeat(8 * 1024);
+    lane.forward(SESSION, USER, ["put", record]);
+
+    let forwarded: PresenceOp | null = ["put", record];
+    let patches = 0;
+    while (evicted.length === 0 && patches < 10) {
+      forwarded = lane.forward(SESSION, USER, ["patch", { [`k${patches}`]: ["put", chunk] }]);
+      patches += 1;
+    }
+
+    expect(forwarded).toBeNull();
+    expect(evicted).toEqual([{ sessionId: SESSION, bytes: expect.any(Number) }]);
+    expect(evicted[0].bytes).toBeGreaterThan(WHITEBOARD_CONFIG.MAX_RETAINED_PRESENCE_BYTES);
+    expect(patches).toBeLessThanOrEqual(5);
+    // Starting again, the session's next patch has nothing to land on.
+    charged.length = 0;
+    expect(lane.forward(SESSION, USER, move(1))).toEqual(move(1));
+  });
 
   it("forwards each operation as it came while peers are in step", () => {
     const { lane } = createLane();

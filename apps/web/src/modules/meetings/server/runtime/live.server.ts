@@ -48,12 +48,21 @@ async function send(
   data: { meetingId: string; connectionId?: string },
   build: (subject: SubjectInput) => CoordinatorCommand,
 ): Promise<Reply> {
+  const { meetingId, subject } = await requester(context, action, data);
+  return callCoordinator(context.env, { kind: "command", meetingId, command: build(subject) });
+}
+
+/** The request's rate limit, then the meeting it names and who is asking. */
+async function requester(
+  context: RequestFnContext,
+  action: string,
+  data: { meetingId: string; connectionId?: string },
+): Promise<{ meetingId: string; subject: SubjectInput }> {
   const { env, db, user, clientIP } = context;
   await enforceRateLimit(env, `meeting:${action}:${user?.id ?? clientIP}`);
   const meeting = await meetingRow(db, data.meetingId);
   const subject = await requestSubject(db, meeting.id, user, { attemptId: data.connectionId ?? null });
-  const reply = await callCoordinator(env, { kind: "command", meetingId: meeting.id, command: build(subject) });
-  return reply;
+  return { meetingId: meeting.id, subject };
 }
 
 function expect<K extends Reply["kind"]>(reply: Reply, kind: K): Extract<Reply, { kind: K }> {
@@ -304,38 +313,40 @@ async function assertEgressAllowed(db: Database, meetingId: string, mode: "recor
 }
 
 export async function setRecording(data: Input<typeof setRecordingSchema>, context: AuthFnContext) {
-  if (data.on) await assertEgressAllowed(context.db, data.meetingId, "recording");
-  const reply = expect(
-    await send(context, "recording", data, (subject) => ({
-      kind: "setEgress",
-      subject,
-      mode: "recording",
-      on: data.on,
-      target: null,
-    })),
-    "egress",
-  );
-  return reply.egress;
+  const { meetingId, subject } = await requester(context, "recording", data);
+  if (data.on) {
+    // Only a host's request is worth the plan lookup.
+    await authorizeHost(context.env, meetingId, subject);
+    await assertEgressAllowed(context.db, meetingId, "recording");
+  }
+  return setEgress(context.env, meetingId, { kind: "setEgress", subject, mode: "recording", on: data.on, target: null });
 }
 
 export async function setStreaming(data: Input<typeof setStreamingSchema>, context: AuthFnContext) {
+  const { meetingId, subject } = await requester(context, "streaming", data);
   let target: string | null = null;
   if (data.on) {
-    await assertEgressAllowed(context.db, data.meetingId, "streaming");
     const streamKey = data.streamKey?.trim();
     if (!data.platform || !streamKey) throw Errors.VALIDATION("Platform and stream key are required");
+    // Only a host's request is worth the plan lookup, or a DNS lookup of
+    // the destination it names.
+    await authorizeHost(context.env, meetingId, subject);
+    await assertEgressAllowed(context.db, meetingId, "streaming");
     target = await buildRtmpUrl(data.platform, streamKey);
   }
-  const reply = expect(
-    await send(context, "streaming", data, (subject) => ({
-      kind: "setEgress",
-      subject,
-      mode: "streaming",
-      on: data.on,
-      target,
-    })),
-    "egress",
-  );
-  return reply.egress;
+  return setEgress(context.env, meetingId, { kind: "setEgress", subject, mode: "streaming", on: data.on, target });
+}
+
+/** Refuses unless `subject` may run the meeting's recording and streaming now. */
+async function authorizeHost(env: Env, meetingId: string, subject: SubjectInput): Promise<void> {
+  await callCoordinator(env, { kind: "command", meetingId, command: { kind: "authorize", subject, as: "host" } });
+}
+
+async function setEgress(
+  env: Env,
+  meetingId: string,
+  command: Extract<CoordinatorCommand, { kind: "setEgress" }>,
+): Promise<EgressView> {
+  return expect(await callCoordinator(env, { kind: "command", meetingId, command }), "egress").egress;
 }
 

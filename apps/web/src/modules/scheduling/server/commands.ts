@@ -22,7 +22,7 @@ import type { AuthenticatedUser } from "@/modules/identity/contract/auth/session
 
 import { getRunChanges, isUniqueConstraintError } from "@/platform/database/db-utils";
 import { logError } from "@/lib/logger";
-import { getSpaceAccess, retainsSpaceManagerSql } from "@/modules/spaces/server/helpers";
+import { getSpaceAccess, retainsSpaceManagerSql, retainsSpaceViewerSql } from "@/modules/spaces/server/helpers";
 import { ensurePersonalSpace } from "@/modules/spaces/server/personal";
 
 // One row per attendee, so this id has to be generated in SQL — but with the
@@ -374,6 +374,11 @@ export async function loadIdempotentMeetingScheduleCreate(
       and(
         eq(meetingSchedules.organizerUserId, organizerUserId),
         eq(meetingSchedules.idempotencyKey, idempotencyKey),
+        // A replay answers with the schedule as it is now, its link's current
+        // code among it, so it is only for an organizer who still belongs to
+        // the live Space: one who left it, or whose Space was archived, is
+        // answered as a new create would be, which refuses them.
+        retainsSpaceViewerSql(meetingSchedules.spaceId, organizerUserId),
       ),
     )
     .limit(1)

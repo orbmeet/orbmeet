@@ -22,6 +22,9 @@ function update(overrides: Partial<CaptionUpdate> = {}): CaptionUpdate {
   };
 }
 
+/** An entry's key: its speaker's segment. */
+const key = (segmentId: string, participant = "user-1") => `${participant}\u0000${segmentId}`;
+
 function apply(...updates: CaptionUpdate[]): CaptionBoardState {
   return updates.reduce(
     (state, next) => reduceCaptionBoard(state, { type: "caption", update: next }),
@@ -38,7 +41,7 @@ describe("reduceCaptionBoard", () => {
     );
     // It keeps its place in time from the first word, and its last update.
     expect(state.transcript).toEqual([
-      { id: "job:u0", participant: "user-1", userName: "Ada", text: "hello there.", isFinal: true, startedAt: 1_000, updatedAt: 1_900 },
+      { id: key("job:u0"), participant: "user-1", userName: "Ada", text: "hello there.", isFinal: true, startedAt: 1_000, updatedAt: 1_900 },
     ]);
   });
 
@@ -62,8 +65,21 @@ describe("reduceCaptionBoard", () => {
       update({ segmentId: "job:u1", text: "second thought", isFinal: true }),
     );
     expect(state.transcript.map((entry) => [entry.id, entry.text])).toEqual([
-      ["job:u0", "first thought"],
-      ["job:u1", "second thought"],
+      [key("job:u0"), "first thought"],
+      [key("job:u1"), "second thought"],
+    ]);
+  });
+
+  it("keeps each speaker's segments their own, whatever id another sends", () => {
+    // Bob's client sends Ada's segment id, final and far ahead: it is Bob's
+    // own segment, and Ada's line stands.
+    const state = apply(
+      update({ segmentId: "job:u0", participant: "ada", text: "the answer is four", revision: 1 }),
+      update({ segmentId: "job:u0", participant: "bob", text: "", revision: 99, isFinal: true }),
+      update({ segmentId: "job:u0", participant: "ada", text: "the answer is four.", revision: 2, isFinal: true }),
+    );
+    expect(state.transcript).toEqual([
+      expect.objectContaining({ id: key("job:u0", "ada"), participant: "ada", text: "the answer is four.", isFinal: true }),
     ]);
   });
 
@@ -73,7 +89,7 @@ describe("reduceCaptionBoard", () => {
       update({ segmentId: "b:u0", participant: "b", text: "b starts" }),
       update({ segmentId: "a:u0", participant: "a", revision: 2, text: "a starts and finishes", isFinal: true }),
     );
-    expect(state.transcript.map((entry) => entry.id)).toEqual(["a:u0", "b:u0"]);
+    expect(state.transcript.map((entry) => entry.id)).toEqual([key("a:u0", "a"), key("b:u0", "b")]);
     expect(state.transcript[0].text).toBe("a starts and finishes");
   });
 
@@ -106,7 +122,7 @@ describe("reduceCaptionBoard", () => {
       });
     }
     expect(state.transcript).toHaveLength(MAX_TRANSCRIPT_ENTRIES);
-    expect(state.transcript[0].id).toBe("job:u5");
+    expect(state.transcript[0].id).toBe(key("job:u5"));
   });
 
   it("keeps its segment records bounded however many segments are withdrawn", () => {
