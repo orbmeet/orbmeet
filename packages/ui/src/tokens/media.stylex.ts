@@ -33,6 +33,12 @@ export const env = stylex.defineConsts({
   touch: "@media (pointer: coarse)",
   /** Landscape on a short viewport — a phone held sideways in a meeting. */
   shortLandscape: "@media (orientation: landscape) and (max-height: 500px)",
+  /**
+   * A short window whatever its width: a laptop at 150% scaling under a
+   * taskbar and browser bars, about 470px of page. Stacked fixed-height blocks
+   * leave nothing for what scrolls. `room-faces.tsx` repeats the query for JS.
+   */
+  shortWindow: "@media (max-height: 600px)",
 });
 
 /**

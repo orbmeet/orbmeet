@@ -388,7 +388,8 @@ const styles = stylex.create({
 
   /** One tip under the box: quiet, a line or two, and it changes. */
   tip: {
-    display: "flex",
+    // In a short window the messages need its two lines more than it does.
+    display: { default: "flex", [env.shortWindow]: "none" },
     alignItems: "flex-start",
     gap: space.s2,
     marginTop: space.s2,

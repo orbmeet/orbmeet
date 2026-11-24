@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useIsMuted, useIsSpeaking, useParticipants, useSpeakingParticipants } from "@livekit/components-react";
 import { CONNECTION_EVENTS } from "@/modules/meetings/client/use-livekit-connections";
 import { Track, type Participant } from "livekit-client";
@@ -224,7 +224,11 @@ export function RoomFaces({
   onShowEveryone,
   onCallOn,
 }: RoomFacesProps) {
-  const [folded, setFolded] = useState(false);
+  // Folded by your choice, else by the window: in a short one, faces over a
+  // panel left the Chat a 55px slit between them and the box.
+  const [foldChoice, setFolded] = useState<boolean | null>(null);
+  const short = useShortWindow();
+  const folded = foldChoice ?? (!roomy && short);
   const participants = useParticipants({ updateOnlyOn: CONNECTION_EVENTS });
   const max =
     variant === "row"
@@ -427,6 +431,21 @@ function Face({
         </span>
       </div>
     </div>
+  );
+}
+
+/** `env.shortWindow`, for JS. */
+const SHORT_WINDOW_QUERY = "(max-height: 600px)";
+
+function useShortWindow(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const query = window.matchMedia(SHORT_WINDOW_QUERY);
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(SHORT_WINDOW_QUERY).matches,
+    () => false,
   );
 }
 
