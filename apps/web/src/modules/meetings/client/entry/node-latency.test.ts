@@ -78,6 +78,14 @@ describe("prefetchNodeLatencies", () => {
     expect(await settled).toBeUndefined();
   });
 
+  it("gives a join nothing from a measurement too old to describe this network", async () => {
+    // Measured on office Wi-Fi; the recovery join comes from mobile data hours later.
+    prefetchNodeLatencies([sg1], network({ sg1: [40] }));
+    expect(await settle(settledNodeLatencies(5_000))).toEqual({ sg1: 40 });
+    vi.setSystemTime(Date.now() + 3 * 60 * 60_000);
+    expect(await settle(settledNodeLatencies(5_000))).toBeUndefined();
+  });
+
   it("gives nothing when nothing was measured or nothing answered", async () => {
     expect(await settle(settledNodeLatencies(100))).toBeUndefined();
     prefetchNodeLatencies([ams1], network({ ams1: "down" }));

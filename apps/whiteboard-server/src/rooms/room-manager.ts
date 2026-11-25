@@ -86,7 +86,13 @@ export class RoomManager {
    * that generation, so the fence only has to outlast that one write.
    */
   private readonly handedOff = new Map<WhiteboardRoomId, { generation: number; until: number }>();
-  /** The generation a board this node has no database for yet is created at. */
+  /**
+   * The generation a board this node has no database for yet is created at:
+   * what the last `prepare` found when the board was nowhere, here or in R2.
+   * It describes that absence only, so whatever decides the board's state
+   * otherwise (a later prepare, a handoff, a purge) forgets it, and it is
+   * applied only to a database created new.
+   */
   private readonly newBoardGenerations = new Map<WhiteboardRoomId, number>();
   /** Each room's save in flight. A room is saved by at most one at a time. */
   private readonly saves = new Map<WhiteboardRoomId, Promise<number | null>>();
@@ -233,6 +239,7 @@ export class RoomManager {
     if (newest && (onDisk === null || newest.generation > onDisk)) {
       await loadRoomCopy({ dataDir: this.dataDir, objects: this.options.objects, whiteboardRoomId, key: newest.key });
     }
+    this.newBoardGenerations.delete(whiteboardRoomId);
     if (onDisk === null && !newest) {
       // Nothing of this board anywhere: it is new, and is created here.
       this.newBoardGenerations.set(whiteboardRoomId, generation);
@@ -288,6 +295,8 @@ export class RoomManager {
     }
     const handoff = (async (): Promise<SyncCommandResult<"handoff">> => {
       await this.preparing.get(whiteboardRoomId);
+      // Whatever this node was told about the board as new goes with it.
+      this.newBoardGenerations.delete(whiteboardRoomId);
       const room = this.rooms.get(whiteboardRoomId);
       if (room && room.document.whiteboardId !== null && room.document.whiteboardId !== whiteboardId) {
         return syncCommandFailure("conflict", "This room hosts a different whiteboard");
@@ -457,8 +466,8 @@ export class RoomManager {
       // left as it is; reading it must not create it.
     }
 
-    if (this.purges.has(whiteboardRoomId) || this.handoffs.has(whiteboardRoomId)) {
-      return syncCommandFailure("conflict", "The destination whiteboard is being deleted or moved");
+    if (this.isFenced(whiteboardRoomId)) {
+      return syncCommandFailure("conflict", "The destination whiteboard is being deleted, moved or loaded");
     }
     if (this.rooms.has(whiteboardRoomId) || roomDatabaseExists(this.dataDir, whiteboardRoomId)) {
       const existing = this.openRoom(whiteboardRoomId, whiteboardId);
@@ -480,30 +489,43 @@ export class RoomManager {
    * Idempotent; a purge already running is joined.
    *
    * The purge is fenced in before any of its work runs, so nothing that
-   * writes the board's files can start once it has begun: `prepare` refuses,
-   * and a save that has not started yet saves nothing. What had already
-   * started — a load of a newer copy, a save on its way to R2 — is waited
-   * for, so it lands before the files and copies are deleted, never after.
+   * writes the board's files can start once it has begun: `prepare` and
+   * `seed` refuse, the room does not open, and a save that has not started
+   * yet saves nothing. What had already started — a load of a newer copy, a
+   * handoff, a save on its way to R2 — is waited for, so it lands before the
+   * files and copies are deleted, never after, and the room is looked at only
+   * once it has.
    */
   purge(whiteboardRoomId: WhiteboardRoomId, whiteboardId: string): Promise<SyncCommandResult<"purge">> {
     this.assertAcceptingWork();
     const running = this.purges.get(whiteboardRoomId);
     if (running) return running;
-    const room = this.rooms.get(whiteboardRoomId)
-      ?? (roomDatabaseExists(this.dataDir, whiteboardRoomId) ? this.createRoom(whiteboardRoomId) : null);
-    // A room that never recorded its board is this room id's board all the same.
-    if (room && room.document.whiteboardId !== null && room.document.whiteboardId !== whiteboardId) {
-      return Promise.resolve(syncCommandFailure("conflict", "This room hosts a different whiteboard"));
-    }
     const purge = Promise.resolve()
-      .then(() => this.purgeNow(whiteboardRoomId, room))
+      .then(() => this.purgeNow(whiteboardRoomId, whiteboardId))
       .finally(() => this.purges.delete(whiteboardRoomId));
     this.purges.set(whiteboardRoomId, purge);
     return purge;
   }
 
-  private async purgeNow(whiteboardRoomId: WhiteboardRoomId, room: Room | null): Promise<SyncCommandResult<"purge">> {
-    await Promise.allSettled([this.preparing.get(whiteboardRoomId), this.saves.get(whiteboardRoomId)]);
+  private async purgeNow(whiteboardRoomId: WhiteboardRoomId, whiteboardId: string): Promise<SyncCommandResult<"purge">> {
+    await Promise.allSettled([
+      this.preparing.get(whiteboardRoomId),
+      this.handoffs.get(whiteboardRoomId),
+      this.saves.get(whiteboardRoomId),
+    ]);
+    this.assertAcceptingWork();
+    const resident = this.rooms.get(whiteboardRoomId);
+    const room = resident
+      ?? (roomDatabaseExists(this.dataDir, whiteboardRoomId) ? this.createRoom(whiteboardRoomId) : null);
+    // A room that never recorded its board is this room id's board all the same.
+    if (room && room.document.whiteboardId !== null && room.document.whiteboardId !== whiteboardId) {
+      // Opened only to look: it goes back to how it was found.
+      if (!resident) {
+        room.close();
+        if (this.rooms.get(whiteboardRoomId) === room) this.rooms.delete(whiteboardRoomId);
+      }
+      return syncCommandFailure("conflict", "This room hosts a different whiteboard");
+    }
     if (room) {
       room.connections.stopAcceptingOperations();
       await room.connections.waitForOperations();
@@ -572,7 +594,8 @@ export class RoomManager {
     whiteboardId?: string,
     initialSnapshot?: RoomSnapshot,
   ): Room | null {
-    if (whiteboardId === undefined && !roomDatabaseExists(this.dataDir, whiteboardRoomId)) return null;
+    const created = !roomDatabaseExists(this.dataDir, whiteboardRoomId);
+    if (whiteboardId === undefined && created) return null;
     if (this.rooms.size >= RoomManager.MAX_ROOMS) throw new RoomCapacityError();
     let room: Room;
     try {
@@ -592,8 +615,9 @@ export class RoomManager {
       return null;
     }
     const generation = this.newBoardGenerations.get(whiteboardRoomId);
-    if (generation !== undefined) {
-      this.newBoardGenerations.delete(whiteboardRoomId);
+    this.newBoardGenerations.delete(whiteboardRoomId);
+    // A database that already existed has its generation recorded in it.
+    if (generation !== undefined && created) {
       try {
         room.document.setGeneration(generation);
       } catch (error) {

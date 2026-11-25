@@ -6,6 +6,7 @@ import {
   meetings,
   spaceMembers,
   spaces,
+  users,
 } from "@orbmeet/db/schema";
 import { eq } from "drizzle-orm";
 
@@ -70,6 +71,32 @@ describe("Scheduled meeting commands: resolving and listing", () => {
     await expect(find("maruf@example.com")).rejects.toMatchObject({ code: "SCHEDULE_NOT_FOUND" });
     await expect(find("example.com")).rejects.toMatchObject({ code: "SCHEDULE_NOT_FOUND" });
     await expect(find("Maruf")).resolves.toMatchObject({ title: "Private invite" });
+  });
+
+  it("keeps hiding an attendee address that came from their account after the account is deleted", async () => {
+    await createMeetingScheduleRecord(
+      db,
+      organizer,
+      {
+        title: "Private invite",
+        startsAt: "2026-07-16T09:00:00.000Z",
+        durationMinutes: 45,
+        timeZone: "Asia/Dhaka",
+        attendees: [{ email: "maruf@example.com", privateEmail: true, displayName: "Maruf" }],
+        joinPolicy: "open",
+      },
+      { now },
+    );
+    await db.delete(users).where(eq(users.normalizedEmail, "maruf@example.com"));
+
+    const [schedule] = await listSchedules(db, organizer, now);
+    expect(schedule.attendees).toEqual([expect.objectContaining({ displayName: "Maruf", email: "" })]);
+    await expect(resolveManageableMeetingScheduleForUser(
+      db,
+      organizer,
+      { date: "2026-07-16", timeZone: "Asia/Dhaka", participant: "maruf@example.com" },
+      now,
+    )).rejects.toMatchObject({ code: "SCHEDULE_NOT_FOUND" });
   });
 
   it("resolves a manageable schedule from remembered details without exposing IDs in ambiguity", async () => {

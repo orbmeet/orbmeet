@@ -294,22 +294,24 @@ export class Board {
    * that arrive while it starts. The attempt is cleared when it settles, and
    * only if it is still the current one, so a failed start is retried by the
    * next run rather than remembered.
+   *
+   * A start in progress is joined before `running` is asked: `start()` sets
+   * `running` at once, long before the container has booted.
    */
   #ensureRunning(): Promise<void> {
+    if (this.#starting) return this.#starting;
     if (this.#container.running) return Promise.resolve();
-    if (!this.#starting) {
-      const attempt = (async () => {
-        if (!this.#container.running) this.#container.start({ enableInternet: false });
-        await this.#container.setInactivityTimeout(INACTIVITY_TIMEOUT_MS);
-        this.#waitUntil(this.#probe());
-      })();
-      this.#starting = attempt;
-      const clear = () => {
-        if (this.#starting === attempt) this.#starting = null;
-      };
-      attempt.then(clear, clear);
-    }
-    return this.#starting;
+    const attempt = (async () => {
+      this.#container.start({ enableInternet: false });
+      await this.#container.setInactivityTimeout(INACTIVITY_TIMEOUT_MS);
+      this.#waitUntil(this.#probe());
+    })();
+    this.#starting = attempt;
+    const clear = () => {
+      if (this.#starting === attempt) this.#starting = null;
+    };
+    attempt.then(clear, clear);
+    return attempt;
   }
 }
 

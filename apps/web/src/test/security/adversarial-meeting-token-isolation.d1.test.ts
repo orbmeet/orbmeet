@@ -161,6 +161,7 @@ describe("Adversarial Stress Testing: Meeting Admission, Token Scoping & Guest I
       const { token, expiresIn } = await createLiveKitAccess({
         apiKey: mockApiKey,
         apiSecret: mockApiSecret,
+        expiresAt: Date.now() + 5 * 60_000,
         identity,
         name: "Adversary Participant",
         roomName,

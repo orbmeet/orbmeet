@@ -139,6 +139,7 @@ export async function executeEffect(
         kind: "egressObserved",
         placement: effect.placement,
         complete: true,
+        requestedAt: effect.requestedAt,
         egresses: egresses.map(observeEgressInfo),
       };
     }

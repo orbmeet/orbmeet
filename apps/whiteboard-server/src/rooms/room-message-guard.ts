@@ -17,6 +17,7 @@ import type { PresenceOp } from "./room-presence-lane.ts";
 import { ROOM_NAVIGATION_ID } from "@orbmeet/whiteboard-core/room-navigation";
 import { hasUnsafeObjectKeyDeep } from "@orbmeet/whiteboard-core/room-snapshot-validation";
 import { isRecord } from "@orbmeet/primitives";
+import { SHAPE_AUTHOR_META_KEY, shapeAuthorOf } from "@orbmeet/whiteboard-core/shape-author";
 import { isPageFrameRecord } from "./record-rules.ts";
 import type { WhiteboardRoomId } from "@orbmeet/whiteboard-core/whiteboard-room-id";
 import { createUserId } from "@tldraw/tlschema";
@@ -36,7 +37,8 @@ interface AdmittedMessage {
 export type IncomingMessageDecision = {
   accept: boolean;
   hasPageFrameMutation: boolean;
-  assembledBytes: number;
+  /** The most this message can add to the stored document (`storedGrowthBound`). */
+  chargedBytes: number;
   sizeEffect: IncomingDiffSizeEffect;
   /**
    * This message is the client's tldraw `connect` request. Applying it is what
@@ -91,7 +93,7 @@ function forwardNothing(): IncomingMessageDecision {
   return {
     accept: false,
     hasPageFrameMutation: false,
-    assembledBytes: 0,
+    chargedBytes: 0,
     sizeEffect: "no-mutation",
     isConnectRequest: false,
     forward: null,
@@ -156,6 +158,34 @@ const MEASURE_AFTER_ACCEPTED_BYTES = 512 * 1024;
 const REMOVING_WRITE_HEADROOM_BYTES = 4 * 1024 * 1024;
 const CHUNK_ASSEMBLY_TIMEOUT_MS = 30_000;
 const MAX_ROOM_ASSEMBLY_BYTES = 64 * 1024 * 1024;
+
+/**
+ * What storing a record adds around the record itself: the snapshot keeps each
+ * one as `{"state":…,"lastChangedClock":N}`, comma-separated, the clock a safe
+ * integer at most.
+ */
+const STORED_RECORD_WRAPPER_BYTES = '{"state":,"lastChangedClock":},'.length + String(Number.MAX_SAFE_INTEGER).length;
+
+/**
+ * The most a push can add to the stored document, in the units the room's
+ * size is measured in (the serialized snapshot). Larger than what the client
+ * sent: each record it writes is stored wrapped with its clock, and the room
+ * stamps the writer onto it — a created shape's author, a note's editor
+ * (room-record-authorizers.ts) — whatever the client put there. Charging only
+ * the bytes received let a push of many small shapes store several times what
+ * it was charged, past both the room's cap and the snapshot cap.
+ */
+function storedGrowthBound(diff: Record<string, unknown> | null, sentBytes: number, meta: SessionMeta): number {
+  if (!diff) return sentBytes;
+  let writes = 0;
+  for (const operation of Object.values(diff)) {
+    if (Array.isArray(operation) && operation[0] !== "remove") writes += 1;
+  }
+  const stampedBytes =
+    Buffer.byteLength(JSON.stringify({ [SHAPE_AUTHOR_META_KEY]: shapeAuthorOf(meta.userId, meta.userName) }), "utf8")
+    + Buffer.byteLength(JSON.stringify({ textLastEditedBy: meta.userId }), "utf8");
+  return sentBytes + writes * (STORED_RECORD_WRAPPER_BYTES + stampedBytes);
+}
 
 export class RoomMessageGuard {
   private readonly messageAssemblers = new Map<string, JsonMessageAssembler>();
@@ -336,13 +366,14 @@ export class RoomMessageGuard {
       this.options.canEditWhiteboardForMeta(meta) && this.options.canAcceptDocumentMutations?.() !== false;
     const sizeEffect = canWrite ? classifyIncomingDiffSizeEffect(data) : "no-mutation";
     const diff = isRecord(data.diff) ? data.diff : null;
+    const chargedBytes = sizeEffect === "no-mutation" ? 0 : storedGrowthBound(diff, assembledBytes, meta);
 
     // Every verdict below shares the measurements above; only the outcome and
     // the page-frame flag vary, so name just those at each exit.
     const decide = (
       outcome: Pick<IncomingMessageDecision, "accept" | "hasPageFrameMutation">,
     ): IncomingMessageDecision => ({
-      assembledBytes,
+      chargedBytes,
       sizeEffect,
       isConnectRequest,
       ...outcome,
@@ -407,7 +438,7 @@ export class RoomMessageGuard {
     const hasPageFrameMutation = verdict === "page-frames";
     // Size is the last question, asked only of a push that may be written:
     // the room-full signal it raises goes to everyone in the room.
-    if (this.wouldExceedRoomLimit(sizeEffect, assembledBytes)) {
+    if (this.wouldExceedRoomLimit(sizeEffect, chargedBytes)) {
       this.roomSizeLimitSignaled = true;
       logWarn(
         `[Room ${this.options.whiteboardRoomId}] Rejected growth above the ${MAX_ROOM_WRITE_BYTES}-byte room limit from ${meta.userId}`,
@@ -434,7 +465,7 @@ export class RoomMessageGuard {
    * the byte measurement, whose upper bound remains safe between snapshots. */
   recordAcceptedMessage(decision: IncomingMessageDecision, snapshot?: unknown): void {
     if (decision.sizeEffect !== "no-mutation") {
-      this.acceptedMutationBytesSinceMeasure += decision.assembledBytes;
+      this.acceptedMutationBytesSinceMeasure += decision.chargedBytes;
       if (this.roomSizeLimitSignaled) {
         this.checkRoomSizeRecovery(snapshot);
       // A remove-only push cannot grow the document, so the running total stays
@@ -463,10 +494,12 @@ export class RoomMessageGuard {
    * Whether admitting this message would leave the room above the write cap.
    *
    * The running estimate (last measured size + accepted mutation bytes) only
-   * ever over-counts: mutation bytes are added in full, a patch that rewrites an
-   * existing record is charged as if it were new, and removes never subtract. An
-   * under-limit estimate is therefore trustworthy on its own — but an over-limit
-   * one says nothing until it has been checked against the real document.
+   * ever over-counts: each push is charged the most it can add as stored
+   * (`storedGrowthBound`, which counts what the room stamps on records as well
+   * as what the client sent), a patch that rewrites an existing record is
+   * charged as if it were new, and removes never subtract. An under-limit
+   * estimate is therefore trustworthy on its own — but an over-limit one says
+   * nothing until it has been checked against the real document.
    *
    * So an over-limit projection is never acted on until `verifyEstimate` says
    * it rests on an exact reading of the current document. That gives both

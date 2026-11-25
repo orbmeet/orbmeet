@@ -29,6 +29,7 @@ import {
   roomMetadataFor,
   seatAvailable,
   surfaceViewFor,
+  tokenExpiresAt,
   whiteboardAuthorityHash,
   type Admission,
   type Attempt,
@@ -662,9 +663,9 @@ function join(
   if (admission.status === "pending") {
     if (meta.joinPolicy === "open" || hosts(admission)) {
       decide(state, admission, "approved", null, null, now);
-    } else if (meta.joinPolicy === "closed") {
-      throw Errors.MEETING_CLOSED();
     } else {
+      // Closing the door keeps new entrants out, not those already waiting:
+      // a host may still admit them (`decideAdmission`), so they keep waiting.
       return { kind: "waiting", admissionId: admission.id, newGuestAdmission };
     }
   }
@@ -775,7 +776,7 @@ function observe(state: MeetingState, input: Observation, now: number): void {
         addStray(state, input.identity);
         return;
       }
-      markJoined(state, attempt, { sid: input.sid, joinedAt: input.joinedAt, requestedAt: null }, Math.max(input.at, attempt.issuedAt), now);
+      markJoined(state, attempt, { sid: input.sid, joinedAt: input.joinedAt, requestedAt: null }, input.at, now);
       return;
     }
     case "participantLeft": {
@@ -803,7 +804,7 @@ function observe(state: MeetingState, input: Observation, now: number): void {
     case "egressObserved":
       // A listing from a placement the meeting has left describes another room.
       if (input.placement && !isCurrentPlacement(state, input.placement)) return;
-      observeEgress(state, input.egresses, input.complete, now);
+      observeEgress(state, input.egresses, input.complete ? input.requestedAt : null, now);
       return;
   }
 }
@@ -812,6 +813,11 @@ function observe(state: MeetingState, input: Observation, now: number): void {
  * A report that the attempt is in the room: the session `sid` LiveKit has for
  * it, when that session joined on LiveKit's clock if LiveKit said, and for a
  * listing, when it was requested on this coordinator's.
+ *
+ * `at` is when it joined, on the clock of whichever machine heard it. A join
+ * is never recorded before the attempt's token was issued: the room may have
+ * moved to a machine whose clock is behind the one that issued it, and D1
+ * refuses a connection that joined before its token existed.
  */
 function markJoined(
   state: MeetingState,
@@ -848,7 +854,8 @@ function markJoined(
   }
   attempt.absentSince = null;
   if (attempt.joinedAt !== null) return;
-  attempt.joinedAt = at;
+  const joinedAt = Math.max(at, attempt.issuedAt);
+  attempt.joinedAt = joinedAt;
 
   // The newest attempt to join is the participant: it ends every earlier one
   // of theirs. Issue order decides, not the order joins are heard in — a
@@ -866,7 +873,7 @@ function markJoined(
 
   if (state.meta.phase === "provisional") {
     state.meta.phase = "live";
-    state.meta.firstJoinedAt = at;
+    state.meta.firstJoinedAt = joinedAt;
   }
   state.room.emptySince = null;
 }
@@ -881,18 +888,27 @@ function issuedBefore(state: MeetingState, a: Attempt, b: Attempt): boolean {
   return order.indexOf(a.id) < order.indexOf(b.id);
 }
 
+/**
+ * What a look at the room's egresses says. `listedAt` is when a complete
+ * listing was asked for, null for a webhook's word on one egress. A listing
+ * lands whenever it lands, so what it does not show is taken as gone only
+ * when it was asked for after this coordinator knew of it: a listing from
+ * before a restart says nothing of the restarted recording.
+ */
 function observeEgress(
   state: MeetingState,
   observed: ObservedEgress[],
-  complete: boolean,
+  listedAt: number | null,
   now: number,
 ): void {
   const egress = state.egress;
+  const complete = listedAt !== null;
   egress.lastPolledAt = now;
   if (complete) state.room.unreachableSince = null;
 
   // A start whose result never arrived: adopt what it created, or give it up.
-  if (egress.op && !egress.egressId && complete) {
+  // Only a listing asked for after the start began can know what it created.
+  if (egress.op && !egress.egressId && listedAt !== null && listedAt >= egress.op.startedAt) {
     // One already being stopped is not it.
     const orphan = observed.find(
       (info) => (info.status === "starting" || info.status === "active") && !egress.strays.includes(info.egressId),
@@ -904,6 +920,7 @@ function observeEgress(
       egress.mode = egress.desired;
       egress.status = "starting";
       egress.startedAt = egress.op.startedAt;
+      egress.knownSince = listedAt;
     } else if ((state.retries["egress.start"]?.failures ?? 0) >= 3) {
       failEgress(state, "LiveKit egress could not be started.");
     }
@@ -933,7 +950,9 @@ function observeEgress(
     : undefined;
   if (!egress.egressId) return;
   if (!current) {
-    if (complete) settleEgress(state, "The recording service lost track of this egress.");
+    if (listedAt !== null && (egress.knownSince === null || listedAt >= egress.knownSince)) {
+      settleEgress(state, "The recording service lost track of this egress.");
+    }
     return;
   }
 
@@ -981,6 +1000,7 @@ function settleEgress(state: MeetingState, error: string | null): void {
   egress.mode = null;
   egress.status = null;
   egress.startedAt = null;
+  egress.knownSince = null;
   if (announced) {
     bumpRoom(state);
     return;
@@ -1069,6 +1089,7 @@ function applyResult(state: MeetingState, input: EffectResult, now: number): voi
       egress.mode = egress.desired;
       egress.status = "starting";
       egress.startedAt = startedAt;
+      egress.knownSince = now;
       return;
     }
     case "egressStopped":
@@ -1397,6 +1418,7 @@ function abandonNode(state: MeetingState, reason: string, now: number): void {
     egress.mode = null;
     egress.status = null;
     egress.startedAt = null;
+    egress.knownSince = null;
     egress.op = null;
     failEgress(state, "The media server hosting this meeting became unreachable.");
   }
@@ -1704,6 +1726,7 @@ function view(state: MeetingState, admission: Admission, attempt: Attempt): Part
     joinPolicy: state.meta.joinPolicy,
     nodeId: attempt.nodeId,
     captionLanguage: attempt.captionLanguage,
+    tokenExpiresAt: tokenExpiresAt(attempt),
     grant: grantFor(state, admission),
     room: roomMetadataFor(state),
     recordingEnabled: state.meta.recordingEnabled,

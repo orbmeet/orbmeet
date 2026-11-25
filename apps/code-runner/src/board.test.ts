@@ -165,6 +165,22 @@ describe("Board", () => {
     expect(container.starts).toBe(1);
   });
 
+  it("holds a run that arrives while the container boots until the boot finishes", async () => {
+    // start() reports the container running at once; booting it takes longer.
+    const { container, run } = setup();
+    let booted!: () => void;
+    container.inactivity = () => new Promise<void>((resolve) => void (booted = resolve));
+    const first = run();
+    await vi.waitFor(() => expect(container.running).toBe(true));
+    const second = run();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(container.supervisors).toHaveLength(0);
+
+    booted();
+    await expect(Promise.all([first, second])).resolves.toMatchObject([{ kind: "result" }, { kind: "result" }]);
+    expect(container.starts).toBe(1);
+  });
+
   it("retries a container start that threw synchronously", async () => {
     // The start used to be remembered as failed for the life of the object.
     const { container, run } = setup();

@@ -150,8 +150,12 @@ export async function choosePlacement(
   if (!target) {
     // No node is known to be healthy: before the first probe, or after an
     // outage the minutely probe has not yet seen end. Ask them now rather
-    // than refuse the join.
-    health = await probeNow(db, nodes.filter((node) => node.weight > 0), health, now);
+    // than refuse the join: every node a meeting may be placed on, and the
+    // meeting's own, which may stay where it is even while it takes no new
+    // meetings, unless a client just failed to reach it.
+    const askable = nodes.filter((node) =>
+      node.weight > 0 || (node.id === current?.id && !confirmedUnreachable));
+    health = await probeNow(db, askable, health, now);
     target = chooseMediaNode(nodes, health, load, latencies);
   }
   // Its own node answered after all. Unless a client just failed to reach it,

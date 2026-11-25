@@ -283,6 +283,25 @@ describe("Scheduled meeting commands: creating", () => {
     await expect(
       db.query.meetingLinks.findFirst({ where: { id: "link_personal_schedule" } }),
     ).resolves.toMatchObject({ archivedAt: null, spentAt: null, reusePolicy: "reusable" });
+
+    // The link is archived after the request read it: the schedule's guard
+    // refuses it, and its invitees are refused with it rather than failing
+    // the batch on their foreign key.
+    await db.update(meetingLinks)
+      .set({ archivedAt: new Date("2026-07-14T11:00:00.000Z") })
+      .where(eq(meetingLinks.id, "link_personal_schedule"));
+    await expect(createMeetingScheduleRecord(db, organizer, {
+      meetingLinkId: "link_personal_schedule",
+      startsAt: "2026-07-17T09:00:00.000Z",
+      durationMinutes: 45,
+      timeZone: "Asia/Dhaka",
+      attendees: [{ email: "maruf@example.com" }],
+      joinPolicy: "open",
+      reminderMinutesBefore: 60,
+    }, {
+      now: new Date("2026-07-14T11:00:00.000Z"),
+      personalMeetingLink: { id: "link_personal_schedule", code: "tut-oria-lnk" },
+    })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
 

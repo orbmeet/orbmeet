@@ -14,6 +14,15 @@ import { OpsError } from "./shell.ts";
  */
 
 const PREFIX = "Orb Meet: ";
+
+/**
+ * The levels a node's line is an error at: ship-logs.jq keeps LiveKit's and
+ * our services' lines at these (its `failing`), with their names as written,
+ * so an alert on errors takes every one of them; a fatal line is the last one
+ * a crashing process writes. Kept equal to `failing` by monitors.test.ts.
+ */
+export const NODE_ERROR_LEVELS = ["error", "dpanic", "panic", "fatal"] as const;
+const nodeErrorLevels = NODE_ERROR_LEVELS.map((level) => `"${level}"`).join(", ");
 export const NOTIFIER = "Orb Meet email";
 const DATASET = `['${AXIOM_DATASET}']`;
 
@@ -42,7 +51,7 @@ export const MONITORS: Monitor[] = [
     name: `${PREFIX}error`,
     description: "An error the Worker logged (a browser's report included), or one a node logged.",
     type: "Threshold",
-    aplQuery: `${DATASET} | where severity_number >= 17 or (source == "node" and column_ifexists("level", "") == "error") `
+    aplQuery: `${DATASET} | where severity_number >= 17 or (source == "node" and column_ifexists("level", "") in (${nodeErrorLevels})) `
       + "| extend what = iff(source == \"node\", "
       + "strcat(column_ifexists(\"node\", \"\"), \" \", column_ifexists(\"service\", \"\"), \": \", substring(column_ifexists(\"msg\", \"\"), 0, 100)), "
       + "coalesce(tostring(parse_json(tostring(body)).msg), substring(tostring(body), 0, 100))) "

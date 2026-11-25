@@ -109,3 +109,44 @@ describe("useBackgroundEffect when the GPU context is lost", () => {
     expect(track.processor).toBe(created[1]);
   });
 });
+
+describe("useBackgroundEffect when the choice changes while an effect is starting", () => {
+  it("keeps the newer effect on the camera rather than stripping it", async () => {
+    // The processor takes a while to start (MediaPipe loading): a second
+    // choice made meanwhile must end on the camera, not only in the picker.
+    const track = new FakeCameraTrack();
+    let started!: () => void;
+    track.setProcessor = vi.fn(async (processor: FakeProcessor) => {
+      await new Promise<void>((resolve) => void (started = resolve));
+      track.processor = processor;
+    });
+    let effect: ReturnType<typeof useBackgroundEffect> | null = null;
+    function Probe() {
+      effect = useBackgroundEffect(fakeRoom(track), { mode: "none", imagePath: null });
+      return null;
+    }
+    root = createRoot(document.createElement("div"));
+    await act(async () => root!.render(<Probe />));
+
+    let blur!: Promise<void>;
+    let image!: Promise<void>;
+    await act(async () => {
+      blur = effect!.setBlur();
+      await vi.waitFor(() => expect(track.setProcessor).toHaveBeenCalled());
+    });
+    await act(async () => {
+      image = effect!.setImage("/backgrounds/office.jpg");
+    });
+    await act(async () => {
+      started();
+      await Promise.all([blur, image]);
+    });
+
+    expect(effect!.mode).toBe("image");
+    expect(effect!.lastError).toBeNull();
+    expect(track.processor).toBe(created[0]);
+    expect(created[0].switchTo).toHaveBeenLastCalledWith(
+      expect.objectContaining({ mode: "virtual-background", imagePath: "/backgrounds/office.jpg" }),
+    );
+  });
+});

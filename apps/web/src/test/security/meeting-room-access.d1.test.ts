@@ -157,6 +157,7 @@ describe("Empirical Meeting Room Access & Isolation Verification", () => {
       const { token } = await createLiveKitAccess({
         apiKey: mockApiKey,
         apiSecret: mockApiSecret,
+        expiresAt: Date.now() + 5 * 60_000,
         identity: participantIdentity,
         name: "Guest Bob",
         roomName,

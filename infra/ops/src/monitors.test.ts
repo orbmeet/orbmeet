@@ -1,5 +1,8 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { applyMonitors, MONITORS, NOTIFIER, type AxiomApi } from "./monitors.ts";
+import { NODE_DIR } from "./catalog.ts";
+import { applyMonitors, MONITORS, NODE_ERROR_LEVELS, NOTIFIER, type AxiomApi } from "./monitors.ts";
 
 function fakeAxiom(monitors: { id: string; name: string }[], notifiers = [{ id: "n1", name: NOTIFIER }]) {
   const sent: [string, string, unknown?][] = [];
@@ -46,5 +49,17 @@ describe("applyMonitors", () => {
   it("ends each threshold query in the summary Axiom compares", () => {
     const thresholds = MONITORS.filter((monitor) => monitor.type === "Threshold");
     for (const { aplQuery } of thresholds) expect(aplQuery).toMatch(/\| summarize [^|]+$/);
+  });
+});
+
+describe("the error monitor", () => {
+  it("alerts on every level ship-logs.jq keeps a node's line at as an error", () => {
+    // Two definitions of one list: a level only ship-logs.jq knows reaches
+    // Axiom and alerts nobody (a LiveKit `fatal`, its last line).
+    const jq = readFileSync(join(NODE_DIR, "ship-logs.jq"), "utf8");
+    const failing = /def failing: IN\(([^)]*)\);/.exec(jq)?.[1].split(",").map((level) => JSON.parse(level.trim()));
+    expect(failing && [...failing].sort()).toEqual([...NODE_ERROR_LEVELS].sort());
+    const error = MONITORS.find((monitor) => monitor.name === "Orb Meet: error")!;
+    for (const level of NODE_ERROR_LEVELS) expect(error.aplQuery).toContain(`"${level}"`);
   });
 });

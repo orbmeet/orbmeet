@@ -199,6 +199,27 @@ describe("useMeetingMicrophone", () => {
       expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Joined with microphone off" }));
     });
 
+    it("still asks again when the view is rebuilt while the refused page is hidden", async () => {
+      // "Reload view" after a crash keeps the connection and its first publish.
+      visibility = "hidden";
+      const { room } = fakeRoom();
+      const publish = initialPublish();
+      const addToast = mount(room, publish.promise);
+      await publish.fail(denied());
+      act(() => root?.unmount());
+      mount(room, publish.promise, addToast);
+      await act(async () => {});
+
+      visibility = "visible";
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+
+      const setMicrophoneEnabled = room.localParticipant.setMicrophoneEnabled as ReturnType<typeof vi.fn>;
+      await vi.waitFor(() => expect(setMicrophoneEnabled).toHaveBeenCalledWith(true));
+      expect(addToast).not.toHaveBeenCalled();
+    });
+
     it("reports a join's failure once, even when the view is rebuilt", async () => {
       const { room } = fakeRoom();
       const publish = initialPublish();

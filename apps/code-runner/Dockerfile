@@ -79,25 +79,28 @@ RUN curl -fsSL "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x8
 # directories it works in, /cells and /run/cellrun, it creates and checks at
 # run time: a runtime may mount over the image's (Cloudflare's replaces /run).
 #
-# The sweep uid runs nothing. cellrun kills a slot's processes from a child
-# whose real and saved uid is this one, so the slot can be signalled from it
-# but cannot signal it back; it is named here so no package ever takes it.
+# The sweep uids run nothing. cellrun kills a slot's processes from a child
+# whose real and saved uid is that slot's sweep uid, so the slot can be
+# signalled from it but cannot signal it back. One per slot: sweeps of
+# different slots run at once, and two sharing a real uid could kill each
+# other. They are named here so no package ever takes them.
 ARG CELLRUN_SLOTS=3
 ARG CELLRUN_UID_BASE=2000
-ARG CELLRUN_SWEEP_UID=1999
+ARG CELLRUN_SWEEP_UID_BASE=1900
 RUN for slot in $(seq 0 $((CELLRUN_SLOTS - 1))); do \
 		uid=$((CELLRUN_UID_BASE + slot)); \
+		sweep_uid=$((CELLRUN_SWEEP_UID_BASE + slot)); \
 		groupadd --gid "$uid" "cell$slot" \
 		&& useradd --uid "$uid" --gid "$uid" --no-create-home --home-dir /nonexistent \
-			--shell /usr/sbin/nologin "cell$slot" || exit 1; \
-	done \
-	&& useradd --uid "${CELLRUN_SWEEP_UID}" --user-group --no-create-home --home-dir /nonexistent \
-		--shell /usr/sbin/nologin cellsweep
+			--shell /usr/sbin/nologin "cell$slot" \
+		&& useradd --uid "$sweep_uid" --user-group --no-create-home --home-dir /nonexistent \
+			--shell /usr/sbin/nologin "cellsweep$slot" || exit 1; \
+	done
 
 COPY cellrun.c /tmp/cellrun.c
 RUN gcc -O2 -Wall -Wextra -Werror \
 		-DCELLRUN_SLOTS="${CELLRUN_SLOTS}" -DCELLRUN_UID_BASE="${CELLRUN_UID_BASE}" \
-		-DCELLRUN_SWEEP_UID="${CELLRUN_SWEEP_UID}" \
+		-DCELLRUN_SWEEP_UID_BASE="${CELLRUN_SWEEP_UID_BASE}" \
 		-o /usr/local/bin/cellrun /tmp/cellrun.c \
 	&& rm /tmp/cellrun.c \
 	&& chmod 0755 /usr/local/bin/cellrun

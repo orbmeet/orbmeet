@@ -155,4 +155,55 @@ describe("ship-logs.sh", () => {
     const args = readFileSync(join(dir, "journalctl-args"), "utf8").trim().split("\n");
     expect(args[1]).toContain(`--after-cursor=${JSON.parse(lines[1]).__CURSOR}`);
   });
+
+  it("reports why the check failed, not systemd's word that it exited non-zero", () => {
+    run(health("PASS ams1: ok"));
+    const unit = (message: string) => JSON.stringify({
+      __CURSOR: `c${++cursor}`, __REALTIME_TIMESTAMP: "1791908966123456", SYSLOG_IDENTIFIER: "systemd",
+      UNIT: "orbmeet-health.service", MESSAGE: message,
+    });
+    expect(summary(run(
+      unit("Starting orbmeet-health.service - Orb Meet application and dependency readiness..."),
+      health("FAIL readiness: livekit is not answering"),
+      unit("orbmeet-health.service: Main process exited, code=exited, status=1/FAILURE"),
+      unit("orbmeet-health.service: Failed with result 'exit-code'."),
+    ).sent)).toEqual([
+      "health error: FAIL readiness: livekit is not answering",
+      "heartbeat healthy=false",
+    ]);
+  });
+
+  it("keeps every part of a line Docker wrote in pieces in one request, whatever comes between them", () => {
+    const line = JSON.stringify({ level: "error", msg: "could not handle new participant" });
+    const at = String(Date.now() * 1000);
+    const part = (ordinal: number, last: boolean, message: string) => JSON.stringify({
+      __CURSOR: `c${++cursor}`, __REALTIME_TIMESTAMP: at, CONTAINER_NAME: "orbmeet-ams1-livekit-1", PRIORITY: "3",
+      MESSAGE: message, CONTAINER_PARTIAL_ID: "p-long", CONTAINER_PARTIAL_ORDINAL: String(ordinal), CONTAINER_PARTIAL_LAST: String(last),
+    });
+    const other = JSON.stringify({
+      __CURSOR: `c${++cursor}`, __REALTIME_TIMESTAMP: at, CONTAINER_NAME: "orbmeet-ams1-whiteboard-1", PRIORITY: "3", MESSAGE: "crash",
+    });
+    // Two lines a chunk: the other container's line would end the first one
+    // between the long line's parts.
+    const sent = runWith({ SHIP_LOGS_CHUNK_LINES: "2" }, part(1, false, line.slice(0, 20)), other, part(2, true, line.slice(20))).sent;
+    expect(summary(sent).filter((event) => event.startsWith("livekit"))).toEqual(["livekit error: could not handle new participant"]);
+  });
+
+  it("keeps a change of health a delivered chunk reported when a later chunk fails", () => {
+    run(health("PASS ams1: ok"));
+    const crash = (index: number) => JSON.stringify({
+      __CURSOR: `c${++cursor}`, __REALTIME_TIMESTAMP: "1791908966123456", CONTAINER_NAME: "orbmeet-ams1-whiteboard-1",
+      PRIORITY: "3", MESSAGE: `crash ${index}`,
+    });
+    const lines = [health("FAIL readiness: livekit is unhealthy"), crash(1), crash(2), crash(3)];
+    writeFileSync(join(dir, "curl-fail-at"), String(posts() + 2));
+    const failed = runWith({ SHIP_LOGS_CHUNK_LINES: "2" }, ...lines);
+    expect(failed.status).not.toBe(0);
+    expect(summary(failed.sent)).toContain("health error: FAIL readiness: livekit is unhealthy");
+
+    // The next run reads on from the delivered chunk, and knows the node is failing.
+    writeFileSync(join(dir, "curl-fail-at"), "0");
+    const resumed = runWith({ SHIP_LOGS_CHUNK_LINES: "2" }, ...lines.slice(2));
+    expect(summary(resumed.sent)).toEqual(["whiteboard error: crash 2", "whiteboard error: crash 3", "heartbeat healthy=false"]);
+  });
 });

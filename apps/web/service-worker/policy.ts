@@ -20,6 +20,24 @@ export function isImmutableAsset(pathname: string): boolean {
     || pathname.startsWith("/wb-assets/");
 }
 
+const DOCUMENTS_CACHE_PREFIX = "orbmeet-public-documents";
+
+/**
+ * The cache one build keeps its public documents in. A document loads its
+ * build's entry chunks, which only that build's precache holds, and the next
+ * build's worker drops them as it activates; so the documents are dropped
+ * with them (`isOutdatedDocumentsCache`) rather than kept to open offline
+ * without their scripts and styles.
+ */
+export function documentsCacheName(build: string): string {
+  return `${DOCUMENTS_CACHE_PREFIX}-${build}`;
+}
+
+/** A documents cache some other build kept, the unversioned one before builds were named included. */
+export function isOutdatedDocumentsCache(name: string, current: string): boolean {
+  return name !== current && (name === DOCUMENTS_CACHE_PREFIX || name.startsWith(`${DOCUMENTS_CACHE_PREFIX}-`));
+}
+
 /** Documents are kept under their slash-less path, as the router serves them. */
 export function canonicalDocumentPath(pathname: string): string {
   return pathname.replace(/\/+$/, "") || "/";

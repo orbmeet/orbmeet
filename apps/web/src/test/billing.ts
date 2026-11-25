@@ -21,7 +21,8 @@ export async function seedSubscription(
     seats: "organizationId" in customer ? customer.seats ?? 25 : null,
     cancelAtPeriodEnd: options.cancelAtPeriodEnd ?? false,
     currentPeriodEnd: null,
-    sourceVersion: new Date(0),
+    plan: "userId" in customer ? "pro" : "organization",
+    sourceVersion: 0,
   });
   return id;
 }

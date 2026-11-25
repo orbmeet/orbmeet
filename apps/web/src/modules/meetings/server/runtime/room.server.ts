@@ -471,6 +471,7 @@ async function accessFor(
     identity: participant.identity,
     name: participant.displayName,
     roomName: liveKitMeetingRoomName(participant.meetingId),
+    expiresAt: participant.tokenExpiresAt,
     attributes: {
       ...participant.grant.attributes,
       "orbmeet.caption_language": participant.captionLanguage,

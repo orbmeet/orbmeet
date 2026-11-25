@@ -16,7 +16,11 @@ export type NodeLatencies = Record<string, number>;
 const SAMPLES = 3;
 /** A node slower than this to answer is as good as unreachable for a call. */
 const REQUEST_TIMEOUT_MS = 2_000;
-/** How long a measurement stands for this browser before the next join measures again. */
+/**
+ * How long a measurement stands for this browser: the next join measures again
+ * after it, and no join is sent one older. A network the browser has since
+ * left (office Wi-Fi, then mobile data) would otherwise place the meeting.
+ */
 const FRESH_MS = 5 * 60_000;
 
 export interface MeasureDeps {
@@ -69,6 +73,10 @@ export async function measureNodeLatencies(
 
 let current: { key: string; startedAt: number; result: Promise<NodeLatencies> } | null = null;
 
+function isFresh(measurement: { startedAt: number }, now: number): boolean {
+  return now - measurement.startedAt < FRESH_MS;
+}
+
 /**
  * Start measuring these nodes unless a fresh measurement of them has already
  * started. The pre-join screen calls this, so the measurement is usually done
@@ -78,17 +86,17 @@ export function prefetchNodeLatencies(probes: readonly NodeProbe[], deps?: Measu
   if (probes.length === 0) return;
   const key = probes.map((probe) => `${probe.id}=${probe.url}`).sort().join(",");
   const now = Date.now();
-  if (current && current.key === key && now - current.startedAt < FRESH_MS) return;
+  if (current && current.key === key && isFresh(current, now)) return;
   current = { key, startedAt: now, result: measureNodeLatencies(probes, deps) };
 }
 
 /**
- * The latest measurement, if it finishes within `waitMs` and any node
- * answered; otherwise undefined, and the Worker measures from its data centre
- * instead. A join never waits longer than `waitMs` for it.
+ * The latest measurement, if it is still fresh, finishes within `waitMs` and
+ * any node answered; otherwise undefined, and the Worker measures from its
+ * data centre instead. A join never waits longer than `waitMs` for it.
  */
 export async function settledNodeLatencies(waitMs: number): Promise<NodeLatencies | undefined> {
-  if (!current) return undefined;
+  if (!current || !isFresh(current, Date.now())) return undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const latencies = await Promise.race([
     current.result,

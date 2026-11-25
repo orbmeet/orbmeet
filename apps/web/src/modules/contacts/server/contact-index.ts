@@ -291,6 +291,9 @@ function matchRank(query: string, name: string, email?: string | null): number {
  */
 function manageableLiveSpaceWhere(userId: string, term: string) {
   return and(
+    // Only a shared Space is a target: a personal one is never named (it is
+    // titled after its owner) and holds no Space meeting link to schedule on.
+    eq(spaces.kind, "shared"),
     eq(spaceMembers.userId, userId),
     retainsSpaceManagerSql(spaces.id, userId),
     d1UnicodeContains(spaces.name, term),

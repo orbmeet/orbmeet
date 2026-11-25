@@ -288,6 +288,34 @@ describe("useWhiteboardPageThumbnails", () => {
     expect(renderedPages(toImage).slice(before)).toContain("shape:page-4");
   });
 
+  it("re-renders the page a shape was moved off as well as the page it went to", async () => {
+    // Dragging a stroke from page 4 onto page 2 reparents it: page 4 must
+    // lose it in its thumbnail too.
+    const pages = makePages(4);
+    const { editor, emit, shapes, toImage } = createFakeEditor(pages);
+    const stroke = {
+      id: "shape:moved" as TLShapeId,
+      type: "draw",
+      x: 0,
+      y: pages[3].y,
+      rotation: 0,
+      index: "a1",
+      parentId: "shape:page-4",
+      props: {},
+    };
+    shapes.set("shape:moved", stroke);
+    render(<Probe editor={editor} pages={pages} currentPage={1} />);
+    await settle();
+    const before = toImage.mock.calls.length;
+
+    const moved = { ...stroke, y: pages[1].y, parentId: "shape:page-2" };
+    shapes.set("shape:moved", moved);
+    emit({ updated: { "shape:moved": [{ typeName: "shape", ...stroke }, { typeName: "shape", ...moved }] } });
+    await settle();
+
+    expect(renderedPages(toImage).slice(before)).toEqual(expect.arrayContaining(["shape:page-2", "shape:page-4"]));
+  });
+
   it("retries a page whose render failed instead of leaving it blank forever", async () => {
     // A failed render set a cool-off and returned to a pump that then found
     // nothing to do — with no timer armed for when the cool-off expired. The

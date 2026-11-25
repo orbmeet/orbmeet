@@ -165,7 +165,9 @@ export class MicrophoneController {
    * Runs in the reconcile slot, so it cannot interleave with a mute or a
    * repair. Resolves false when there is nothing to restart right now — the
    * microphone is off, or the loop is busy — and rejects when the browser
-   * refuses the new capture.
+   * refuses the new capture. Settles once the slot is released, so a caller
+   * that looks at the new capture next finds the controller no longer busy
+   * with it.
    */
   restartCapture(): Promise<boolean> {
     if (this.disposed || this.intent !== "on" || this.loop) return Promise.resolve(false);
@@ -173,8 +175,8 @@ export class MicrophoneController {
     const restartTrack = track?.restartTrack;
     if (!restartTrack) return Promise.resolve(false);
     const restarted = restartTrack.call(track).then(() => true);
-    this.occupy(restarted.then(() => undefined, () => undefined));
-    return restarted;
+    const released = this.occupy(restarted.then(() => undefined, () => undefined));
+    return released.then(() => restarted);
   }
 
   /**
@@ -199,12 +201,15 @@ export class MicrophoneController {
 
   private kick(): void {
     if (this.disposed || this.loop || !this.needsWork()) return;
-    this.occupy(this.reconcile());
+    void this.occupy(this.reconcile());
   }
 
-  /** Holds the single slot every track mutation runs in, then hands it on. */
-  private occupy(work: Promise<void>): void {
-    this.loop = work.finally(() => {
+  /**
+   * Holds the single slot every track mutation runs in, then hands it on.
+   * Resolves once the slot is released (and any follow-up work kicked).
+   */
+  private occupy(work: Promise<void>): Promise<void> {
+    const loop = work.finally(() => {
       this.loop = null;
       // Re-check after clearing the handle: an intent change that landed
       // between the loop's last check and this point would otherwise be
@@ -212,7 +217,9 @@ export class MicrophoneController {
       if (!this.disposed && this.needsWork()) this.kick();
       else this.options.onStateChange?.();
     });
+    this.loop = loop;
     this.options.onStateChange?.();
+    return loop;
   }
 
   private async reconcile(): Promise<void> {

@@ -23,6 +23,10 @@ describe("isAllowedAsset", () => {
     ["encoded traversal", "/api/wb-assets/uploads/user-1/wb/mtg_123/%2e%2e/secret.png"],
     ["encoded traversal in a document-scoped path", `/api/wb-assets/whiteboards/${BOARD}/assets/whiteboard_asset_1/%2e%2e/secret.png`],
     ["another board's asset", "/api/wb-assets/whiteboards/whiteboard_other/assets/secret.png"],
+    // Forms the revision's pins and the viewer would read as another object, or none.
+    ["a key with a query", `whiteboards/${BOARD}/assets/whiteboard_asset_1.png?v=1`],
+    ["a key with a fragment", `${OWN_ASSET}#frag`],
+    ["a key with encoded separators", `whiteboards%2F${BOARD}%2Fassets%2Fwhiteboard_asset_1.png`],
   ])("refuses media from %s", (_label, src) => {
     expect(isAllowedAsset(image(src), BOARD)).toBe(false);
   });

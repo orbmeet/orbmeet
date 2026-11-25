@@ -320,14 +320,16 @@ async function selectScheduleRows(
 }
 
 /**
- * An attendee's email as a schedule may show it: empty for an account holder
- * the organizer has no contact email for, whose address the organizer never
- * supplied. Shown and searched through this one expression, so a search can
- * never match an address the results would hide. Correlated with the
- * enclosing query's `meeting_schedules` row.
+ * An attendee's email as a schedule may show it: empty for an address that
+ * came from the attendee's account, which the organizer never supplied, while
+ * they hold no contact email for that person. Whether it came from an account
+ * is kept on the row, so it stays hidden after the account is deleted (and
+ * `user_id` with it). Shown and searched through this one expression, so a
+ * search can never match an address the results would hide. Correlated with
+ * the enclosing query's `meeting_schedules` row.
  */
 function visibleAttendeeEmail(): SQL<string> {
-  return sql<string>`case when ${meetingScheduleAttendees.userId} is not null and not exists (
+  return sql<string>`case when ${meetingScheduleAttendees.emailFromAccount} and not exists (
       select 1 from ${userContacts} private_contact
       where private_contact.owner_user_id = ${meetingSchedules.organizerUserId}
         and private_contact.contact_user_id = ${meetingScheduleAttendees.userId}

@@ -2,7 +2,6 @@ import { open, readdir, stat } from "node:fs/promises";
 import type { IncomingMessage } from "node:http";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import { text } from "node:stream/consumers";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { PDF_MAX_IMPORT_SIZE, isPdfSourceFileId } from "@orbmeet/whiteboard-core/pdf-geometry";
 import { header, jsonBodyErrorReply, readBoundedJson, readStreamWithTimeouts } from "../http/http.ts";
@@ -60,21 +59,32 @@ const MAX_RENDER_STDERR_BYTES = 64 * 1024;
 const RENDER_PROCESS_BUDGET = 3;
 
 const PAGE_COUNT_TIMEOUT_MS = 10_000;
+/** `mutool show` of one number prints a few bytes; anything longer is not that. */
+const PAGE_COUNT_MAX_OUTPUT_BYTES = 256;
+/** The page tree's count, printed bare or as the indirect object that holds it. */
+const PAGE_COUNT_OUTPUT = /^(?:\d+ \d+ obj\s+)?(\d+)\s*(?:endobj\s*)?$/;
 
+/**
+ * The page count MuPDF itself renders by: the page tree's `/Count`, read with
+ * `mutool show`, which prints that one value and nothing of the document's
+ * metadata. (`mutool info` prints the Info dictionary, which the PDF's author
+ * writes, before its own `Pages:` line, and walks every page before printing
+ * anything.)
+ */
 export async function readPdfPageCount(pdfPath: string): Promise<number | null> {
-  const proc = spawnMutool(["info", pdfPath], {
+  const proc = spawnMutool(["show", pdfPath, "trailer/Root/Pages/Count"], {
     stdout: "pipe",
     stderr: "ignore",
   });
   const exited = mutoolExited(proc);
   const timer = setTimeout(() => proc.kill("SIGKILL"), PAGE_COUNT_TIMEOUT_MS);
   try {
-    const [exitCode, stdout] = await Promise.all([exited, text(proc.stdout!)]);
-    if (exitCode !== 0) return null;
-    const match = stdout.match(/Pages:\s*(\d+)/);
+    const [exitCode, stdout] = await Promise.all([exited, readBoundedText(proc, PAGE_COUNT_MAX_OUTPUT_BYTES)]);
+    if (exitCode !== 0 || stdout === null) return null;
+    const match = stdout.trim().match(PAGE_COUNT_OUTPUT);
     if (!match) return null;
     const pageCount = Number(match[1]);
-    return Number.isSafeInteger(pageCount) ? pageCount : null;
+    return Number.isSafeInteger(pageCount) && pageCount > 0 ? pageCount : null;
   } catch {
     return null;
   } finally {
@@ -85,6 +95,21 @@ export async function readPdfPageCount(pdfPath: string): Promise<number | null> 
     // is still alive. `kill` on an already-exited process is a no-op.
     proc.kill("SIGKILL");
   }
+}
+
+/** The process's stdout as text, or null (and the process killed) once it passes `maxBytes`. */
+async function readBoundedText(proc: MutoolProcess, maxBytes: number): Promise<string | null> {
+  const chunks: Buffer[] = [];
+  let length = 0;
+  for await (const chunk of proc.stdout! as AsyncIterable<Buffer>) {
+    length += chunk.byteLength;
+    if (length > maxBytes) {
+      proc.kill("SIGKILL");
+      return null;
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 

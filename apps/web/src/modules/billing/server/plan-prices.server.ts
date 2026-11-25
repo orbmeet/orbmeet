@@ -42,8 +42,13 @@ const STALE_MS = 24 * 60 * 60 * 1000;
 /** Each plan's prices by currency, in the currency's smallest unit. */
 type Catalog = Record<PaidSubscriptionTier, Map<string, number>>;
 
+/**
+ * The last catalog read, shared by every request this isolate serves. Only
+ * the data is shared: each request that needs a read makes its own, since a
+ * Worker request may not wait on I/O another request started (it is bound to
+ * that request, and is cancelled with it).
+ */
 let cached: { catalog: Catalog; readAt: number } | null = null;
-let inflight: Promise<Catalog | null> | null = null;
 
 function pricesByCurrency(product: PolarProduct): Map<string, number> {
   const prices = new Map<string, number>();
@@ -71,20 +76,14 @@ async function readCatalog(env: PolarCatalogConfig & { POLAR_ACCESS_TOKEN?: stri
 
 async function loadCatalog(env: Parameters<typeof readCatalog>[0], now: number): Promise<Catalog | null> {
   if (cached && now - cached.readAt < FRESH_MS) return cached.catalog;
-  inflight ??= readCatalog(env)
-    .then((catalog) => {
-      if (catalog) cached = { catalog, readAt: Date.now() };
-      return catalog;
-    })
-    .catch((error: unknown) => {
-      logWarn("[billing] Could not read plan prices from Polar; showing the last known ones", error);
-      return null;
-    })
-    .finally(() => {
-      inflight = null;
-    });
-  const fresh = await inflight;
-  if (fresh) return fresh;
+  const fresh = await readCatalog(env).catch((error: unknown) => {
+    logWarn("[billing] Could not read plan prices from Polar; showing the last known ones", error);
+    return null;
+  });
+  if (fresh) {
+    cached = { catalog: fresh, readAt: Date.now() };
+    return fresh;
+  }
   return cached && now - cached.readAt < STALE_MS ? cached.catalog : null;
 }
 
@@ -119,5 +118,4 @@ export async function resolvePlanPrices(
 /** Forget the cached catalog. Tests only. */
 export function resetPlanPricesCache(): void {
   cached = null;
-  inflight = null;
 }

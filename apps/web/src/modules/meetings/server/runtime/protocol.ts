@@ -140,7 +140,12 @@ export type Observation =
    * `placement` is the placement a listing was taken on; a webhook carries
    * none, since the Worker already checked the node it came from.
    */
-  | { kind: "egressObserved"; egresses: ObservedEgress[]; complete: boolean; placement?: Placement };
+  /**
+   * A webhook's word on one egress, or (`complete`) a listing of every egress
+   * in the room, as it was when the listing was asked for at `requestedAt`.
+   */
+  | { kind: "egressObserved"; egresses: ObservedEgress[]; complete: false; placement?: Placement }
+  | { kind: "egressObserved"; egresses: ObservedEgress[]; complete: true; requestedAt: number; placement?: Placement };
 
 /**
  * Results of effects on the media node carry the placement the effect was
@@ -209,6 +214,11 @@ export interface ParticipantView {
   joinPolicy: JoinPolicy;
   nodeId: string;
   captionLanguage: string;
+  /**
+   * When every LiveKit token for this attempt expires, however many times the
+   * same join is answered (`tokenExpiresAt`).
+   */
+  tokenExpiresAt: number;
   grant: ParticipantGrant;
   room: RoomMetadata;
   recordingEnabled: boolean;
@@ -293,7 +303,8 @@ export type Effect =
       mode: EgressMode;
       target: string | null;
     }
-  | { key: "egress.list"; kind: "livekit.listEgress"; placement: Placement }
+  /** `requestedAt`: when the look was asked for; what it sees is no older. */
+  | { key: "egress.list"; kind: "livekit.listEgress"; placement: Placement; requestedAt: number }
   | { key: `egress.stop:${string}`; kind: "livekit.stopEgress"; placement: Placement; egressId: string }
   | { key: "room.delete"; kind: "livekit.deleteRoom"; placement: Placement }
   | { key: "finalize"; kind: "meeting.finalize"; reason: EndReason }

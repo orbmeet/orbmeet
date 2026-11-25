@@ -14,7 +14,7 @@ const resolveOpenMeetingPresentingWhiteboardMock = vi.fn();
 const isMeetingAttachedToWhiteboardRoomMock = vi.fn();
 const isWhiteboardRoomIdentityMock = vi.fn();
 const canUserReadWhiteboardDocumentMock = vi.fn();
-const verifyGuestAdmissionBySecretMock = vi.fn();
+const guestCanAccessMeetingHistoryMock = vi.fn();
 
 vi.mock("@orbmeet/db", () => ({
   createDb: () => {
@@ -50,6 +50,7 @@ vi.mock("@/platform/http/cookies.server", () => ({
 
 vi.mock("@/modules/meetings/server/access/resource-access", () => ({
   canAccessMeetingHistory: canAccessMeetingHistoryMock,
+  guestCanAccessMeetingHistory: guestCanAccessMeetingHistoryMock,
 }));
 
 vi.mock("@/modules/whiteboards/server/meeting/asset-access", () => ({
@@ -63,10 +64,6 @@ vi.mock("@/modules/whiteboards/server/documents", () => ({
   isMeetingAttachedToWhiteboardRoom: isMeetingAttachedToWhiteboardRoomMock,
   isWhiteboardRoomIdentity: isWhiteboardRoomIdentityMock,
   canUserReadWhiteboardDocument: canUserReadWhiteboardDocumentMock,
-}));
-
-vi.mock("@/modules/meetings/server/access/guest-admission", () => ({
-  verifyGuestAdmissionBySecret: verifyGuestAdmissionBySecretMock,
 }));
 
 // The route's pre-authorization budget. Its own behaviour is covered in
@@ -180,7 +177,7 @@ describe("handleWbAssets", () => {
       })),
     });
     verifySessionFromRawRequestMock.mockResolvedValue(null);
-    verifyGuestAdmissionBySecretMock.mockResolvedValue({ id: "admission_1" });
+    guestCanAccessMeetingHistoryMock.mockResolvedValue(true);
     const bucket = {
       get: vi.fn().mockResolvedValue({
         body: "image",
@@ -210,12 +207,50 @@ describe("handleWbAssets", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(verifyGuestAdmissionBySecretMock).toHaveBeenCalledWith(
+    expect(guestCanAccessMeetingHistoryMock).toHaveBeenCalledWith(
       expect.anything(),
       "meeting_1",
       "admission_1",
       "private-occurrence-secret",
     );
+    expect(bucket.get).toHaveBeenCalledWith(key);
+  });
+
+  it("serves a captured asset to a guest who has since signed in on the same browser", async () => {
+    // The account has no claim on the meeting's history; the admission's
+    // cookie, still held, does.
+    const { handleWbAssets } = await import("@/modules/whiteboards/server/http/wb-assets");
+    const key = "whiteboards/whiteboard_1/assets/whiteboard_asset_1.png";
+    const limit = vi.fn().mockResolvedValue([{ assetManifest: JSON.stringify([key]) }]);
+    createDbMock.mockReturnValue({
+      query: { whiteboardRevisions: { findFirst: vi.fn().mockResolvedValue(null) } },
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          innerJoin: vi.fn(() => ({ where: vi.fn(() => ({ limit })) })),
+        })),
+      })),
+    });
+    verifySessionFromRawRequestMock.mockResolvedValue({ userId: "usr_signed_in" });
+    guestCanAccessMeetingHistoryMock.mockResolvedValue(true);
+    const bucket = {
+      get: vi.fn().mockResolvedValue({ body: "image", size: 5, httpEtag: '"etag"', httpMetadata: { contentType: "image/png" } }),
+    };
+    const params = new URLSearchParams({
+      revisionId: "revision_1",
+      whiteboardId: "whiteboard_1",
+      meetingId: "meeting_1",
+      admissionId: "admission_1",
+    });
+
+    const response = await handleWbAssets(
+      new Request(`https://app.example/api/wb-assets/${key}?${params}`, {
+        headers: { Cookie: "__Host-guest_admission_1=private-occurrence-secret" },
+      }),
+      { DB: {}, R2_BUCKET: bucket } as unknown as Env,
+      key,
+    );
+
+    expect(response.status).toBe(200);
     expect(bucket.get).toHaveBeenCalledWith(key);
   });
 

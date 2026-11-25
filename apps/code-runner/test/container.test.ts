@@ -402,6 +402,22 @@ describe.skipIf(!available).each(RUNTIMES)(`code runner container (${IMAGE}) on 
           "        print(name, 'denied')",
           "a, b = socket.socketpair()",
           "a.send(b'x'); print('socketpair', b.recv(1).decode())",
+          "a, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)",
+          "a.send(b'y'); print('seqpacket', b.recv(1).decode())",
+          "try:",
+          "    socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)",
+          "    print('dgram OPENED')",
+          "except OSError:",
+          "    print('dgram denied')",
+          // An abstract address is outside every file permission and shared by
+          // every slot: no socket a snippet holds may take or reach one.
+          "a, b = socket.socketpair()",
+          "for name, call in [('bind', lambda: a.bind('\\0cellrun-test')), ('connect', lambda: a.connect('\\0cellrun-test'))]:",
+          "    try:",
+          "        call()",
+          "        print(name, 'ALLOWED')",
+          "    except OSError:",
+          "        print(name, 'denied')",
         ].join("\n"),
       );
       expect(result.stdout.trim().split("\n")).toEqual([
@@ -413,6 +429,10 @@ describe.skipIf(!available).each(RUNTIMES)(`code runner container (${IMAGE}) on 
         "packet denied",
         "alg denied",
         "socketpair x",
+        "seqpacket y",
+        "dgram denied",
+        "bind denied",
+        "connect denied",
       ]);
     });
 

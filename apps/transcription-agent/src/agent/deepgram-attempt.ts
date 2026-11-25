@@ -75,6 +75,18 @@ interface Liveness {
   unansweredSpeechSince: number | null;
 }
 
+/**
+ * An attempt ended on purpose to replace a socket that has been quiet too
+ * long to trust before speech is sent into it: nothing failed, and the next
+ * attempt starts at once.
+ */
+export class DeepgramRefresh extends Error {
+  constructor(silentForMs: number) {
+    super(`Deepgram was silent for ${silentForMs}ms before speech resumed; reconnecting before sending it`);
+    this.name = "DeepgramRefresh";
+  }
+}
+
 export class DeepgramAttempt {
   private socket: DeepgramSocket | null = null;
 
@@ -205,7 +217,7 @@ export class DeepgramAttempt {
       // buffered for the next connection. Speech already on its way is past
       // that choice: it is waited on, above, rather than cut off mid-word.
       if (likelySpeech && liveness.unansweredSpeechSince === null && silentFor >= INBOUND_LIVENESS_TIMEOUT_MS) {
-        throw new Error(`Deepgram was silent for ${silentFor}ms before speech resumed`);
+        throw new DeepgramRefresh(silentFor);
       }
       try {
         socket.sendAudio(chunk.samples);

@@ -69,6 +69,12 @@ interface ActiveRun extends AssistantRun {
   pageId: string;
   canEdit: boolean;
   turns: number;
+  /**
+   * The assistant message this run is streaming, and its text so far. The
+   * run's own: once the run is cleared or replaced, nothing of its reply can
+   * be written again.
+   */
+  reply: { id: string; text: string } | null;
 }
 
 /** An entry as the code above writes it; `upsert` stamps its time and audience. */
@@ -243,9 +249,6 @@ class AssistantConversation {
   private readonly pending = new Map<string, PendingToolCall>();
   /** What each finished tool call made and changed, by the agent's tool call id, until its entry is written. */
   private readonly toolShapes = new Map<string, { pageId: string; created?: string[]; changed?: string[] }>();
-  /** The assistant message being streamed, and its text so far. */
-  private replyId: string | null = null;
-  private replyText = "";
   private replyFlush: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
 
@@ -311,6 +314,7 @@ class AssistantConversation {
       pageId: page.pageId,
       canEdit,
       turns: 0,
+      reply: null,
     };
     this.run = run;
     this.upsert({
@@ -393,7 +397,7 @@ class AssistantConversation {
     } finally {
       unsubscribe();
       if (this.run === run) {
-        this.flushReply();
+        this.flushReply(run);
         this.run = null;
         this.deliverRun();
       }
@@ -430,20 +434,19 @@ class AssistantConversation {
     switch (event.type) {
       case "message_start":
         if (event.message.role === "assistant") {
-          this.replyId = `${run.id}-${crypto.randomUUID()}`;
-          this.replyText = "";
+          run.reply = { id: `${run.id}-${crypto.randomUUID()}`, text: "" };
         }
         return;
       case "message_update":
         if (event.message.role !== "assistant") return;
-        this.replyText = assistantText(event.message);
-        this.scheduleReplyFlush();
+        if (run.reply) run.reply.text = assistantText(event.message);
+        this.scheduleReplyFlush(run);
         return;
       case "message_end": {
         if (event.message.role !== "assistant") return;
-        this.replyText = assistantText(event.message);
-        this.flushReply();
-        this.replyId = null;
+        if (run.reply) run.reply.text = assistantText(event.message);
+        this.flushReply(run);
+        run.reply = null;
         const failure = failureNotice(event.message);
         if (failure) this.notice(run, failure.notice);
         if (failure?.log) {
@@ -483,11 +486,11 @@ class AssistantConversation {
     }
   }
 
-  private scheduleReplyFlush(): void {
+  private scheduleReplyFlush(run: ActiveRun): void {
     if (this.replyFlush) return;
     this.replyFlush = setTimeout(() => {
       this.replyFlush = null;
-      this.flushReply(false);
+      if (this.run === run) this.flushReply(run, false);
     }, REPLY_FLUSH_MS);
   }
 
@@ -497,10 +500,10 @@ class AssistantConversation {
     this.replyFlush = null;
   }
 
-  private flushReply(done = true): void {
+  private flushReply(run: ActiveRun, done = true): void {
     if (done) this.clearReplyFlush();
-    if (!this.replyId || !this.replyText.trim()) return;
-    this.upsert({ id: this.replyId, kind: "reply", text: this.replyText, done });
+    if (!run.reply || !run.reply.text.trim()) return;
+    this.upsert({ id: run.reply.id, kind: "reply", text: run.reply.text, done });
   }
 
   private notice(run: ActiveRun, text: string): void {

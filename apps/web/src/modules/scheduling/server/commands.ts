@@ -169,18 +169,23 @@ function prepareTiming(startsAtInput: string, durationMinutes: number, now: Date
 
 function prepareAttendees(attendees: ScheduleAttendeeInput[], organizer: AuthenticatedUser) {
   const organizerEmail = normalizeEmail(organizer.email);
-  const byEmail = new Map<string, ScheduleAttendeeInput & { normalizedEmail: string }>();
+  const byEmail = new Map<string, ScheduleAttendeeInput & { normalizedEmail: string; emailFromAccount: boolean }>();
   for (const attendee of attendees) {
     const email = attendee.email.trim();
     const normalizedEmail = normalizeEmail(email);
     if (normalizedEmail === organizerEmail) continue;
-    if (!byEmail.has(normalizedEmail)) {
-      byEmail.set(normalizedEmail, {
-        email,
-        normalizedEmail,
-        displayName: attendee.displayName?.trim() || undefined,
-      });
+    const existing = byEmail.get(normalizedEmail);
+    if (existing) {
+      // An address the organizer also gave is one they know.
+      existing.emailFromAccount &&= attendee.privateEmail === true;
+      continue;
     }
+    byEmail.set(normalizedEmail, {
+      email,
+      normalizedEmail,
+      displayName: attendee.displayName?.trim() || undefined,
+      emailFromAccount: attendee.privateEmail === true,
+    });
   }
   return [...byEmail.values()];
 }
@@ -479,41 +484,10 @@ export async function createMeetingScheduleRecord(
       email: attendee.email,
       normalizedEmail: attendee.normalizedEmail,
       displayName: attendee.displayName ?? registered?.name ?? null,
+      emailFromAccount: attendee.emailFromAccount,
       invitedAt: now,
     };
   });
-  const notificationRows = attendeeRows.flatMap((attendee) => [
-    {
-      id: generateId("MEETING_SCHEDULE_NOTIFICATION"),
-      scheduleId,
-      attendeeId: attendee.id,
-      kind: "invitation" as const,
-      revision: 1,
-      status: "pending" as const,
-      attempts: 0,
-      nextAttemptAt: now,
-      sentAt: null,
-      lastError: null,
-      createdAt: now,
-    },
-    ...(reminderAt
-      ? [
-          {
-            id: generateId("MEETING_SCHEDULE_NOTIFICATION"),
-            scheduleId,
-            attendeeId: attendee.id,
-            kind: "reminder" as const,
-            revision: 1,
-            status: "pending" as const,
-            attempts: 0,
-            nextAttemptAt: reminderAt,
-            sentAt: null,
-            lastError: null,
-            createdAt: now,
-          },
-        ]
-      : []),
-  ]);
   const scheduleValues = (meetingLinkId: string, spaceId: string) => ({
     id: scheduleId,
     meetingLinkId,
@@ -535,10 +509,34 @@ export async function createMeetingScheduleRecord(
     createdAt: now,
     updatedAt: now,
   });
-  const attendeeInserts = boundedStatements(attendeeRows, (rows) =>
-    db.insert(meetingScheduleAttendees).values(rows));
-  const notificationInserts = boundedStatements(notificationRows, (rows) =>
-    db.insert(meetingScheduleNotifications).values(rows));
+  // Every row below belongs to the schedule its batch inserts first, and is
+  // written only once that schedule exists: when the schedule's own guard
+  // (an overlap, a link archived meanwhile, a role lost) writes nothing, they
+  // write nothing too, and the refusal is reported as itself rather than as a
+  // foreign key failing the batch. Notifications are selected from the
+  // attendees the batch wrote, so they follow the same rule.
+  const nowSeconds = Math.floor(now.getTime() / 1000);
+  const scheduleExists = sql`exists (select 1 from ${meetingSchedules} where ${meetingSchedules.id} = ${scheduleId})`;
+  const attendeeInserts = attendeeRows.map((attendee) => db.insert(meetingScheduleAttendees).select(sql`
+    select
+      ${attendee.id}, ${scheduleId}, ${attendee.userId}, ${attendee.email}, ${attendee.normalizedEmail},
+      ${attendee.displayName}, ${attendee.emailFromAccount ? 1 : 0}, ${nowSeconds}
+    where ${scheduleExists}
+  `));
+  const notificationInserts = [
+    db.insert(meetingScheduleNotifications).select(sql`
+      select ${pendingNotificationColumns("invitation", 1, nowSeconds, nowSeconds)}
+      from ${meetingScheduleAttendees} attendee
+      where attendee.schedule_id = ${scheduleId}
+    `),
+    ...(reminderAt
+      ? [db.insert(meetingScheduleNotifications).select(sql`
+          select ${pendingNotificationColumns("reminder", 1, Math.floor(reminderAt.getTime() / 1000), nowSeconds)}
+          from ${meetingScheduleAttendees} attendee
+          where attendee.schedule_id = ${scheduleId}
+        `)]
+      : []),
+  ];
 
   const serializeCreated = (
     meetingLinkId: string,
@@ -567,7 +565,6 @@ export async function createMeetingScheduleRecord(
     }
     const startsAtSeconds = Math.floor(timing.startsAt.getTime() / 1000);
     const endsAtSeconds = Math.floor(timing.endsAt.getTime() / 1000);
-    const nowSeconds = Math.floor(now.getTime() / 1000);
     // Gated INSERT ... SELECT makes the overlap gate part of the same SQLite
     // write transaction, so concurrent creators cannot both pass it. The
     // query-builder select maps columns by name.
@@ -620,6 +617,7 @@ export async function createMeetingScheduleRecord(
         member_user.email,
         member_user.normalized_email,
         member_user.name,
+        1,
         ${nowSeconds}
       from ${spaceMembers} member
       inner join ${users} member_user on member_user.id = member.user_id
@@ -627,27 +625,13 @@ export async function createMeetingScheduleRecord(
       where member.space_id = ${input.spaceId}
         and member.user_id <> ${organizer.id}
         and current_space.archived_at is null
+        and ${scheduleExists}
     `);
-    const insertSpaceInvitations = db.insert(meetingScheduleNotifications).select(sql`
-      select
-        ${pendingNotificationColumns("invitation", 1, nowSeconds, nowSeconds)}
-      from ${meetingScheduleAttendees} attendee
-      where attendee.schedule_id = ${scheduleId}
-    `);
-    const insertSpaceReminders = reminderAt
-      ? db.insert(meetingScheduleNotifications).select(sql`
-        select
-          ${pendingNotificationColumns("reminder", 1, Math.floor(reminderAt.getTime() / 1000), nowSeconds)}
-        from ${meetingScheduleAttendees} attendee
-        where attendee.schedule_id = ${scheduleId}
-      `)
-      : null;
     try {
       const [insertResult, attendeeResult] = await db.batch([
         insertSchedule,
         insertSpaceAttendees,
-        insertSpaceInvitations,
-        ...(insertSpaceReminders ? [insertSpaceReminders] : []),
+        ...notificationInserts,
       ]);
       if (getRunChanges(insertResult) === 0) {
         const access = await getSpaceAccess(db, input.spaceId, organizer.id);
@@ -688,7 +672,6 @@ export async function createMeetingScheduleRecord(
     }
     const startsAtSeconds = Math.floor(timing.startsAt.getTime() / 1000);
     const endsAtSeconds = Math.floor(timing.endsAt.getTime() / 1000);
-    const nowSeconds = Math.floor(now.getTime() / 1000);
     const insertSchedule = db.insert(meetingSchedules).select(
       db
         .select({

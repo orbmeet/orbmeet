@@ -13,6 +13,7 @@ import {
   canonicalDocumentPath,
   isCacheableDocument,
   isImmutableAsset,
+  isOutdatedDocumentsCache,
   isServerPath,
 } from "./policy";
 
@@ -21,6 +22,8 @@ declare const self: ServiceWorkerGlobalScope & {
 };
 /** The prerendered public pages a visitor may read offline. Injected at build. */
 declare const PUBLIC_DOCUMENTS: readonly string[];
+/** This build's cache of those pages (`documentsCacheName`). Injected at build. */
+declare const DOCUMENTS_CACHE: string;
 
 // The offline page, the app's entry chunks, and its own fixed-URL files
 // (fonts, icons, images, sounds, manifest), each revisioned by its content.
@@ -28,6 +31,15 @@ precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 enableNavigationPreload();
 clientsClaim();
+
+// The documents earlier builds kept load chunks this build's precache has just
+// dropped: they go too, and offline reading falls back to the offline page.
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys().then((names) =>
+      Promise.all(names.filter((name) => isOutdatedDocumentsCache(name, DOCUMENTS_CACHE)).map((name) => caches.delete(name)))),
+  );
+});
 
 // The app offers an update; the waiting worker takes over when it is accepted.
 self.addEventListener("message", (event) => {
@@ -41,7 +53,7 @@ const sameOrigin = (url: URL) => url.origin === self.location.origin;
 registerRoute(
   ({ request, url }) => request.mode === "navigate" && sameOrigin(url) && !isServerPath(url.pathname),
   new NetworkFirst({
-    cacheName: "orbmeet-public-documents",
+    cacheName: DOCUMENTS_CACHE,
     plugins: [
       {
         cacheKeyWillBeUsed: async ({ request }) =>

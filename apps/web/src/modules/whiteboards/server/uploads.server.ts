@@ -19,7 +19,7 @@ import { promotionIntentKey, writePromotionIntent } from "@/modules/assets/serve
 import { storagePrincipalKey } from "@/modules/assets/server/storage";
 import { assertActiveMeetingParticipantWithSpaceAccess, assertMeetingExists } from "@/modules/meetings/server/access/access-assertions";
 import { assertSpaceCapability } from "@/modules/spaces/server/helpers";
-import { buildWhiteboardAssetApiPath, buildWhiteboardDocumentAssetKey, extractWhiteboardDocumentAssetIdentity, extractWhiteboardAssetKeyFromViewerUrl } from "@orbmeet/whiteboard-core/whiteboard-asset-key";
+import { buildWhiteboardAssetApiPath, buildWhiteboardDocumentAssetKey, extractWhiteboardDocumentAssetIdentity, whiteboardAssetKeyOfSrc } from "@orbmeet/whiteboard-core/whiteboard-asset-key";
 import { buildPresignedUploadHeaders } from "@/modules/assets/server/upload-headers";
 import { getActiveWhiteboardParticipantAccess } from "@/modules/whiteboards/server/meeting/access";
 import { releaseUploadReservation, releaseUploadReservationStatement, reserveUploadBytes } from "@/modules/assets/server/upload-reservations";
@@ -234,7 +234,7 @@ export async function finalizeWhiteboardUploadImpl({
 }) {
   const env = await getEnv();
   const db = createDb(env.DB);
-  const r2Key = extractWhiteboardAssetKeyFromViewerUrl(data.assetUrl);
+  const r2Key = whiteboardAssetKeyOfSrc(data.assetUrl);
   let callerOwnerId: string | null = null;
   let participantIdentity: string | null = null;
   let callerCanEdit = false;

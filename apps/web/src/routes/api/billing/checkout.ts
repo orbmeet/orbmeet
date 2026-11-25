@@ -11,6 +11,7 @@ import { verifySessionFromRawRequest } from "@/modules/identity/server/session";
 import { polarProductIdForPlan } from "@/modules/billing/server/polar-config";
 import { runSerially } from "@/app/serial/serial";
 import { RequestBodyTooLargeError, readRequestBodyText } from "@/platform/http/request-body";
+import { polarClientFromEnv } from "@/modules/billing/server/polar";
 
 const MAX_CHECKOUT_BODY_BYTES = 1_024;
 
@@ -19,7 +20,10 @@ export const Route = createFileRoute("/api/billing/checkout")({
     handlers: {
       POST: async ({ request }) => {
         const env = await getOptionalEnv();
-        if (!env?.POLAR_ACCESS_TOKEN) return new Response("Service unavailable", { status: 503 });
+        // Billing is on only when the code that calls Polar can build a client:
+        // the same check, so a blank token or a mistyped POLAR_SERVER is a 503
+        // here, not a failure further in.
+        if (!env || !polarClientFromEnv(env)) return new Response("Service unavailable", { status: 503 });
 
         try {
           await enforceIpRateLimit(env, "billing-checkout");

@@ -28,8 +28,14 @@ import { getPlatformEnvironment, needsForegroundCameraReacquire } from "@/lib/br
 import { InitialMeetingMediaContext, type InitialMeetingMediaResult } from "./initial-meeting-media";
 import { whenPageVisible } from "./page-visibility";
 
-/** Each join's initial publish is answered once, even when the view that answers it is rebuilt. */
-const answeredInitialMedia = new WeakSet<Promise<InitialMeetingMediaResult>>();
+/**
+ * What each join's first camera still owes the joiner, kept across rebuilds of
+ * the view: a failure is reported once, by the first view to see it; a camera
+ * refused to a hidden page is asked for again once the page shows, by
+ * whichever view is mounted then. Owed until that retry runs, so a view
+ * rebuilt while the page is hidden takes the retry over rather than dropping it.
+ */
+const initialCameraOutcomes = new WeakMap<Promise<InitialMeetingMediaResult>, "answered" | "retry-owed">();
 
 // iOS rotates an active camera capture lazily — and some WebKit versions not
 // at all — so after a device rotation the published frames can stay in the old
@@ -224,15 +230,19 @@ export function useMeetingCamera({
     void initialMedia?.then(({ videoError }) => {
       if (disposed) return;
       initialSettled = true;
-      if (answeredInitialMedia.has(initialMedia)) return;
-      answeredInitialMedia.add(initialMedia);
       const participant = roomInstance.localParticipant;
-      if (!(videoError instanceof Error) || participant.isCameraEnabled) return;
-      if (MediaDeviceFailure.getFailure(videoError) !== MediaDeviceFailure.PermissionDenied) {
-        reportCameraFailure(videoError);
-        return;
+      let outcome = initialCameraOutcomes.get(initialMedia);
+      if (outcome === undefined) {
+        outcome = "answered";
+        if (videoError instanceof Error && !participant.isCameraEnabled) {
+          if (MediaDeviceFailure.getFailure(videoError) === MediaDeviceFailure.PermissionDenied) outcome = "retry-owed";
+          else reportCameraFailure(videoError);
+        }
+        initialCameraOutcomes.set(initialMedia, outcome);
       }
+      if (outcome !== "retry-owed" || !(videoError instanceof Error)) return;
       cancelRetry = whenPageVisible(() => void enqueueUserAction(async () => {
+        initialCameraOutcomes.set(initialMedia, "answered");
         if (participant.isCameraEnabled) return;
         emitMeetingEntryDiagnostic("initial_camera_retry");
         try {

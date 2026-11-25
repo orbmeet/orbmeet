@@ -89,17 +89,20 @@ const FAILURE_TOASTS: Record<
 };
 
 /**
- * Each join's initial publish is reported once, even when the view that
- * reports it is rebuilt.
+ * What each join's first microphone still owes the joiner, kept across
+ * rebuilds of the view: a failure is reported once, by the first view to see
+ * it; a microphone refused to a hidden page is asked for again once the page
+ * shows, by whichever view is mounted then. Owed until that retry runs, so a
+ * view rebuilt while the page is hidden takes the retry over rather than
+ * dropping it.
  */
-const reportedInitialMedia = new WeakSet<Promise<InitialMeetingMediaResult>>();
+const initialMicrophoneOutcomes = new WeakMap<Promise<InitialMeetingMediaResult>, "answered" | "retry-owed">();
 
-/** Surfaces a failed first microphone. Returns a cleanup for a pending retry. */
+/** Surfaces a failed first microphone, and says whether it is owed a retry when the page shows. */
 function reportInitialMicrophoneFailure(
   error: Error,
-  controller: MicrophoneController,
   callbacks: Pick<UseMeetingMicrophoneParams, "addToast" | "code">,
-): () => void {
+): "answered" | "retry-owed" {
   const failure = getDeviceFailure(error);
   emitMeetingEntryDiagnostic("initial_microphone_publish_failed", {
     code: callbacks.code,
@@ -114,12 +117,7 @@ function reportInitialMicrophoneFailure(
   // rejoin runs. The joiner asked for their microphone, so ask once more
   // when the page shows; a refusal that stands then surfaces as the
   // controller's own unmute failure.
-  if (failure === MediaDeviceFailure.PermissionDenied) {
-    return whenPageVisible(() => {
-      emitMeetingEntryDiagnostic("initial_microphone_retry", { code: callbacks.code });
-      controller.setIntent("on");
-    });
-  }
+  if (failure === MediaDeviceFailure.PermissionDenied) return "retry-owed";
 
   callbacks.addToast({
     title: "Joined with microphone off",
@@ -127,7 +125,7 @@ function reportInitialMicrophoneFailure(
       "The selected microphone could not start. Choose another microphone, then unmute.",
     data: { variant: "error" },
   });
-  return () => {};
+  return "answered";
 }
 
 /**
@@ -419,10 +417,20 @@ export function useMeetingMicrophone({
     let disposed = false;
     let cleanup = () => {};
     void initialMedia.then(({ audioError }) => {
-      if (disposed || reportedInitialMedia.has(initialMedia)) return;
-      reportedInitialMedia.add(initialMedia);
-      if (!(audioError instanceof Error) || roomInstance.localParticipant.isMicrophoneEnabled) return;
-      cleanup = reportInitialMicrophoneFailure(audioError, controller, callbacksRef.current);
+      if (disposed) return;
+      let outcome = initialMicrophoneOutcomes.get(initialMedia);
+      if (outcome === undefined) {
+        outcome = audioError instanceof Error && !roomInstance.localParticipant.isMicrophoneEnabled
+          ? reportInitialMicrophoneFailure(audioError, callbacksRef.current)
+          : "answered";
+        initialMicrophoneOutcomes.set(initialMedia, outcome);
+      }
+      if (outcome !== "retry-owed") return;
+      cleanup = whenPageVisible(() => {
+        initialMicrophoneOutcomes.set(initialMedia, "answered");
+        emitMeetingEntryDiagnostic("initial_microphone_retry", { code: callbacksRef.current.code });
+        controller.setIntent("on");
+      });
     });
     return () => {
       disposed = true;

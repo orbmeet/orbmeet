@@ -10,6 +10,7 @@ import { Errors } from "@/lib/app-errors";
 import { and, eq, exists, isNotNull, isNull, or } from "drizzle-orm";
 import { findEffectiveSpaceRole } from "@/modules/spaces/server/helpers";
 import { connectionIsPresent } from "@/modules/meetings/server/connection/state";
+import { verifyGuestSecret } from "@/platform/crypto/tokens.server";
 
 /**
  * Every meeting a user may find in their library, as a CTE: `my_meetings`,
@@ -57,7 +58,7 @@ export function myMeetingUniverse(db: Database, userId: string) {
  * room, so it would hand the whole history to anyone who clicked Join and left.
  * The one definition for users and guests alike.
  */
-export function admissionAttended(db: Database) {
+function admissionAttended(db: Database) {
   return and(
     eq(meetingAdmissions.admissionStatus, "approved"),
     exists(
@@ -156,6 +157,37 @@ export async function canAccessMeetingHistory(
     .limit(1);
 
   return Boolean(row);
+}
+
+/**
+ * The same policy for a guest, who is known by an admission and the secret in
+ * its cookie rather than an account: they attended. A guest admitted to an
+ * open meeting who never reached the room holds an approved admission and its
+ * cookie, and is owed nothing. Someone who joined as a guest and then signed
+ * in on the same browser still holds the cookie, so callers ask this as well
+ * as the user's own policy, not instead of it.
+ */
+export async function guestCanAccessMeetingHistory(
+  db: Database,
+  meetingId: string,
+  admissionId: string,
+  guestSecret: string,
+): Promise<boolean> {
+  const [admission] = await db
+    .select({ guestSecretHash: meetingAdmissions.guestSecretHash })
+    .from(meetingAdmissions)
+    .where(
+      and(
+        eq(meetingAdmissions.id, admissionId),
+        eq(meetingAdmissions.meetingId, meetingId),
+        eq(meetingAdmissions.subjectType, "guest"),
+        isNull(meetingAdmissions.subjectUserId),
+        admissionAttended(db),
+      ),
+    )
+    .limit(1);
+  const guestSecretHash = admission?.guestSecretHash;
+  return Boolean(guestSecretHash) && await verifyGuestSecret(guestSecretHash!, guestSecret);
 }
 
 export async function assertMeetingHistoryAccess(

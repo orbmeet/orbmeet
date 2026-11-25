@@ -162,6 +162,39 @@ describe("syncSubscription", () => {
     expect(await stored()).toMatchObject({ status: "past_due", seats: 4 });
   });
 
+  it("ends the plan a customer left by switching product in Polar's portal", async () => {
+    // Polar lets a customer change plan in its portal; the subscription stays
+    // active, on the new product, which grants none of ours.
+    const org = { id: "cus_2", external_id: "org:org_1" };
+    await syncSubscription(db, env, subscription({ product_id: ORGANIZATION, seats: 40, customer: org }));
+    await syncSubscription(db, env, subscription({
+      product_id: PRO,
+      seats: null,
+      customer: org,
+      modified_at: "2026-11-03T00:00:00Z",
+    }));
+    expect(await stored()).toMatchObject({ status: "active", plan: null });
+    await expect(loadOrganizationPlan(db, "org_1")).resolves.toBe("free");
+
+    const OTHER = "33333333-3333-4333-8333-333333333333";
+    await syncSubscription(db, env, subscription({ id: "sub_2" }));
+    await syncSubscription(db, env, subscription({ id: "sub_2", product_id: OTHER, modified_at: "2026-11-03T00:00:00Z" }));
+    await expect(loadUserBilling(db, "ada")).resolves.toMatchObject({ plan: "free" });
+
+    // Switching back grants it again.
+    await syncSubscription(db, env, subscription({ id: "sub_2", modified_at: "2026-11-04T00:00:00Z" }));
+    await expect(loadUserBilling(db, "ada")).resolves.toMatchObject({ plan: "pro" });
+  });
+
+  it("stores two changes Polar made within one millisecond, in order", async () => {
+    await syncSubscription(db, env, subscription({ status: "incomplete", modified_at: "2026-11-02T00:00:00.123100Z" }));
+    await syncSubscription(db, env, subscription({ status: "active", modified_at: "2026-11-02T00:00:00.123800Z" }));
+    expect(await stored()).toMatchObject({ status: "active" });
+    // And the older of them, arriving late, still loses.
+    await syncSubscription(db, env, subscription({ status: "incomplete", modified_at: "2026-11-02T00:00:00.123100Z" }));
+    expect(await stored()).toMatchObject({ status: "active" });
+  });
+
   it("never lets an older snapshot of a product it would not adopt overwrite a newer one", async () => {
     await syncSubscription(db, env, subscription({ status: "canceled", modified_at: "2026-11-03T00:00:00Z" }));
     await syncSubscription(db, env, subscription({ product_id: ORGANIZATION, status: "active" }));

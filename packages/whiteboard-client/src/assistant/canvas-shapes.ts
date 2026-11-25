@@ -333,7 +333,8 @@ export function updateCanvasShape(
       const text = shape;
       const next = textProps(editor, {
         text: update.text ?? renderPlaintextFromRichText(editor, text.props.richText),
-        anchor: update.anchor,
+        // An update that names no anchor keeps the text aligned as it is.
+        anchor: update.anchor ?? alignmentAnchor(text.props.textAlign),
         fontSize: update.fontSize ?? textFontSize(editor, text),
         maxWidth: update.maxWidth ?? (text.props.autoSize ? undefined : text.props.w),
         color: update.color ?? asColor(text.props.color),

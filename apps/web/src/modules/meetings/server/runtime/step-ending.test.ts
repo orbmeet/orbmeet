@@ -171,7 +171,7 @@ describe("effect retries", () => {
     expect(m.state.retries["egress.list"]).toBeDefined();
 
     m.now += 5_000;
-    m.apply({ kind: "effectSucceeded", key: "egress.list", result: { kind: "egressObserved", complete: true, egresses: [] } });
+    m.apply({ kind: "effectSucceeded", key: "egress.list", result: { kind: "egressObserved", complete: true, requestedAt: m.now, egresses: [] } });
     expect(m.state.retries["egress.list"]).toBeUndefined();
   });
 

@@ -111,17 +111,26 @@ export async function commitReservedFileMetadata(
           )
         ON CONFLICT DO NOTHING
       `),
+        // Only for the file the statement above committed: when it committed
+        // nothing (an expired reservation, an archived Space), this writes
+        // nothing either, and the refusal is reported below, not as the
+        // reference's foreign key failing the batch.
         ...(input.whiteboardId
           ? [
               db
                 .insert(whiteboardFileReferences)
-                .values({
-                  whiteboardId: input.whiteboardId,
-                  fileId: input.id,
-                  spaceId: input.spaceId,
-                  role: "source",
-                  createdAt,
-                })
+                .select(
+                  db
+                    .select({
+                      whiteboardId: sql`${input.whiteboardId}`.as("whiteboard_id"),
+                      fileId: files.id,
+                      spaceId: files.spaceId,
+                      role: sql`'source'`.as("role"),
+                      createdAt: sql`${createdAtSeconds}`.as("created_at"),
+                    })
+                    .from(files)
+                    .where(and(eq(files.id, input.id), eq(files.spaceId, input.spaceId))),
+                )
                 .onConflictDoNothing(),
             ]
           : []),

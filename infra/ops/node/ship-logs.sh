@@ -13,7 +13,7 @@ set -euo pipefail
 source /etc/orbmeet/host.env
 state=/var/lib/orbmeet/ship-logs
 install -d -m 700 "$state"
-trap 'rm -f "$state/entries" "$state/chunk" "$state/batch" "$state/cursor.new" "$state/auth"' EXIT
+trap 'rm -f "$state/entries" "$state/chunk" "$state/batch" "$state/cursor.new" "$state/health.new" "$state/auth"' EXIT
 
 if [[ -s $state/cursor ]]; then
   from=(--after-cursor="$(<"$state/cursor")")
@@ -44,20 +44,30 @@ if [[ -n $held ]]; then
   mv "$state/entries.held" "$state/entries"
 fi
 
-# The health check's latest result in this run's entries: its PASS or FAIL
-# line, or systemd's word that it did not finish. A check killed at its
-# timeout (Docker hanging) or dying before it could say why prints nothing of
-# its own, and must not read as the last PASS.
-latest=$(jq -r '
-  if .SYSLOG_IDENTIFIER == "orbmeet-health" and (.MESSAGE | type) == "string"
-    and (.MESSAGE | startswith("PASS") or startswith("FAIL")) then .MESSAGE
-  elif .UNIT == "orbmeet-health.service" and (.MESSAGE | type) == "string"
-    and (.MESSAGE | test("Failed with result")) then
-    "FAIL readiness: the check did not finish (" + (.MESSAGE | capture("result .(?<why>[a-z-]+).") .why) + ")"
-  else empty end' "$state/entries" | tail -n 1)
+# The health check's latest result in a set of entries: its PASS or FAIL line,
+# or, for a run of the check that printed neither, systemd's word that it did
+# not finish. A check killed at its timeout (Docker hanging) or dying before it
+# could say why prints nothing of its own, and must not read as the last PASS;
+# one that failed and said why also exits non-zero, and systemd's line after
+# it must not replace the reason with its own. A run of the check starts with
+# systemd's "Starting" line, so what it said is forgotten there.
+health_line() {
+  jq -rn '
+    reduce inputs as $entry ({line: null, said: false};
+      ($entry.MESSAGE | if type == "string" then . else "" end) as $message
+      | if $entry.SYSLOG_IDENTIFIER == "orbmeet-health"
+          and ($message | startswith("PASS") or startswith("FAIL")) then
+          {line: $message, said: true}
+        elif $entry.UNIT == "orbmeet-health.service" and ($message | startswith("Starting")) then
+          .said = false
+        elif $entry.UNIT == "orbmeet-health.service" and ($message | test("Failed with result")) then
+          if .said then .said = false
+          else {line: ("FAIL readiness: the check did not finish ("
+            + ($message | capture("result .(?<why>[a-z-]+).") .why) + ")"), said: false} end
+        else . end)
+    | .line // empty' "$1"
+}
 previous=$(cat "$state/health" 2>/dev/null || echo PASS)
-health=${latest%% *}
-health=${health:-$previous}
 # Seconds are enough for a heartbeat, and this format is the same in GNU and BSD date.
 now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
@@ -71,43 +81,68 @@ post() {
         --data-binary @- "https://api.axiom.co/v1/datasets/$AXIOM_DATASET/ingest" >/dev/null
 }
 
-# What closes the run: the health check's result when it changed, and the heartbeat.
-finish() {
+# Sends one request's entries, with the health check's result when they
+# change it, and the heartbeat when the request closes the run ($2 = last).
+# What a request delivered is recorded once it lands, and together: how far
+# the journal was read, and the health that reading reported. A later request
+# that fails leaves both where this one put them, so the next run neither
+# sends these entries again nor misses the change they made.
+deliver() {
+  local latest health
+  latest=$(health_line "$1")
+  health=${latest%% *}
+  health=${health:-$previous}
+  jq -nc --arg node "$NODE" -f /usr/local/lib/orbmeet/ship-logs.jq "$1" > "$state/batch"
   if [[ $health != "$previous" ]]; then
     jq -nc --arg node "$NODE" --arg time "$now" --arg line "$latest" \
       '{_time: $time, source: "node", node: $node, service: "health",
-        level: (if ($line | startswith("FAIL")) then "error" else "info" end), msg: $line}' >> "$1"
+        level: (if ($line | startswith("FAIL")) then "error" else "info" end), msg: $line}' >> "$state/batch"
   fi
-  jq -nc --arg node "$NODE" --arg time "$now" --argjson healthy "$([[ $health == PASS ]] && echo true || echo false)" \
-    '{_time: $time, source: "node", node: $node, service: "shipper", level: "info", msg: "heartbeat", healthy: $healthy}' \
-    >> "$1"
+  if [[ $2 == last ]]; then
+    jq -nc --arg node "$NODE" --arg time "$now" --argjson healthy "$([[ $health == PASS ]] && echo true || echo false)" \
+      '{_time: $time, source: "node", node: $node, service: "shipper", level: "info", msg: "heartbeat", healthy: $healthy}' \
+      >> "$state/batch"
+  fi
+  post "$state/batch"
+  if [[ -s $1 ]]; then
+    tail -n 1 "$1" | jq -r .__CURSOR > "$state/cursor.new"
+    mv "$state/cursor.new" "$state/cursor"
+  fi
+  printf '%s\n' "$health" > "$state/health.new"
+  mv "$state/health.new" "$state/health"
+  previous=$health
 }
 
-# Sent in chunks, the cursor moving after each: a backlog from an outage goes
-# as several requests, each small enough to land, rather than as one that
-# grows with every failed run until none ever can. A chunk ends only between
-# whole lines, never among the parts of one Docker wrote in pieces.
-chunk_lines=${SHIP_LOGS_CHUNK_LINES:-2000}
+# Sent in chunks, each recorded as it lands: a backlog from an outage goes as
+# several requests, each small enough to land, rather than as one that grows
+# with every failed run until none ever can. A chunk ends only after a line
+# that leaves no line Docker wrote in parts unfinished, so all of a line's
+# parts go in one request whatever other entries come between them; and the
+# run's last line always ends one. Each chunk is printed as "first last".
+chunks=$(jq -rn --argjson size "${SHIP_LOGS_CHUNK_LINES:-2000}" '
+  def chunks($ends; $from):
+    if $from > ($ends | last) then empty
+    else (([$ends[] | select(. >= $from and . < $from + $size)] | last)
+          // ([$ends[] | select(. >= $from)] | first)) as $to
+      | "\($from) \($to)", chunks($ends; $to + 1)
+    end;
+  reduce inputs as $entry ({line: 0, open: {}, ends: []};
+    .line += 1
+    | ($entry.CONTAINER_PARTIAL_ID) as $id
+    | if $id == null then .
+      elif $entry.CONTAINER_PARTIAL_LAST == "true" then del(.open[$id])
+      else .open[$id] = true end
+    | if .open == {} then .ends += [.line] else . end)
+  | if .line == 0 then empty
+    else (.ends + (if (.ends | last) == .line then [] else [.line] end)) as $ends | chunks($ends; 1) end' \
+  "$state/entries")
 total=$(wc -l < "$state/entries" | tr -d ' ')
-start=1
-while (( start <= total )); do
-  end=$(( start + chunk_lines - 1 ))
-  (( end > total )) && end=$total
-  while (( end < total )) && [[ $(sed -n "${end}p" "$state/entries" \
-      | jq -r '.CONTAINER_PARTIAL_ID == null or .CONTAINER_PARTIAL_LAST == "true"') != true ]]; do
-    end=$(( end + 1 ))
-  done
-  sed -n "${start},${end}p" "$state/entries" > "$state/chunk"
-  jq -nc --arg node "$NODE" -f /usr/local/lib/orbmeet/ship-logs.jq "$state/chunk" > "$state/batch"
-  (( end == total )) && finish "$state/batch"
-  post "$state/batch"
-  tail -n 1 "$state/chunk" | jq -r .__CURSOR > "$state/cursor.new"
-  mv "$state/cursor.new" "$state/cursor"
-  start=$(( end + 1 ))
-done
-if (( total == 0 )); then
-  : > "$state/batch"
-  finish "$state/batch"
-  post "$state/batch"
+if [[ -z $chunks ]]; then
+  : > "$state/chunk"
+  deliver "$state/chunk" last
 fi
-printf '%s\n' "$health" > "$state/health"
+while read -r first last; do
+  [[ -n $first ]] || continue
+  sed -n "${first},${last}p" "$state/entries" > "$state/chunk"
+  deliver "$state/chunk" "$( (( last == total )) && echo last || echo more)"
+done <<< "$chunks"

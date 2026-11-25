@@ -9,40 +9,12 @@ export function buildWhiteboardAssetApiPath(r2Key: string): string {
 }
 
 /**
- * Anything a browser would resolve against another origin. Leading C0 bytes are
- * stripped first because a browser strips them too, so `"\n//evil.test/x"` is a
- * protocol-relative URL no matter how the string is spelled.
+ * The URL a viewer loads an asset record's `src` from: the canvas's own local
+ * sources as they are, and an object in the board's storage through the asset
+ * API. Anything else loads nothing: a persisted source is peer-controlled, and
+ * must never become a credentialed fetch of whatever it names, on this origin
+ * or another.
  */
-function namesAnotherOrigin(src: string): boolean {
-  const candidate = src.replace(/^[\u0000-\u0020]+/, "");
-  return (
-    // Any scheme: `https:`, `data:`, `javascript:`, or one invented later.
-    /^[a-z][a-z0-9+.-]*:/i.test(candidate)
-    // Protocol-relative, including the backslash form browsers also accept.
-    || candidate.startsWith("//")
-    || candidate.startsWith("\\\\")
-    || candidate.startsWith("/\\\\")
-  );
-}
-
-function hasUnsafeAssetPath(path: string): boolean {
-  let candidate = path;
-  for (let pass = 0; pass < 2; pass += 1) {
-    if (/[\\\u0000-\u001f\u007f]/.test(candidate)) return true;
-    if (candidate.split("/").some((segment) => segment === "." || segment === "..")) {
-      return true;
-    }
-    try {
-      const decoded = decodeURIComponent(candidate);
-      if (decoded === candidate) break;
-      candidate = decoded;
-    } catch {
-      return true;
-    }
-  }
-  return candidate.split("/").some((segment) => segment === "." || segment === "..");
-}
-
 export function buildWhiteboardAssetViewerUrl(
   src: string,
   whiteboardId?: string | null,
@@ -50,23 +22,10 @@ export function buildWhiteboardAssetViewerUrl(
   if (src.startsWith("blob:") || src.startsWith("data:image/")) {
     return src;
   }
-  // Old snapshots predate the sync-side source policy. Never let a persisted,
-  // peer-controlled source become a credentialed browser fetch. The check used
-  // to name only `http://`, `https://` and `data:`, so `//example.invalid/pixel`
-  // took the same-origin path branch below and came back unchanged — a
-  // protocol-relative URL the browser resolves against another host.
-  if (namesAnotherOrigin(src)) {
-    return "";
-  }
-  const sourcePath = src.split(/[?#]/, 1)[0];
-  if (!sourcePath || hasUnsafeAssetPath(sourcePath)) return "";
-
-  const assetUrl = src.startsWith("/") ? src : buildWhiteboardAssetApiPath(src);
-  if (!whiteboardId || !assetUrl.startsWith(WHITEBOARD_ASSET_API_PREFIX)) {
-    return assetUrl;
-  }
-  const separator = assetUrl.includes("?") ? "&" : "?";
-  return `${assetUrl}${separator}whiteboardId=${encodeURIComponent(whiteboardId)}`;
+  const key = whiteboardAssetKeyOfSrc(src);
+  if (!key) return "";
+  const assetUrl = buildWhiteboardAssetApiPath(key);
+  return whiteboardId ? `${assetUrl}?whiteboardId=${encodeURIComponent(whiteboardId)}` : assetUrl;
 }
 
 export function whiteboardDocumentAssetPrefix(whiteboardId: string): string {
@@ -133,35 +92,25 @@ export function extractWhiteboardDocumentAssetIdentity(
     : null;
 }
 
-export function extractWhiteboardAssetKeyFromViewerUrl(src: string): string | null {
-  let rawPath = "";
-
-  if (src.startsWith(WHITEBOARD_ASSET_API_PREFIX)) {
-    rawPath = src.split(/[?#]/, 1)[0];
-  } else if (src.startsWith("http://") || src.startsWith("https://")) {
-    try {
-      const url = new URL(src);
-      const authorityEnd = src.indexOf("/", src.indexOf("//") + 2);
-      rawPath = authorityEnd === -1
-        ? "/"
-        : src.slice(authorityEnd).split(/[?#]/, 1)[0];
-      if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    } catch {
-      return null;
-    }
-  } else {
-    return null;
-  }
-
-  if (!rawPath.startsWith(WHITEBOARD_ASSET_API_PREFIX)) return null;
-  const encodedKey = rawPath.slice(WHITEBOARD_ASSET_API_PREFIX.length);
-  if (!encodedKey || hasUnsafeAssetPath(encodedKey)) return null;
-
-  try {
-    const key = decodeURIComponent(encodedKey);
-    if (!key || hasUnsafeAssetPath(key)) return null;
-    return key;
-  } catch {
-    return null;
-  }
+/**
+ * The stored object an asset record's `src` names, or null when it names none
+ * of a board's own: the one reading of a `src`. The sync server admits a
+ * source by it, a revision pins and authorizes the objects it returns, and the
+ * viewer loads what it returns, so the three cannot disagree about which
+ * object a source is.
+ *
+ * Only the forms the app writes name an object: the asset API path followed
+ * by the key, as `buildWhiteboardAssetApiPath` writes it, or the bare key.
+ * Every segment of the key is a plain segment, so a query, a fragment, a
+ * percent-encoding or a traversal never names one.
+ */
+export function whiteboardAssetKeyOfSrc(src: string): string | null {
+  const key = src.startsWith(WHITEBOARD_ASSET_API_PREFIX) ? src.slice(WHITEBOARD_ASSET_API_PREFIX.length) : src;
+  const segments = key.split("/");
+  return segments.length >= 4
+    && segments[0] === WHITEBOARD_DOCUMENT_PREFIX
+    && segments[2] === "assets"
+    && segments.every((segment, index) => index === 0 || index === 2 || isAssetKeySegment(segment))
+    ? key
+    : null;
 }

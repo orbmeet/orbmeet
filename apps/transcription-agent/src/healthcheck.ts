@@ -54,6 +54,16 @@ async function probeTls(value: string): Promise<void> {
 }
 
 /** A plain ws:// LiveKit is on this machine's bridge: reaching its port is all there is to check. */
+/**
+ * Whether the endpoint a URL names answers, as its scheme says to reach it:
+ * TLS for `https:` and `wss:`; plain TCP for `http:` and `ws:`, which the
+ * config allows only for a dev server on this machine.
+ */
+function probeEndpoint(value: string): Promise<void> {
+  const { protocol } = new URL(value);
+  return protocol === "http:" || protocol === "ws:" ? probeTcp(value) : probeTls(value);
+}
+
 async function probeTcp(value: string): Promise<void> {
   const url = new URL(value);
   await new Promise<void>((resolve, reject) => {
@@ -139,9 +149,9 @@ async function checkAgent(): Promise<void> {
   }
   checkJournal(config.transcriptJournalPath);
   await Promise.all([
-    config.livekitUrl.startsWith("ws://") ? probeTcp(config.livekitUrl) : probeTls(config.livekitUrl),
-    probeTls(config.deepgramBaseUrl),
-    probeTls(config.appUrl),
+    probeEndpoint(config.livekitUrl),
+    probeEndpoint(config.deepgramBaseUrl),
+    probeEndpoint(config.appUrl),
   ]);
 }
 

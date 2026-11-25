@@ -30,12 +30,17 @@ function customerRef(value: SQLWrapper | string): SQLWrapper | string {
     : value;
 }
 
-/** `'pro'` or `'free'`: the plan of the user whose id `userId` evaluates to. */
+/**
+ * `'pro'` or `'free'`: the plan of the user whose id `userId` evaluates to. A
+ * plan is granted by a subscription in an entitled status whose product grants
+ * it (`plan`); a status alone grants nothing.
+ */
 export function userPlanSql(userId: SQLWrapper | string): SQL<"pro" | "free"> {
   return sql<"pro" | "free">`(case when exists (
     select 1 from ${billingSubscriptions} entitled_user_subscription
     where entitled_user_subscription.user_id = ${customerRef(userId)}
       and entitled_user_subscription.status in (${entitledStatuses})
+      and entitled_user_subscription.plan = 'pro'
   ) then 'pro' else 'free' end)`;
 }
 
@@ -45,6 +50,7 @@ export function organizationPlanSql(organizationId: SQLWrapper | string): SQL<"o
     select 1 from ${billingSubscriptions} entitled_organization_subscription
     where entitled_organization_subscription.organization_id = ${customerRef(organizationId)}
       and entitled_organization_subscription.status in (${entitledStatuses})
+      and entitled_organization_subscription.plan = 'organization'
   ) then 'organization' else 'free' end)`;
 }
 
@@ -57,6 +63,7 @@ export function organizationHasOpenSeatSql(organizationId: string): SQL<boolean>
     select 1 from ${billingSubscriptions} seat_subscription
     where seat_subscription.organization_id = ${organizationId}
       and seat_subscription.status in (${entitledStatuses})
+      and seat_subscription.plan = 'organization'
       and seat_subscription.seats > (
         select count(*) from ${organizationMembers} seated_member
         where seated_member.organization_id = ${organizationId}

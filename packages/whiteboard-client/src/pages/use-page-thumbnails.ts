@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Editor, TLAssetId, TLShapeId } from "tldraw";
-import { Box } from "tldraw";
+import { Box, isPageId } from "tldraw";
 import type { WhiteboardPage } from "./page-manager";
 import {
   forceRenderSingleFrameLikeShape,
@@ -402,8 +402,15 @@ export function useWhiteboardPageThumbnails({
     let settleTimer: number | null = null;
     let firstDirtyAt = 0;
     const touchedShapeIds = new Set<TLShapeId>();
-    /** Parent ids captured at removal time, when the record still had one. */
+    /**
+     * Where shapes were before the change that moved or removed them: the
+     * parent their old record named, and for a loose top-level shape the box
+     * it moved out of. Captured as the change lands, while the old record is
+     * at hand; the page a shape left needs drawing again as much as the page
+     * it went to.
+     */
     const removedParents = new Set<string>();
+    const vacatedBoxes: Box[] = [];
     const touchedAssetIds = new Set<string>();
 
     /** Which pages hold a shape referencing any of the given assets. */
@@ -435,18 +442,19 @@ export function useWhiteboardPageThumbnails({
       firstDirtyAt = 0;
       const shapeIds = [...touchedShapeIds];
       const parents = [...removedParents];
+      const vacated = vacatedBoxes.splice(0);
       const assetIds = new Set(touchedAssetIds);
       touchedShapeIds.clear();
       removedParents.clear();
       touchedAssetIds.clear();
-      if (shapeIds.length === 0 && parents.length === 0 && assetIds.size === 0) return;
+      if (shapeIds.length === 0 && parents.length === 0 && vacated.length === 0 && assetIds.size === 0) return;
 
       const pageIds = new Set(pagesRef.current.map((page) => String(page.id)));
       const dirty = new Set<string>();
 
-      // A removed shape's parent was captured while the record still existed,
-      // so a delete lands on the page it was deleted from — including a remote
-      // peer's delete on a page nobody here is looking at.
+      // A removed or moved shape's former parent was captured while its old
+      // record existed, so the change lands on the page it left — including a
+      // remote peer's on a page nobody here is looking at.
       for (const parent of parents) {
         if (pageIds.has(parent)) dirty.add(parent);
       }
@@ -455,6 +463,17 @@ export function useWhiteboardPageThumbnails({
       // but they are the exception rather than the rule, so the page-bounds
       // lookup is deferred until one actually turns up.
       let pageBounds: { id: string; bounds: Box }[] | null = null;
+      const pagesBounds = () => pageBounds ??= pagesRef.current
+        .map((page) => {
+          const box = boundsOf(editor, page.id);
+          return box ? { id: String(page.id), bounds: box } : null;
+        })
+        .filter((entry): entry is { id: string; bounds: Box } => entry !== null);
+      for (const box of vacated) {
+        for (const page of pagesBounds()) {
+          if (page.bounds.collides(box)) dirty.add(page.id);
+        }
+      }
       for (const shapeId of shapeIds) {
         const shape = editor.getShape(shapeId);
         if (!shape) continue;
@@ -465,15 +484,7 @@ export function useWhiteboardPageThumbnails({
         }
         const bounds = editor.getShapePageBounds(shapeId);
         if (!bounds) continue;
-        if (pageBounds === null) {
-          pageBounds = pagesRef.current
-            .map((page) => {
-              const box = boundsOf(editor, page.id);
-              return box ? { id: String(page.id), bounds: box } : null;
-            })
-            .filter((entry): entry is { id: string; bounds: Box } => entry !== null);
-        }
-        for (const page of pageBounds) {
+        for (const page of pagesBounds()) {
           if (page.bounds.collides(bounds)) dirty.add(page.id);
         }
       }
@@ -519,9 +530,17 @@ export function useWhiteboardPageThumbnails({
             sawSomething = true;
           }
         }
-        for (const [, next] of Object.values(change.changes.updated)) {
-          if (next.typeName === "shape") {
+        for (const [prev, next] of Object.values(change.changes.updated)) {
+          if (next.typeName === "shape" && prev.typeName === "shape") {
             touchedShapeIds.add(next.id);
+            if (prev.parentId !== next.parentId) {
+              removedParents.add(String(prev.parentId));
+            } else if (isPageId(prev.parentId) && (prev.x !== next.x || prev.y !== next.y)) {
+              // A loose shape in page space: where it was is where it is,
+              // moved back by how far it went.
+              const bounds = editor.getShapePageBounds(next.id);
+              if (bounds) vacatedBoxes.push(bounds.clone().translate({ x: prev.x - next.x, y: prev.y - next.y }));
+            }
             sawSomething = true;
           } else if (next.typeName === "asset") {
             // The case that made imported PDF pages render blank forever: the

@@ -5,7 +5,7 @@ import {
   buildWhiteboardAssetViewerUrl,
   buildWhiteboardDocumentAssetKey,
   extractWhiteboardDocumentAssetIdentity,
-  extractWhiteboardAssetKeyFromViewerUrl,
+  whiteboardAssetKeyOfSrc,
 } from "./whiteboard-asset-key.ts";
 
 describe("whiteboard asset key helpers", () => {
@@ -84,24 +84,40 @@ describe("whiteboard asset key helpers", () => {
     )).toBeNull();
   });
 
-  it("extracts storage keys from viewer URLs", () => {
-    expect(
-      extractWhiteboardAssetKeyFromViewerUrl(
-        "/api/wb-assets/whiteboards/whiteboard_1/assets/file%20name.png?v=abc",
-      ),
-    ).toBe("whiteboards/whiteboard_1/assets/file name.png");
+  it("reads the object a source names only in the forms the app writes", () => {
+    const key = "whiteboards/whiteboard_1/assets/file.png";
+    expect(whiteboardAssetKeyOfSrc(key)).toBe(key);
+    expect(whiteboardAssetKeyOfSrc(`/api/wb-assets/${key}`)).toBe(key);
+    expect(whiteboardAssetKeyOfSrc("/api/wb-assets/whiteboards/wb_1/assets/imports/c9269fa1-63a2/page-3.png"))
+      .toBe("whiteboards/wb_1/assets/imports/c9269fa1-63a2/page-3.png");
 
-    expect(
-      extractWhiteboardAssetKeyFromViewerUrl(
-        "https://orbmeet.com/api/wb-assets/whiteboards/whiteboard_1/assets/file.png",
-      ),
-    ).toBe("whiteboards/whiteboard_1/assets/file.png");
+    for (const src of [
+      `${key}?v=1`,
+      `/api/wb-assets/${key}#frag`,
+      "whiteboards%2Fwhiteboard_1%2Fassets%2Ffile.png",
+      "/api/wb-assets/whiteboards/whiteboard_1/assets/file%20name.png",
+      "https://orbmeet.com/api/wb-assets/whiteboards/whiteboard_1/assets/file.png",
+      "whiteboards/whiteboard_1/assets/../../whiteboard_2/assets/file.png",
+      "whiteboards/whiteboard_1/assets/",
+      "whiteboards//assets/file.png",
+      "uploads/usr_1/secret.png",
+      "/api/wb-assets/uploads\\usr_1\\secret",
+    ]) {
+      expect(whiteboardAssetKeyOfSrc(src)).toBeNull();
+    }
+  });
 
-    expect(extractWhiteboardAssetKeyFromViewerUrl("https://example.com/file.png")).toBeNull();
-    expect(extractWhiteboardAssetKeyFromViewerUrl("/api/wb-assets/uploads/usr_1/../secret")).toBeNull();
-    expect(extractWhiteboardAssetKeyFromViewerUrl("/api/wb-assets/uploads/usr_1/.%2e/secret")).toBeNull();
-    expect(extractWhiteboardAssetKeyFromViewerUrl("/api/wb-assets/uploads/usr_1/%252e%252e/secret")).toBeNull();
-    expect(extractWhiteboardAssetKeyFromViewerUrl("/api/wb-assets/uploads\\usr_1\\secret")).toBeNull();
+  it("loads in the viewer exactly the object the source names, or nothing", () => {
+    // What the sync server admits, the revision pins and the viewer loads
+    // must be one object: a source one of them reads differently is refused.
+    for (const src of [
+      "whiteboards/whiteboard_1/assets/file.png?v=1",
+      "/api/wb-assets/whiteboards/whiteboard_1/assets/file.png#frag",
+      "whiteboards%2Fwhiteboard_1%2Fassets%2Ffile.png",
+      "/some/other/path.png",
+    ]) {
+      expect(buildWhiteboardAssetViewerUrl(src, "whiteboard_1")).toBe("");
+    }
   });
 
   it("puts a PDF import's pages under the import's own prefix", () => {

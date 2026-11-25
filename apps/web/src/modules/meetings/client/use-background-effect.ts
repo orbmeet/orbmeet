@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useCommittedRef } from "@orbmeet/ui/react";
 import {
   Track,
@@ -225,6 +225,79 @@ export function useBackgroundEffect(
     return pub.track as LocalVideoTrack;
   }, [room]);
 
+  /** The latest `applyEffect`, for a processor's context-loss handler to call. */
+  const applyEffectRef = useRef<((mode: BackgroundMode, imagePath: string | null) => Promise<void>) | null>(null);
+
+  /** The camera track's tail of processor changes; each waits for the one before. */
+  const trackWorkRef = useRef<Promise<void>>(Promise.resolve());
+
+  /**
+   * Puts `newMode` on the camera track: one step of the queue `applyEffect`
+   * runs, never two at once. On return the track's processor and
+   * `processorRef` agree. Only an unmount undoes what it did.
+   */
+  const applyToTrack = useCallback(
+    async (cameraTrack: LocalVideoTrack, newMode: BackgroundMode, newImagePath: string | null): Promise<void> => {
+      if (newMode === "none") {
+        if (processorRef.current) {
+          logInfo("[BackgroundEffect] Removing processor");
+          await cameraTrack.stopProcessor();
+          dropProcessor();
+        }
+        return;
+      }
+      const mod = await getTrackProcessors();
+      if (unmountedRef.current) return;
+      if (
+        typeof mod.supportsBackgroundProcessors === "function" &&
+        !mod.supportsBackgroundProcessors()
+      ) {
+        setIsSupported(false);
+        throw new Error("Background effects are not supported in this browser.");
+      }
+
+      const processorOptions = newMode === "blur"
+        ? { mode: "background-blur" as const, blurRadius: 12 }
+        : { mode: "virtual-background" as const, imagePath: newImagePath as string };
+
+      if (processorRef.current) {
+        logInfo(`[BackgroundEffect] Switching to: ${newMode}`);
+        await processorRef.current.switchTo(processorOptions);
+        return;
+      }
+
+      logInfo(`[BackgroundEffect] Creating processor: ${newMode}`);
+      const processor = mod.BackgroundProcessor({
+        ...processorOptions,
+        assetPaths: { tasksVisionFileSet: MEDIAPIPE_FILESET_PATH, modelAssetPath: SELFIE_SEGMENTER_MODEL_PATH },
+      });
+      try {
+        await cameraTrack.setProcessor(processor);
+      } catch (err) {
+        if (cameraTrack.getProcessor() === processor) {
+          await cameraTrack.stopProcessor().catch(() => undefined);
+        } else {
+          await destroyBackgroundProcessor(processor);
+        }
+        throw err;
+      }
+      // Unmounted meanwhile: nothing will ever take it off the track.
+      if (unmountedRef.current) {
+        await cameraTrack.stopProcessor().catch(() => undefined);
+        return;
+      }
+      processorRef.current = processor;
+      stopWatchingContextRef.current = onContextLost(cameraTrack, processor, () => {
+        if (processorRef.current !== processor) return;
+        logInfo("[BackgroundEffect] GPU context lost, rebuilding the effect");
+        // The new processor takes the dead one's place on the track;
+        // LiveKit stops the old one as it does.
+        dropProcessor();
+        void applyEffectRef.current?.(modeRef.current, imagePathRef.current);
+      });
+    },
+    [dropProcessor],
+  );
   // Core apply function — stable across mode/imagePath changes thanks to refs.
   const applyEffect = useCallback(
     async function applyEffect(newMode: BackgroundMode, newImagePath: string | null): Promise<void> {
@@ -251,8 +324,10 @@ export function useBackgroundEffect(
         return;
       }
 
-      // Bump the call ID — any older in-flight call will see a mismatch and bail.
+      // Bump the call ID: a call whose ID has moved on was overtaken by a
+      // newer choice, which decides what the user sees.
       const callId = ++applyIdRef.current;
+      const superseded = () => callId !== applyIdRef.current || unmountedRef.current;
 
       // Capture rollback snapshot from refs (always current).
       const prevMode = modeRef.current;
@@ -269,83 +344,25 @@ export function useBackgroundEffect(
       setImagePath(newImagePath);
       recordPreference(newMode, newImagePath);
       setLastError(null);
-
       setIsProcessing(true);
-      let createdProcessor: BackgroundProcessorWrapper | null = null;
+
+      // The track's processor is changed by one choice at a time, in order. A
+      // choice overtaken while it waits is skipped; one overtaken midway
+      // finishes, leaving the track and `processorRef` agreeing, and the newer
+      // choice behind it starts from there. Undoing midway instead is what
+      // stripped the effect off a camera a newer choice had just switched.
+      const work = trackWorkRef.current.then(async () => {
+        if (superseded()) return;
+        await applyToTrack(cameraTrack, newMode, newImagePath);
+      });
+      trackWorkRef.current = work.catch(() => undefined);
       try {
-        if (newMode === "none") {
-          if (processorRef.current) {
-            logInfo("[BackgroundEffect] Removing processor");
-            await cameraTrack.stopProcessor();
-            dropProcessor();
-          }
-        } else {
-          const mod = await getTrackProcessors();
-          // Superseded by a newer call — discard.
-          if (callId !== applyIdRef.current || unmountedRef.current) return;
-
-          if (
-            typeof mod.supportsBackgroundProcessors === "function" &&
-            !mod.supportsBackgroundProcessors()
-          ) {
-            setIsSupported(false);
-            throw new Error("Background effects are not supported in this browser.");
-          }
-
-          const processorOptions = newMode === "blur"
-            ? { mode: "background-blur" as const, blurRadius: 12 }
-            : { mode: "virtual-background" as const, imagePath: newImagePath as string };
-
-          if (processorRef.current) {
-            logInfo(`[BackgroundEffect] Switching to: ${newMode}`);
-            await processorRef.current.switchTo(processorOptions);
-          } else {
-            logInfo(`[BackgroundEffect] Creating processor: ${newMode}`);
-            const processor = mod.BackgroundProcessor({
-              ...processorOptions,
-              assetPaths: { tasksVisionFileSet: MEDIAPIPE_FILESET_PATH, modelAssetPath: SELFIE_SEGMENTER_MODEL_PATH },
-            });
-            createdProcessor = processor;
-            if (callId !== applyIdRef.current || unmountedRef.current) {
-              await destroyBackgroundProcessor(processor);
-              return;
-            }
-            processorRef.current = processor;
-            await cameraTrack.setProcessor(processor);
-            if (callId !== applyIdRef.current || unmountedRef.current) {
-              if (processorRef.current === processor) dropProcessor();
-              if (cameraTrack.getProcessor() === processor) {
-                await cameraTrack.stopProcessor().catch(() => undefined);
-              } else {
-                await destroyBackgroundProcessor(processor);
-              }
-              return;
-            }
-            stopWatchingContextRef.current = onContextLost(cameraTrack, processor, () => {
-              if (processorRef.current !== processor) return;
-              logInfo("[BackgroundEffect] GPU context lost, rebuilding the effect");
-              // The new processor takes the dead one's place on the track;
-              // LiveKit stops the old one as it does.
-              dropProcessor();
-              void applyEffect(modeRef.current, imagePathRef.current);
-            });
-          }
-        }
-
-        // Superseded — a newer call owns the final state.
-        if (callId !== applyIdRef.current || unmountedRef.current) return;
+        await work;
+        if (superseded()) return;
         logInfo(`[BackgroundEffect] Applied: ${newMode}`);
       } catch (err) {
-        if (createdProcessor) {
-          if (processorRef.current === createdProcessor) dropProcessor();
-          if (cameraTrack.getProcessor() === createdProcessor) {
-            await cameraTrack.stopProcessor().catch(() => undefined);
-          } else {
-            await destroyBackgroundProcessor(createdProcessor);
-          }
-        }
         // Only revert user-visible state if this is still the latest call.
-        if (callId !== applyIdRef.current || unmountedRef.current) return;
+        if (superseded()) return;
         logError("[BackgroundEffect] Failed to apply effect:", err);
         const message = describeProcessorError(err);
         setLastError(message);
@@ -354,13 +371,14 @@ export function useBackgroundEffect(
         setImagePath(prevImagePath);
         recordPreference(prevMode, prevImagePath);
       } finally {
-        if (callId === applyIdRef.current && !unmountedRef.current) {
-          setIsProcessing(false);
-        }
+        if (!superseded()) setIsProcessing(false);
       }
     },
-    [room, getCameraTrack, setMode, setImagePath, recordPreference, dropProcessor],
+    [room, getCameraTrack, setMode, setImagePath, recordPreference, applyToTrack],
   );
+  useLayoutEffect(() => {
+    applyEffectRef.current = applyEffect;
+  }, [applyEffect]);
 
   // When camera is toggled on, re-apply the saved background effect.
   // Reads mode/imagePath from refs so the handler stays fresh without

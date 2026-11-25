@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { seatChangeFor } from "./organization-seats.server";
 
-const subscription = (seats: number, pendingSeats: number | null = null, cancelAtPeriodEnd = false) => ({
+const subscription = (seats: number, pendingSeats: number | null = null, cancelAtPeriodEnd = false, status = "active") => ({
+  status,
   seats,
   pending_update: pendingSeats === null ? null : { seats: pendingSeats },
   cancel_at_period_end: cancelAtPeriodEnd,
@@ -35,5 +36,13 @@ describe("seatChangeFor", () => {
 
   it("changes nothing on a subscription ending at its period's end", () => {
     expect(seatChangeFor(subscription(2, null, true), 3)).toBeNull();
+  });
+
+  it("changes nothing on a subscription Polar will not change in its status", () => {
+    // Polar answers InactiveSubscription, which failed the daily reconciliation every day.
+    for (const status of ["past_due", "unpaid", "paused", "incomplete"]) {
+      expect(seatChangeFor(subscription(2, null, false, status), 3)).toBeNull();
+    }
+    expect(seatChangeFor(subscription(2, null, false, "trialing"), 3)).toEqual({ seats: 3, prorationBehavior: "invoice" });
   });
 });

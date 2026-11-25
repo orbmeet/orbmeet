@@ -39,13 +39,25 @@ export function parsePolarSubscription(value: unknown): PolarSubscription | null
 }
 
 /**
- * The moment a subscription snapshot describes. Webhook payloads and API reads
- * carry the same object, so ordering both by the object's own clock keeps a
- * late redelivery from overwriting a newer read, and the other way round.
- * `modified_at` is null until the first change.
+ * The moment a subscription snapshot describes, in epoch microseconds.
+ * Webhook payloads and API reads carry the same object, so ordering both by
+ * the object's own clock keeps a late redelivery from overwriting a newer
+ * read, and the other way round. Polar's clock has microseconds; read to the
+ * millisecond, two changes made within one (created, then activated) had the
+ * same version, and the second was never stored. `modified_at` is null until
+ * the first change.
  */
-export function subscriptionVersion(subscription: PolarSubscription): Date {
-  return new Date(subscription.modified_at ?? subscription.created_at);
+export function subscriptionVersion(subscription: PolarSubscription): number {
+  return epochMicroseconds(subscription.modified_at ?? subscription.created_at);
+}
+
+/** An ISO-compatible timestamp in epoch microseconds, its fraction kept to the microsecond. */
+function epochMicroseconds(timestamp: string): number {
+  // Date.parse keeps the whole milliseconds; the fraction's next three digits
+  // are the microseconds below them.
+  const fraction = /T\d{2}:\d{2}:\d{2}\.(\d+)/.exec(timestamp)?.[1] ?? "";
+  const subMillisecond = Number(fraction.padEnd(6, "0").slice(3, 6));
+  return Date.parse(timestamp) * 1000 + subMillisecond;
 }
 
 const polarCustomerSchema = v.object({

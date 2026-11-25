@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { Room, RoomEvent, Track, TrackEvent } from "livekit-client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { useMeetingCamera } from "./use-meeting-camera";
+import { InitialMeetingMediaContext, type InitialMeetingMediaResult } from "./initial-meeting-media";
 
 let root: Root | null = null;
 beforeAll(() => {
@@ -187,5 +188,58 @@ describe("a camera the system stopped while the page was away", () => {
     await act(async () => document.dispatchEvent(new Event("visibilitychange")));
 
     expect(published.track.restartTrack).not.toHaveBeenCalled();
+  });
+});
+
+describe("a first camera the browser refused to a hidden page", () => {
+  let visibility: DocumentVisibilityState = "visible";
+  beforeAll(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
+  });
+  afterEach(() => {
+    visibility = "visible";
+  });
+
+  type AddToast = Parameters<typeof useMeetingCamera>[0]["addToast"];
+  function mountWith(room: Room, initialMedia: Promise<InitialMeetingMediaResult>, addToast: AddToast) {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { enumerateDevices: vi.fn(async () => []), addEventListener: vi.fn(), removeEventListener: vi.fn() },
+    });
+    function Probe() {
+      useMeetingCamera({ roomInstance: room, isCameraOn: false, initialVideoDeviceId: undefined, addToast });
+      return null;
+    }
+    act(() => {
+      root = createRoot(document.createElement("div"));
+      root.render(
+        <InitialMeetingMediaContext.Provider value={initialMedia}>
+          <Probe />
+        </InitialMeetingMediaContext.Provider>,
+      );
+    });
+  }
+
+  it("still asks again when the view is rebuilt while the page is hidden", async () => {
+    visibility = "hidden";
+    const room = new Room();
+    const setCameraEnabled = vi.spyOn(room.localParticipant, "setCameraEnabled").mockResolvedValue(undefined);
+    const addToast = vi.fn<AddToast>();
+    const denied = Object.assign(new Error("Permission denied"), { name: "NotAllowedError" });
+    const initialMedia = Promise.resolve<InitialMeetingMediaResult>({ audioError: null, videoError: denied });
+    mountWith(room, initialMedia, addToast);
+    await act(async () => {});
+    act(() => root?.unmount());
+    mountWith(room, initialMedia, addToast);
+    await act(async () => {});
+    expect(setCameraEnabled).not.toHaveBeenCalled();
+
+    visibility = "visible";
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    await vi.waitFor(() => expect(setCameraEnabled).toHaveBeenCalledWith(true, expect.anything(), expect.anything()));
+    expect(addToast).not.toHaveBeenCalled();
   });
 });

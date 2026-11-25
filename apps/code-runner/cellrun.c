@@ -88,9 +88,16 @@
 #ifndef CELLRUN_UID_BASE
 #define CELLRUN_UID_BASE 2000
 #endif
-/* The uid a sweep signals from (see signal_slot). Nothing may run as it. */
-#ifndef CELLRUN_SWEEP_UID
-#define CELLRUN_SWEEP_UID 1999
+/*
+ * The first of the uids a sweep signals from, one per slot (see signal_slot).
+ * Nothing may run as them. One per slot because sweeps of different slots run
+ * at once, and two sweeps sharing a real uid could kill each other.
+ */
+#ifndef CELLRUN_SWEEP_UID_BASE
+#define CELLRUN_SWEEP_UID_BASE 1900
+#endif
+#if CELLRUN_SWEEP_UID_BASE + CELLRUN_SLOTS > CELLRUN_UID_BASE
+#error "the sweep uids must not reach the slot uids"
 #endif
 
 #define CELLS_ROOT "/cells"
@@ -177,6 +184,7 @@ struct slot {
   int index;
   uid_t uid;
   gid_t gid;
+  uid_t sweep_uid;
   char dir[64];
   char home[96];
   char go_cache[128];
@@ -279,11 +287,13 @@ static void restore_signals(void) {
  * unprivileged sender reaches a process only when the sender's real or
  * effective uid is the target's real or saved uid.
  *
- * The child takes the slot's uid as its effective uid only, and the sweep uid,
- * which nothing runs as, as its real and saved ones. So its `kill(-1)` reaches
- * the slot's processes and nothing else, while no process of the slot can
- * signal the child back: a snippet's every uid is the slot's, which is neither
- * of the child's. Were the child the slot's uid through and through, a snippet
+ * The child takes the slot's uid as its effective uid only, and the slot's
+ * sweep uid, which nothing runs as, as its real and saved ones. So its
+ * `kill(-1)` reaches the slot's processes and nothing else, while no process
+ * of the slot can signal the child back: a snippet's every uid is the slot's,
+ * which is neither of the child's. Each slot has its own sweep uid: another
+ * slot's sweep, running at the same moment, shares neither of this child's
+ * uids either, so the two cannot kill each other. Were the child the slot's uid through and through, a snippet
  * looping on `kill(-1, SIGSTOP)` could stop it mid-sweep, leaving cellrun
  * waiting on it for good, or kill it and fail the sweep. With no uid of 0
  * left, the child holds no capability.
@@ -296,7 +306,7 @@ static int signal_slot(const struct slot *slot) {
   if (pid < 0) return -1;
   if (pid == 0) {
     if (setgroups(0, NULL) != 0 || setresgid(slot->gid, slot->gid, slot->gid) != 0
-        || setresuid(CELLRUN_SWEEP_UID, slot->uid, CELLRUN_SWEEP_UID) != 0) {
+        || setresuid(slot->sweep_uid, slot->uid, slot->sweep_uid) != 0) {
       _exit(1);
     }
     kill(-1, SIGKILL);
@@ -307,7 +317,12 @@ static int signal_slot(const struct slot *slot) {
   return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : -1;
 }
 
-/* Whether any process of the slot's uid is still alive. Zombies hold nothing. */
+/*
+ * Whether any process of the slot's uid is still alive. A zombie holds nothing,
+ * but /proc lists only thread-group leaders, and a leader that exited before
+ * its threads shows as a zombie while they still run: its `Threads:` count
+ * says whether any did.
+ */
 static int slot_alive(const struct slot *slot) {
   DIR *proc = opendir("/proc");
   if (!proc) return 1;
@@ -320,13 +335,14 @@ static int slot_alive(const struct slot *slot) {
     FILE *status = fopen(path, "re");
     if (!status) continue; /* Exited while we looked. */
     char line[256], state = '?';
-    long uid = -1;
+    long uid = -1, threads = 1;
     while (fgets(line, sizeof(line), status)) {
       if (strncmp(line, "State:", 6) == 0) sscanf(line + 6, " %c", &state);
       else if (strncmp(line, "Uid:", 4) == 0) sscanf(line + 4, " %ld", &uid);
+      else if (strncmp(line, "Threads:", 8) == 0) sscanf(line + 8, " %ld", &threads);
     }
     fclose(status);
-    alive = uid == (long)slot->uid && state != 'Z' && state != 'X';
+    alive = uid == (long)slot->uid && ((state != 'Z' && state != 'X') || threads > 1);
   }
   closedir(proc);
   return alive;
@@ -598,8 +614,14 @@ static void confine_filesystem(const struct slot *slot) {
  * What a snippet may not call, and the errno it is answered with.
  *
  * No sockets at all: socket(2) is refused for every family, and socketpair(2)
- * is allowed for AF_UNIX only (below), which is how runtimes plumb their own
- * child processes. A snippet needs no network, and a family-by-family
+ * is allowed only for a connected AF_UNIX stream or seqpacket pair (below),
+ * which is how runtimes plumb their own child processes. Not a datagram pair:
+ * a datagram socket can be disconnected and bound, or sent from, to an
+ * abstract address, and abstract addresses are shared by every slot in the
+ * container's network namespace, beyond the reach of file permissions. A
+ * connected stream or seqpacket socket ignores or refuses an address on send.
+ * Naming and joining sockets (bind, listen, connect, accept) is refused
+ * outright, so no socket a snippet holds can be given an address at all. A snippet needs no network, and a family-by-family
  * denylist is one new family away from being wrong. io_uring is refused
  * because its socket and connect operations would never pass through this
  * filter.
@@ -630,6 +652,11 @@ struct denial {
 
 static const struct denial DENIED[] = {
   {__NR_socket, EACCES},
+  {__NR_bind, EACCES},
+  {__NR_listen, EACCES},
+  {__NR_connect, EACCES},
+  {__NR_accept, EACCES},
+  {__NR_accept4, EACCES},
   {__NR_io_uring_setup, EACCES},
   {__NR_io_uring_enter, EACCES},
   {__NR_io_uring_register, EACCES},
@@ -667,8 +694,8 @@ static const struct denial DENIED[] = {
 };
 
 #define DENIED_COUNT (sizeof(DENIED) / sizeof(DENIED[0]))
-/* Six for the ABI checks, two per denial, five for clone, four for socketpair, one to allow. */
-#define FILTER_LENGTH (6 + 2 * DENIED_COUNT + 5 + 4 + 1)
+/* Six for the ABI checks, two per denial, five for clone, eight for socketpair, one to allow. */
+#define FILTER_LENGTH (6 + 2 * DENIED_COUNT + 5 + 8 + 1)
 
 /*
  * The architecture check is part of the boundary: syscall numbers are per
@@ -701,10 +728,18 @@ static void confine_syscalls(void) {
   EMIT(BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, CLONE_NEW_ANY, 0, 1));
   EMIT(DENY(EACCES));
   EMIT(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
-  /* socketpair: AF_UNIX only; anything else falls through to the allow below. */
-  EMIT(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_socketpair, 0, 3));
+  /*
+   * socketpair: an AF_UNIX stream or seqpacket pair only, whatever its
+   * SOCK_NONBLOCK and SOCK_CLOEXEC flags; any other call falls through to the
+   * allow below.
+   */
+  EMIT(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_socketpair, 0, 7));
   EMIT(BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[0])));
-  EMIT(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AF_UNIX, 1, 0));
+  EMIT(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AF_UNIX, 0, 4));
+  EMIT(BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[1])));
+  EMIT(BPF_STMT(BPF_ALU | BPF_AND | BPF_K, ~(unsigned)(SOCK_NONBLOCK | SOCK_CLOEXEC)));
+  EMIT(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SOCK_STREAM, 2, 0));
+  EMIT(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SOCK_SEQPACKET, 1, 0));
   EMIT(DENY(EACCES));
   EMIT(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
 #undef EMIT
@@ -787,10 +822,17 @@ static void capture_init(struct capture *capture, int fd, size_t limit) {
 /*
  * Keeps the first `limit` bytes and reads the rest to nowhere: a pipe nobody
  * drains blocks its writer, which would turn "printed too much" into "timed out".
+ *
+ * A bounded number of reads per call, not "until the pipe is empty": writers
+ * on other cores can refill a pipe as fast as it is read, and the phase's
+ * deadline, a stop and the disk floor are checked only between calls. poll
+ * reports a pipe with data left in it again at once.
  */
+#define CAPTURE_READS_PER_WAKE 4
+
 static void capture_read(struct capture *capture) {
   char discard[65536];
-  for (;;) {
+  for (int reads = 0; reads < CAPTURE_READS_PER_WAKE; reads++) {
     size_t room = capture->limit - capture->length;
     char *target = room > 0 ? capture->data + capture->length : discard;
     size_t size = room > 0 ? room : sizeof(discard);
@@ -1096,6 +1138,7 @@ int main(int argc, char **argv) {
   slot.index = (int)parse_number(argv[1], 0, CELLRUN_SLOTS - 1);
   slot.uid = (uid_t)(CELLRUN_UID_BASE + slot.index);
   slot.gid = (gid_t)(CELLRUN_UID_BASE + slot.index);
+  slot.sweep_uid = (uid_t)(CELLRUN_SWEEP_UID_BASE + slot.index);
   snprintf(slot.dir, sizeof(slot.dir), CELLS_ROOT "/%d", slot.index);
   snprintf(slot.home, sizeof(slot.home), "%s/.home", slot.dir);
   snprintf(slot.go_cache, sizeof(slot.go_cache), "%s/.cache/go-build", slot.home);

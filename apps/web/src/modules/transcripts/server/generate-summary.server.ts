@@ -317,7 +317,13 @@ export async function buildTranscriptChunks(
   };
 }
 
-/** Each speaker's label: their name, numbered only where two different people share one. */
+/**
+ * Each speaker's label, one per speaker and no two alike: their name, numbered
+ * only where two different people share one. A number never makes a label
+ * that is someone else's name, or another number's: a guest named "Bob (1)"
+ * beside two Bobs would otherwise share a label with the first, and the
+ * summary would attribute their words to each other.
+ */
 function buildSpeakerLabels(participants: ReadonlyMap<string, string>): Map<string, string> {
   const speakersByName = new Map<string, string[]>();
   for (const [speaker, name] of participants) {
@@ -326,11 +332,20 @@ function buildSpeakerLabels(participants: ReadonlyMap<string, string>): Map<stri
     speakersByName.set(name, speakers);
   }
 
+  const taken = new Set(speakersByName.keys());
   const labels = new Map<string, string>();
   for (const [name, speakers] of speakersByName) {
-    speakers.forEach((speaker, index) => {
-      labels.set(speaker, speakers.length === 1 ? name : `${name} (${index + 1})`);
-    });
+    if (speakers.length === 1) {
+      labels.set(speakers[0], name);
+      continue;
+    }
+    let number = 0;
+    for (const speaker of speakers) {
+      let label: string;
+      do label = `${name} (${++number})`; while (taken.has(label));
+      taken.add(label);
+      labels.set(speaker, label);
+    }
   }
   return labels;
 }

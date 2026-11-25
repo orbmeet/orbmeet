@@ -124,6 +124,12 @@ export const meetingSchedules = sqliteTable(
  * Who a schedule invites, by normalized email. `userId` links an attendee who
  * has an account; it is nulled if that account is deleted, and the email
  * remains so notifications still reach the person.
+ *
+ * `emailFromAccount` says the address came from the attendee's account (a
+ * Space member, a contact the organizer holds no address for), not from the
+ * organizer: it is shown to the organizer only while they hold a contact
+ * address for that person. Kept on the row because nothing else outlives the
+ * account it came from.
  */
 export const meetingScheduleAttendees = sqliteTable(
   "meeting_schedule_attendees",
@@ -136,6 +142,7 @@ export const meetingScheduleAttendees = sqliteTable(
     email: text("email").notNull(),
     normalizedEmail: text("normalized_email").notNull(),
     displayName: text("display_name"),
+    emailFromAccount: integer("email_from_account", { mode: "boolean" }).notNull().default(false),
     invitedAt: integer("invited_at", { mode: "timestamp" })
       .notNull()
       .$defaultFn(() => new Date()),

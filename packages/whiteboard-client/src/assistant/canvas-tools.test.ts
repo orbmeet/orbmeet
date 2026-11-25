@@ -13,6 +13,7 @@ import {
   type TLArrowBinding,
   type TLGeoShape,
   type TLShapeId,
+  type TLTextShape,
 } from "tldraw";
 import { WhiteboardPageShapeUtil } from "../shapes/page/page-shape-util";
 import { readPageShapes, resolveAssistantPage } from "./canvas-shapes";
@@ -130,6 +131,23 @@ describe("runCanvasTool", () => {
     expect(editor.getShapePageBounds(here)).toMatchObject({ x: 500, y: 1300 });
     expect(here.props.color).toBe("green");
     expect(editor.getShapePageBounds(createShapeId("elsewhere"))).toMatchObject({ x: 0, y: 0 });
+  });
+
+  it("keeps a text's alignment through an update that names no anchor", async () => {
+    // A centred title recoloured: it stays centred, and stays where it was.
+    const editor = makeBoard();
+    await create(editor, PAGE_1, [
+      { _type: "text", shapeId: "title", x: 600, y: 40, text: "Agenda", anchor: "top-center" },
+    ]);
+    const title = () => editor.getShape<TLTextShape>(createShapeId("title"))!;
+    const before = editor.getShapePageBounds(title())!;
+    expect(title().props.textAlign).toBe("middle");
+
+    await runCanvasTool(editor, PAGE_1, "update_shapes", { updates: [{ shapeId: "title", color: "red" }] });
+
+    expect(title().props.textAlign).toBe("middle");
+    expect(title().props.color).toBe("red");
+    expect(editor.getShapePageBounds(title())!.center.x).toBeCloseTo(before.center.x);
   });
 
   it("deletes only shapes on the page, never the page itself", async () => {

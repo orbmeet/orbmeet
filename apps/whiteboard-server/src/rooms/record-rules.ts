@@ -1,4 +1,4 @@
-import { extractWhiteboardDocumentAssetIdentity } from "@orbmeet/whiteboard-core/whiteboard-asset-key";
+import { extractWhiteboardDocumentAssetIdentity, whiteboardAssetKeyOfSrc } from "@orbmeet/whiteboard-core/whiteboard-asset-key";
 import { isSafeExternalBrowserUrl } from "@orbmeet/whiteboard-core/public-host";
 import { WHITEBOARD_CONFIG } from "@orbmeet/whiteboard-core/config";
 import { whiteboardTLSchema } from "@orbmeet/whiteboard-core/room-schema";
@@ -37,21 +37,16 @@ export function hasUnsafeUrl(value: unknown, key?: string): boolean {
   return Object.entries(value).some(([childKey, child]) => hasUnsafeUrl(child, childKey));
 }
 
-/** A media source in this board's own storage, as the upload API names it. */
+/**
+ * A media source in this board's own storage, read as the revision that pins
+ * it and the viewer that loads it read it (`whiteboardAssetKeyOfSrc`).
+ */
 function isTrustedWhiteboardMediaSrc(value: unknown, documentId: string | undefined): boolean {
   if (typeof value !== "string") return false;
   if (value === "") return true;
-  const source = value.startsWith(WHITEBOARD_ASSET_API_PREFIX)
-    ? value.slice(WHITEBOARD_ASSET_API_PREFIX.length)
-    : value;
-  try {
-    const decodedSource = decodeURIComponent(source);
-    if (decodedSource.includes("..") || decodedSource.includes("\\")) return false;
-    const documentAsset = extractWhiteboardDocumentAssetIdentity(decodedSource);
-    return documentAsset !== null && documentId !== undefined && documentAsset.whiteboardId === documentId;
-  } catch {
-    return false;
-  }
+  const key = whiteboardAssetKeyOfSrc(value);
+  return key !== null && documentId !== undefined
+    && extractWhiteboardDocumentAssetIdentity(key)?.whiteboardId === documentId;
 }
 
 function isEmptySource(value: unknown): boolean {

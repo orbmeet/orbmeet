@@ -7,7 +7,7 @@ import { syncRoomIdFromWhiteboardRoomId } from "@orbmeet/whiteboard-core/whitebo
 import { extractWhiteboardDocumentAssetIdentity } from "@orbmeet/whiteboard-core/whiteboard-asset-key";
 import { getWhiteboardAssetTokenFromCookie } from "@/modules/whiteboards/server/cookies";
 import { verifySessionFromRawRequest } from "@/modules/identity/server/session";
-import { canAccessMeetingHistory } from "@/modules/meetings/server/access/resource-access";
+import { canAccessMeetingHistory, guestCanAccessMeetingHistory } from "@/modules/meetings/server/access/resource-access";
 import {
   canActiveParticipantReadWhiteboardAsset,
   canRecorderReadWhiteboardAsset,
@@ -18,7 +18,6 @@ import {
   resolveOpenMeetingPresentingWhiteboard,
   resolveMeetingIdForWhiteboardConnection,
 } from "@/modules/whiteboards/server/documents";
-import { verifyGuestAdmissionBySecret } from "@/modules/meetings/server/access/guest-admission";
 import { getGuestCookieSecretFromCookie } from "@/platform/http/cookies.server";
 import { enforceWhiteboardAssetRateLimit } from "@/platform/http/rate-limit.server";
 
@@ -76,13 +75,9 @@ async function canGuestReadWhiteboardRevisionAsset(
     key: string;
   },
 ): Promise<boolean> {
-  const admission = await verifyGuestAdmissionBySecret(
-    db,
-    input.meetingId,
-    input.admissionId,
-    input.guestSecret,
-  ).catch(() => null);
-  if (!admission) return false;
+  if (!(await guestCanAccessMeetingHistory(db, input.meetingId, input.admissionId, input.guestSecret))) {
+    return false;
+  }
   const [revision] = await db
     .select({ assetManifest: whiteboardRevisions.assetManifest })
     .from(meetingWhiteboards)
@@ -302,7 +297,11 @@ export async function handleWbAssets(request: Request, env: Env, key: string): P
     const hasGuestCredentials = Boolean(
       revisionId && guestMeetingId && guestAdmissionId && guestSecret,
     );
-    const allowed = session
+    // A signed-in request that the account's own access refuses may still
+    // hold a guest's claim: someone who joined as a guest and then signed in
+    // on the same browser keeps the admission's cookie. Both are asked, as
+    // the meeting's other history does (assertParticipantHandoffAccess).
+    const allowedAsUser = session
       ? revisionId
         ? await canUserReadWhiteboardRevisionAsset(db, {
             revisionId,
@@ -311,7 +310,9 @@ export async function handleWbAssets(request: Request, env: Env, key: string): P
             userId: session.userId,
           })
         : await canUserReadWhiteboardDocument(db, requestedWhiteboardId, session.userId)
-      : revisionId && guestMeetingId && guestAdmissionId && guestSecret
+      : false;
+    const allowed = allowedAsUser || (
+      revisionId && guestMeetingId && guestAdmissionId && guestSecret
         ? await canGuestReadWhiteboardRevisionAsset(db, {
             meetingId: guestMeetingId,
             admissionId: guestAdmissionId,
@@ -320,7 +321,8 @@ export async function handleWbAssets(request: Request, env: Env, key: string): P
             whiteboardId: requestedWhiteboardId,
             key,
           })
-        : false;
+        : false
+    );
     if (!allowed) {
       if (
         !session &&

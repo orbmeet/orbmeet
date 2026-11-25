@@ -218,6 +218,23 @@ describe("choosePlacement", () => {
     expect((await placeMeeting(db, env, "mtg_1", { now: NOW })).node.id).toBe("sg1");
   });
 
+  it("keeps a retiring node's Meeting when it answers the probe of last resort", async () => {
+    // A blip marked both down; the retiring node takes no new meetings, but
+    // its own meeting may stay, and it is asked whether it is there.
+    const retiring = {
+      NODES: JSON.stringify({
+        sg1: mediaNode("sg1", { weight: 0 }),
+        my1: mediaNode("my1"),
+      }),
+    };
+    livekit.reachable = new Set(["sg1"]);
+    await recordProbes({ sg1: 2, my1: 2 });
+    await insertMeeting("mtg_1", { mediaNodeId: "sg1", liveParticipants: 3 });
+
+    expect((await placeMeeting(db, retiring, "mtg_1", { now: NOW })).node.id).toBe("sg1");
+    expect(await failuresOf("sg1")).toBe(0);
+  });
+
   it("moves a Meeting whose node has left the configuration", async () => {
     await recordProbes({ sg1: 0 });
     await insertMeeting("mtg_1", { mediaNodeId: "retired" });

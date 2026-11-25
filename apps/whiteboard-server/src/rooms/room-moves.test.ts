@@ -203,4 +203,68 @@ describe("moving a board between nodes", () => {
 
     expect(objects.objects.size).toBe(0);
   });
+
+  it("creates a board at its own generation after it was read here as new and then moved away", async () => {
+    // Seeding from a board nobody opened prepares it without creating it; the
+    // generation it would have been created at must not outlive the move.
+    const objects = createMemoryObjectStore();
+    const singapore = node(objects);
+    const amsterdam = node(objects);
+    await expect(singapore.manager.seed("meet-b", "wb_b", "cmd-seed-1", {
+      whiteboardRoomId: ROOM, whiteboardId: "wb_a", generation: 1,
+    })).resolves.toMatchObject({ ok: true });
+    await dispatchSyncCommand("handoff", { whiteboardRoomId: ROOM, whiteboardId: "wb_a", generation: 1 }, singapore.manager);
+    await dispatchSyncCommand("open", open(2), amsterdam.manager);
+    await dispatchSyncCommand("handoff", { whiteboardRoomId: ROOM, whiteboardId: "wb_a", generation: 2 }, amsterdam.manager);
+
+    await expect(dispatchSyncCommand("open", open(3), singapore.manager)).resolves.toMatchObject({ ok: true });
+
+    expect(singapore.manager.openRoom(ROOM, "wb_a")!.document.generation).toBe(3);
+    await expect(dispatchSyncCommand("handoff", { whiteboardRoomId: ROOM, whiteboardId: "wb_a", generation: 3 }, singapore.manager))
+      .resolves.toEqual({ ok: true, savedGeneration: 3 });
+  });
+
+  it("leaves no handoff fence behind a purge that ran while the board was being handed off", async () => {
+    const objects = createMemoryObjectStore();
+    const { dir, manager } = node(objects);
+    await dispatchSyncCommand("open", open(1), manager);
+
+    const handoff = manager.handoff(ROOM, "wb_a", 1);
+    const purge = manager.purge(ROOM, "wb_a");
+    await Promise.all([handoff, purge]);
+
+    await expect(purge).resolves.toEqual({ ok: true, status: "purged" });
+    await expect(manager.prepare(ROOM, undefined)).resolves.toBeNull();
+    expect(roomDatabaseExists(dir, ROOM)).toBe(false);
+    expect(objects.objects.size).toBe(0);
+  });
+
+  it("leaves a room it was refused to purge as it found it", async () => {
+    const objects = createMemoryObjectStore();
+    const first = node(objects);
+    await dispatchSyncCommand("open", open(1), first.manager);
+    await first.manager.closeAll();
+    // A restarted process: the database is on disk, and no room is open.
+    const manager = new RoomManager(first.dir, { objects, authority: fakeAuthority() });
+    managers.push(manager);
+
+    await expect(manager.purge(ROOM, "wb_other")).resolves.toMatchObject({ ok: false, reason: "conflict" });
+    expect(manager.roomCount).toBe(0);
+    expect(roomDatabaseExists(first.dir, ROOM)).toBe(true);
+  });
+
+  it("refuses to seed a board while a newer copy of it is still loading", async () => {
+    const objects = createMemoryObjectStore();
+    const singapore = node(objects);
+    const amsterdam = node(objects);
+    await dispatchSyncCommand("open", open(1), amsterdam.manager);
+    await dispatchSyncCommand("handoff", { whiteboardRoomId: ROOM, whiteboardId: "wb_a", generation: 1 }, amsterdam.manager);
+
+    const preparing = singapore.manager.prepare(ROOM, 2);
+    await expect(singapore.manager.seed(ROOM, "wb_a", "cmd-seed-2", {
+      whiteboardRoomId: "meet-source", whiteboardId: "wb_source", generation: 1,
+    })).resolves.toMatchObject({ ok: false, reason: "conflict" });
+    await expect(preparing).resolves.toBeNull();
+    expect(shapes(singapore.manager)).toBe(1);
+  });
 });

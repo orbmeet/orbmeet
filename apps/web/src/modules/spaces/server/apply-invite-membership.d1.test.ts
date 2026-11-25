@@ -219,6 +219,28 @@ describe("a member a Space admin removed", () => {
     await expect(removal()).resolves.toBeUndefined();
   });
 
+  it("records no removal of someone who had already left on their own", async () => {
+    // The admin's removal raced the member's own departure: it removed nobody.
+    await seedSpaceWithMember();
+    await expect(evictUserFromSpaceMeetings(appDb(), env, "spc_1", "joiner")).resolves.toBe(true);
+    await expect(evictUserFromSpaceMeetings(appDb(), env, "spc_1", "joiner", {
+      authorizedByUserId: "owner",
+      removedBy: { userId: "owner", at: new Date() },
+    })).resolves.toBe(false);
+
+    await expect(removal()).resolves.toBeUndefined();
+    await expect(join()).resolves.toBe(true);
+  });
+
+  it("records no removal by an actor who may no longer remove anyone", async () => {
+    await seedSpaceWithMember();
+    await expect(evictUserFromSpaceMeetings(appDb(), env, "spc_1", "joiner", {
+      authorizedByUserId: "joiner",
+      removedBy: { userId: "joiner", at: new Date() },
+    })).resolves.toBe(false);
+    await expect(removal()).resolves.toBeUndefined();
+  });
+
   it("can rejoin with the invite link after leaving by choice", async () => {
     await seedSpaceWithMember();
     await expect(evictUserFromSpaceMeetings(appDb(), env, "spc_1", "joiner")).resolves.toBe(true);

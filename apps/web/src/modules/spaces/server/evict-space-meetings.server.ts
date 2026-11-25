@@ -86,6 +86,11 @@ export async function evictUserFromSpaceMeetings(
       )`,
     ));
 
+  // Written by exactly the delete's own predicate, just before it in the same
+  // batch: a removal is recorded if and only if this call removes the member.
+  // Gated only on the membership being gone, it was also recorded for someone
+  // who had left on their own meanwhile, or by an actor no longer allowed to
+  // remove anyone, and kept them out of the invite link for good.
   const recordRemoval = options.removedBy
     ? db
       .insert(spaceMemberRemovals)
@@ -97,8 +102,8 @@ export async function evictUserFromSpaceMeetings(
             removedByUserId: sql`${options.removedBy.userId}`.as("removed_by_id"),
             removedAt: sql`${Math.floor(options.removedBy.at.getTime() / 1000)}`.as("removed_at"),
           })
-          .from(sql`(select 1)`)
-          .where(membershipGone),
+          .from(spaceMembers)
+          .where(deletableMembership),
       )
       .onConflictDoUpdate({
         target: [spaceMemberRemovals.spaceId, spaceMemberRemovals.userId],
@@ -106,11 +111,10 @@ export async function evictUserFromSpaceMeetings(
       })
     : null;
 
-  const [deleteResult] = await db.batch([
-      db.delete(spaceMembers).where(deletableMembership),
-      removeScheduleAttendees,
-      ...(recordRemoval ? [recordRemoval] : []),
-  ]);
+  const deleteMembership = db.delete(spaceMembers).where(deletableMembership);
+  const deleteResult = recordRemoval
+    ? (await db.batch([recordRemoval, deleteMembership, removeScheduleAttendees]))[1]
+    : (await db.batch([deleteMembership, removeScheduleAttendees]))[0];
   if (getRunChanges(deleteResult) === 0) return false;
 
   // The coordinator also rechecks membership on the user's next heartbeat, so

@@ -35,4 +35,15 @@ describe("extractSnapshotAssetKeys", () => {
     expect(extractSnapshotAssetKeys("{")).toEqual([]);
     expect(extractSnapshotAssetKeys(null)).toEqual([]);
   });
+
+  it("pins nothing for a source no viewer would load", () => {
+    const snapshot = {
+      documents: [
+        { state: { typeName: "asset", props: { src: "whiteboards/board_1/assets/a.png?v=1" } } },
+        { state: { typeName: "asset", props: { src: "whiteboards%2Fboard_1%2Fassets%2Fa.png" } } },
+        { state: { typeName: "asset", props: { src: "/api/wb-assets/whiteboards/board_1/assets/b.png#x" } } },
+      ],
+    };
+    expect(extractSnapshotAssetKeys(snapshot)).toEqual([]);
+  });
 });

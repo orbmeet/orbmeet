@@ -323,6 +323,14 @@ export interface EgressState {
   mode: EgressMode | null;
   status: "starting" | "active" | "stopping" | null;
   startedAt: number | null;
+  /**
+   * When this coordinator came to know the egress it tracks: when its start's
+   * reply arrived, or when the listing that found it was asked for. A listing
+   * asked for before then cannot say it is gone. Null while nothing is
+   * tracked, and for an egress tracked before this was kept, which any
+   * listing still to land may speak for.
+   */
+  knownSince: number | null;
   /** Source of operation ids; ids never repeat within a meeting. */
   opSeq: number;
   lastPolledAt: number | null;
@@ -450,6 +458,7 @@ export function initialState(snapshot: MeetingSnapshot, now: number): MeetingSta
       mode: null,
       status: null,
       startedAt: null,
+      knownSince: null,
       opSeq: 0,
       lastPolledAt: null,
       strays: [],
@@ -507,6 +516,7 @@ export function upgradeState(state: MeetingState): MeetingState {
   state.meta.organizerUserId ??= null;
   // Attempts that ended before roles were kept resolve as they did then.
   for (const attempt of Object.values(state.attempts)) attempt.endedRole ??= null;
+  state.egress.knownSince ??= null;
   return state;
 }
 
@@ -716,13 +726,24 @@ export function surfaceViewFor(state: MeetingState): MeetingRoomState["surface"]
 }
 
 /**
+ * When the LiveKit tokens of an attempt expire: a token's lifetime from the
+ * attempt's issue. A repeated join gets its attempt back with a token minted
+ * again, which expires at this same moment rather than a lifetime from its
+ * minting, so what the meeting knows of its tokens stays true however often a
+ * join is answered.
+ */
+export function tokenExpiresAt(attempt: Pick<Attempt, "issuedAt">): number {
+  return attempt.issuedAt + MEDIA_TOKEN_TTL_MS;
+}
+
+/**
  * Until when a LiveKit token this meeting issued could still make its room:
- * the newest attempt's issue, plus a token's lifetime. Attempts are kept well
- * past that (SETTLED_ATTEMPT_RETENTION_MS), so none whose token is still
- * usable has been forgotten.
+ * the newest attempt's token expiry. Attempts are kept well past that
+ * (SETTLED_ATTEMPT_RETENTION_MS), so none whose token is still usable has
+ * been forgotten.
  */
 export function tokensUsableUntil(state: MeetingState): number {
   let newest = Number.NEGATIVE_INFINITY;
-  for (const attempt of Object.values(state.attempts)) newest = Math.max(newest, attempt.issuedAt);
-  return newest + MEDIA_TOKEN_TTL_MS;
+  for (const attempt of Object.values(state.attempts)) newest = Math.max(newest, tokenExpiresAt(attempt));
+  return newest;
 }

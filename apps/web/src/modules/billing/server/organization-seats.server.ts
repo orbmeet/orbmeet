@@ -35,18 +35,28 @@ export class SeatChangeRefusedError extends Error {
 }
 
 /**
+ * The Polar statuses whose subscription Polar lets change: its own "active"
+ * statuses. It refuses a seat change on any other (`InactiveSubscription`),
+ * past due, unpaid, paused and incomplete included.
+ */
+const SEAT_CHANGEABLE_POLAR_STATUSES: ReadonlySet<string> = new Set(["active", "trialing"]);
+
+/**
  * The seat change that brings a subscription to `memberCount` members, or
- * null when none is needed. A decrease waits for the next period
- * (`pending_update`); setting the current count again cancels one already
- * scheduled. A subscription ending at its period's end takes no changes.
+ * null when none is needed or none can be made. A decrease waits for the next
+ * period (`pending_update`); setting the current count again cancels one
+ * already scheduled. A subscription ending at its period's end, or one Polar
+ * will not change in its status, takes no changes.
  */
 export function seatChangeFor(
-  subscription: Pick<PolarSubscription, "seats" | "pending_update" | "cancel_at_period_end">,
+  subscription: Pick<PolarSubscription, "status" | "seats" | "pending_update" | "cancel_at_period_end">,
   memberCount: number,
 ): { seats: number; prorationBehavior: "invoice" | "next_period" } | null {
   const target = Math.max(1, memberCount);
   const current = subscription.seats;
-  if (!current || subscription.cancel_at_period_end) return null;
+  if (!current || subscription.cancel_at_period_end || !SEAT_CHANGEABLE_POLAR_STATUSES.has(subscription.status)) {
+    return null;
+  }
   const pending = subscription.pending_update?.seats ?? null;
   if (target > current) return { seats: target, prorationBehavior: "invoice" };
   if (target < current) return pending === target ? null : { seats: target, prorationBehavior: "next_period" };
@@ -85,7 +95,8 @@ async function setOrganizationSeats(
   await syncSubscription(db, env, current);
   const change = seatChangeFor(current, memberCount);
   if (!change) {
-    // Too few seats and no change possible: the subscription is ending.
+    // Too few seats and no change possible: the subscription is ending, or
+    // in a status Polar will not change it in.
     if ((current.seats ?? 0) < Math.max(1, memberCount)) throw new SeatChangeRefusedError("not_active");
     return;
   }

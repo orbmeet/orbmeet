@@ -1,7 +1,4 @@
-import {
-  extractWhiteboardAssetKeyFromViewerUrl,
-  extractWhiteboardDocumentAssetIdentity,
-} from "./whiteboard-asset-key.ts";
+import { whiteboardAssetKeyOfSrc } from "./whiteboard-asset-key.ts";
 
 /**
  * The asset objects a snapshot's `asset` records point at, sorted and
@@ -26,8 +23,8 @@ export function extractSnapshotAssetKeys(snapshot: unknown): string[] {
     if (record.typeName !== "asset" || !record.props || typeof record.props !== "object") continue;
     const src = (record.props as { src?: unknown }).src;
     if (typeof src !== "string") continue;
-    const key = extractWhiteboardAssetKeyFromViewerUrl(src) ?? src;
-    if (extractWhiteboardDocumentAssetIdentity(key)) keys.add(key);
+    const key = whiteboardAssetKeyOfSrc(src);
+    if (key) keys.add(key);
   }
 
   return [...keys].sort();

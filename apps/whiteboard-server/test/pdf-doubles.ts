@@ -71,7 +71,7 @@ function pngPage(width: number, height: number, bytes: number): Buffer {
   return buf;
 }
 
-/** A scripted mutool: `info` reports `pageCount`; `draw` writes its range's pages. */
+/** A scripted mutool: `show` reports `pageCount`; `draw` writes its range's pages. */
 export function installMutoolDouble(
   { pageCount = 1, blockRender = false, failDrawShardFromPage, pageBytes = 64 }: MutoolDoubleOptions = {},
 ): MutoolDouble {
@@ -89,10 +89,10 @@ export function installMutoolDouble(
     : null;
 
   currentMutool = (args) => {
-    // `mutool info` is the page-count pre-pass the render handler runs before
-    // planning shards. Only the "Pages:" line is parsed.
-    if (args[0] === "info") {
-      return fakeProcess(Promise.resolve(0), `Pages: ${pageCount}\nRetrieving info from pages 1-${pageCount}...\n`);
+    // `mutool show … trailer/Root/Pages/Count` is the page-count pre-pass the
+    // render handler runs before planning shards.
+    if (args[0] === "show") {
+      return fakeProcess(Promise.resolve(0), `${pageCount}\n`);
     }
 
     // `mutool draw` renders only the pages in its own `first-last` range, so

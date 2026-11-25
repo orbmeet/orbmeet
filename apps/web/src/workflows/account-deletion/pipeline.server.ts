@@ -135,14 +135,15 @@ export async function deleteAccount(
     });
   }
 
-  // Read before anything is deleted, and kept as the step's result: the
-  // release deletes the rows it is read from, so a retried step that read it
-  // again would release nothing and leave the later cleanup nothing to do.
+  // Read before anything is deleted, and handed to the late cleanup before
+  // the release deletes the rows it is read from. A retried step keeps its
+  // result, but a deletion restarted after failing starts over with no step
+  // results at all, and would read the scope again from rows already gone:
+  // the job started first (once per account, `startJob` being idempotent)
+  // still holds the whole of it. The job waits out the upload grace before it
+  // does anything, so starting it before the release changes nothing it does.
   const storageScope = await step.do("list stored files", () =>
     loadAccountStorageScope(db, { meetingLinkIds, personalSpaceId }));
-
-  await step.do("release stored files", () =>
-    cleanupAccountR2Objects(db, env, userId, { ...storageScope, personalSpaceId }));
 
   await step.do("schedule late file cleanup", () =>
     startJob(env, {
@@ -152,6 +153,9 @@ export async function deleteAccount(
       ...storageScope,
       requestedAt: deletionStartedAt.getTime(),
     }));
+
+  await step.do("release stored files", () =>
+    cleanupAccountR2Objects(db, env, userId, { ...storageScope, personalSpaceId }));
 
   await step.do("erase", async () => {
     for (const deletion of boundedStatements(meetingLinkIds, (ids) =>

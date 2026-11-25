@@ -100,6 +100,26 @@ describe("commitReservedFileMetadata", () => {
   });
 });
 
+describe("commitReservedFileMetadata for a whiteboard's source file", () => {
+  it("reports a refused commit as refused, not as its reference's foreign key failing", async () => {
+    // The reservation has run out: the file is not committed, so neither is
+    // the whiteboard's reference to it.
+    await expect(commitReservedFileMetadata(appDb(), {
+      id: "asset_unreserved",
+      whiteboardId: "wb_1",
+      spaceId: "space_1",
+      type: "pdf",
+      r2Key: "spaces/space_1/uploads/asset_unreserved.pdf",
+      filename: "late.pdf",
+      mimeType: "application/pdf",
+      size: 100,
+      uploadedByUserId: "owner",
+      reservationPrincipal: "user:owner",
+      reservationScope: "space-pdf:space_1",
+    })).rejects.toThrow("Failed to commit reserved asset");
+  });
+});
+
 describe("registerMeetingArtifactMetadata", () => {
   it("derives meeting artifact space from the meeting", async () => {
     const now = new Date();

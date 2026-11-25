@@ -289,10 +289,13 @@ describe("MicrophoneController", () => {
 
       const restarted = controller.restartCapture();
       expect(controller.pending).toBe(true);
+      // Free as soon as the restart settles: what looks at the new capture
+      // next (the interruption's first sample) must not find it busy.
+      const pendingOnSettle = restarted.then(() => controller.pending);
       release();
 
       await expect(restarted).resolves.toBe(true);
-      await vi.waitFor(() => expect(controller.pending).toBe(false));
+      await expect(pendingOnSettle).resolves.toBe(false);
       expect(restartTrack).toHaveBeenCalledTimes(1);
       expect(controller.intentOn).toBe(true);
       expect(port.setMicrophoneEnabled).not.toHaveBeenCalled();

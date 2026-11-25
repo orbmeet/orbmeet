@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { build } from "esbuild";
 import { injectManifest } from "workbox-build";
-import { OFFLINE_URL } from "../service-worker/policy.ts";
+import { OFFLINE_URL, documentsCacheName } from "../service-worker/policy.ts";
 
 const webDir = resolve(import.meta.dirname, "..");
 // The Vite plugin emits the Build Output API tree; static assets (documents,
@@ -40,6 +40,13 @@ const publicDocuments = pages
   .filter((path) => !OFFLINE_EXCLUDED_DOCUMENTS.has(path))
   .sort();
 
+// The documents kept for offline reading belong to the build whose entry
+// chunks they load: the precache drops a build's chunks when the next worker
+// activates, so its documents go with them (service-worker/policy.ts).
+const documentsCache = documentsCacheName(
+  createHash("sha256").update([...entryAssets].sort().join("\n")).digest("hex").slice(0, 16),
+);
+
 const scratch = mkdtempSync(join(tmpdir(), "orbmeet-sw-"));
 try {
   const bundled = join(scratch, "sw.js");
@@ -53,6 +60,7 @@ try {
     logLevel: "warning",
     define: {
       PUBLIC_DOCUMENTS: JSON.stringify(publicDocuments),
+      DOCUMENTS_CACHE: JSON.stringify(documentsCache),
       // Workbox strips its development logging on this.
       "process.env.NODE_ENV": JSON.stringify("production"),
     },

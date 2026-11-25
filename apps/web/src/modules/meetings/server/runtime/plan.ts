@@ -167,7 +167,7 @@ function wantedEffects(state: MeetingState, now: number): Effect[] {
     // changes, and slowly while it runs, so one that ended unseen is noticed.
     const opLost = egress.op !== null && now - egress.op.startedAt >= EGRESS_START_RESULT_TIMEOUT_MS;
     if ((opLost || egress.egressId) && egressPollDue(state, now)) {
-      add({ key: "egress.list", kind: "livekit.listEgress", placement });
+      add({ key: "egress.list", kind: "livekit.listEgress", placement, requestedAt: now });
     }
     const stop = (egressId: string) =>
       add({ key: `egress.stop:${egressId}`, kind: "livekit.stopEgress", placement, egressId });

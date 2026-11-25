@@ -22,9 +22,11 @@ function waitForDelay(delayMs: number, signal: AbortSignal): Promise<void> {
 }
 
 /**
- * The query that shows what was bought, and whether its subscription has
- * landed: the person's session for Pro, their Organizations for an
- * Organization's plan.
+ * The query that shows what was bought, and whether it has landed: whether
+ * the plan bought is granted, in the person's session for Pro or their
+ * Organizations for an Organization's plan. A subscription that exists but
+ * grants nothing yet (Polar's `incomplete`, stored a moment before it is
+ * activated) has not landed.
  */
 function checkoutProjection(queryClient: QueryClient, checkout: CheckoutReturn) {
   const { organizationId } = checkout;
@@ -35,7 +37,7 @@ function checkoutProjection(queryClient: QueryClient, checkout: CheckoutReturn) 
       landed: async () => {
         const data = await queryClient.fetchQuery({ ...options, staleTime: 0 });
         return data.organizations.some(
-          (organization) => organization.id === organizationId && organization.billing.subscriptionStatus !== null,
+          (organization) => organization.id === organizationId && organization.billing.plan === "organization",
         );
       },
     };
@@ -45,7 +47,7 @@ function checkoutProjection(queryClient: QueryClient, checkout: CheckoutReturn) 
     queryKey: options.queryKey,
     landed: async () => {
       const session = await queryClient.fetchQuery({ ...options, staleTime: 0 });
-      return Boolean(session?.user?.hasManagedSubscription);
+      return session?.user?.plan === "pro";
     },
   };
 }

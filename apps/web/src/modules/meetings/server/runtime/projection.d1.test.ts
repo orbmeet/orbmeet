@@ -98,6 +98,29 @@ describe("projectMeetingChanges", () => {
     expect(row!.decidedAt!.getTime()).toBeGreaterThanOrEqual(row!.createdAt.getTime());
   });
 
+  it("projects a join a listing reports on a clock behind the one that issued the attempt", async () => {
+    const m = new Projected();
+    const hostReply = await m.join(host);
+    if (hostReply.kind !== "admitted") throw new Error(hostReply.kind);
+    const { attemptId, identity } = hostReply.participant;
+    const issuedAt = m.state.attempts[attemptId].issuedAt;
+
+    // The room moved to a machine whose clock runs five seconds behind, and
+    // the join webhook was lost: a listing is what reports the participant.
+    m.now = issuedAt - 5_000;
+    await m.apply({
+      kind: "effectSucceeded", key: "presence",
+      result: {
+        kind: "participantsListed", placement: { nodeId: "node-a", generation: 0 }, requestedAt: m.now,
+        participants: [{ identity, sid: "PA_h", joinedAt: null, standard: true }], roomExists: true,
+      },
+    });
+
+    expect(m.state.attempts[attemptId].joinedAt).toBe(issuedAt);
+    const row = await connectionRow(attemptId);
+    expect(row!.connectedAt!.getTime()).toBeGreaterThanOrEqual(row!.tokenIssuedAt.getTime());
+  });
+
   it("keeps D1 matching the room through a whole meeting, within every CHECK", async () => {
     const m = new Projected();
     const hostReply = await m.join(host);

@@ -191,6 +191,19 @@ describe("joining", () => {
     expect(m.admitted(host).role).toBe("host");
   });
 
+  it("keeps someone already waiting in the lobby when the door closes, for a host to let in", () => {
+    const m = new Meeting({ joinPolicy: "approval_required" });
+    m.admitted(host);
+    const waiting = m.join(ada);
+    if (waiting.kind !== "waiting") throw new Error(waiting.kind);
+    m.apply({ kind: "setJoinPolicy", subject: host, joinPolicy: "closed" });
+
+    // The lobby's next poll is still a wait, not a refusal that ends it.
+    expect(m.join(ada, { admissionId: waiting.admissionId }).kind).toBe("waiting");
+    m.apply({ kind: "decideAdmission", subject: host, admissionId: waiting.admissionId, approve: true });
+    expect(m.join(ada, { admissionId: waiting.admissionId }).kind).toBe("admitted");
+  });
+
   it("refuses someone else's admission", () => {
     const m = new Meeting();
     const a = m.admitted(ada);

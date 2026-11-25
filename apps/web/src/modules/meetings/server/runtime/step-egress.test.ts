@@ -40,7 +40,7 @@ describe("egress", () => {
     expect(kinds(m.apply({ kind: "tick" }).once)).toEqual([]);
 
     m.apply({ kind: "egressStartResult", placement: m.here(), opId, egressId: "EG_1", error: null });
-    m.apply({ kind: "egressObserved", complete: true, egresses: [
+    m.apply({ kind: "egressObserved", complete: true, requestedAt: m.now, egresses: [
       { egressId: "EG_1", status: "active", streamActive: false, streamFailure: null, error: null },
     ] });
     expect(m.state.egress.status).toBe("active");
@@ -48,7 +48,7 @@ describe("egress", () => {
 
     m.apply({ kind: "setEgress", subject: host, mode: "recording", on: false, target: null });
     expect(m.plan()).toContainEqual(expect.objectContaining({ kind: "livekit.stopEgress", egressId: "EG_1" }));
-    m.apply({ kind: "egressObserved", complete: true, egresses: [
+    m.apply({ kind: "egressObserved", complete: true, requestedAt: m.now, egresses: [
       { egressId: "EG_1", status: "complete", streamActive: false, streamFailure: null, error: null },
     ] });
     expect(m.state.egress.transition).toBe("stopped");
@@ -59,7 +59,7 @@ describe("egress", () => {
     m.apply({ kind: "setEgress", subject: host, mode: "recording", on: true, target: null });
     m.now += EGRESS_START_RESULT_TIMEOUT_MS;
     expect(kinds(m.plan())).toContain("livekit.listEgress");
-    m.apply({ kind: "egressObserved", complete: true, egresses: [
+    m.apply({ kind: "egressObserved", complete: true, requestedAt: m.now, egresses: [
       { egressId: "EG_9", status: "starting", streamActive: false, streamFailure: null, error: null },
     ] });
     expect(m.state.egress.egressId).toBe("EG_9");
@@ -68,7 +68,7 @@ describe("egress", () => {
 
   it("stops an egress it no longer tracks instead of stopping everything on an error", () => {
     const { m } = recording();
-    m.apply({ kind: "egressObserved", complete: true, egresses: [
+    m.apply({ kind: "egressObserved", complete: true, requestedAt: m.now, egresses: [
       { egressId: "EG_stray", status: "active", streamActive: false, streamFailure: null, error: null },
     ] });
     const stops = () => m.plan().filter((effect) => effect.kind === "livekit.stopEgress");
@@ -84,7 +84,7 @@ describe("egress", () => {
   // ends on its own must stop being stopped, or the meeting never drains.
   it("forgets a stray that ends on its own", () => {
     const { m } = recording();
-    m.apply({ kind: "egressObserved", complete: true, egresses: [
+    m.apply({ kind: "egressObserved", complete: true, requestedAt: m.now, egresses: [
       { egressId: "EG_stray", status: "active", streamActive: false, streamFailure: null, error: null },
     ] });
     m.apply({ kind: "egressObserved", complete: false, egresses: [
@@ -138,7 +138,7 @@ describe("egress", () => {
     m.apply({ kind: "setEgress", subject: host, mode: "streaming", on: false, target: null });
     m.apply({ kind: "setEgress", subject: host, mode: "streaming", on: true, target: "rtmps://b/key" });
     m.now += EGRESS_START_RESULT_TIMEOUT_MS;
-    m.apply({ kind: "egressObserved", complete: true, egresses: [
+    m.apply({ kind: "egressObserved", complete: true, requestedAt: m.now, egresses: [
       { egressId: "EG_to_a", status: "active", streamActive: true, streamFailure: null, error: null },
     ] });
     expect(m.state.egress.egressId).toBeNull();
@@ -161,7 +161,7 @@ describe("egress", () => {
     const started = m.apply({ kind: "setEgress", subject: host, mode: "recording", on: true, target: null });
     const opId = started.once[0].kind === "livekit.startEgress" ? started.once[0].opId : "";
     m.apply({ kind: "egressStartResult", placement: m.here(), opId, egressId: "EG_1", error: null });
-    m.apply({ kind: "egressObserved", complete: true, egresses: [
+    m.apply({ kind: "egressObserved", complete: true, requestedAt: m.now, egresses: [
       { egressId: "EG_1", status: "active", streamActive: false, streamFailure: null, error: null },
     ] });
     expect(kinds(m.plan())).not.toContain("livekit.listEgress");
@@ -169,7 +169,7 @@ describe("egress", () => {
     // Its egress_ended webhook is lost; the slow lookup still comes due.
     m.now += PRESENCE_CHECK_MS;
     expect(kinds(m.plan())).toContain("livekit.listEgress");
-    m.apply({ kind: "egressObserved", complete: true, egresses: [
+    m.apply({ kind: "egressObserved", complete: true, requestedAt: m.now, egresses: [
       { egressId: "EG_1", status: "complete", streamActive: false, streamFailure: null, error: null },
     ] });
     expect(m.state.egress.egressId).toBeNull();
@@ -260,10 +260,48 @@ describe("egress, late and failed", () => {
   const active = (egressId: string) =>
     ({ egressId, status: "active" as const, streamActive: false, streamFailure: null, error: null });
 
+  /** Stop EG_1, have it settle, and start again: what a listing asked for before the restart lands into. */
+  function restarted() {
+    const { m, opId } = recording();
+    m.apply({ kind: "egressStartResult", placement: m.here(), opId, egressId: "EG_1", error: null });
+    m.apply({ kind: "setEgress", subject: host, mode: "recording", on: false, target: null });
+    // Asked for while stopping; it sees EG_1 still there and nothing else.
+    const listedAt = m.now;
+    m.advance(1_000);
+    m.apply({ kind: "egressObserved", placement: m.here(), complete: false, egresses: [
+      { egressId: "EG_1", status: "complete", streamActive: false, streamFailure: null, error: null },
+    ] });
+    m.advance(1_000);
+    const again = m.apply({ kind: "setEgress", subject: host, mode: "recording", on: true, target: null });
+    if (again.once[0]?.kind !== "livekit.startEgress") throw new Error("expected a start");
+    const staleListing = () => m.apply({
+      kind: "egressObserved", placement: m.here(), complete: true, requestedAt: listedAt, egresses: [active("EG_1")],
+    });
+    return { m, opId: again.once[0].opId, staleListing };
+  }
+
+  it("keeps a restarted recording that a listing from before the restart does not show", () => {
+    const { m, opId, staleListing } = restarted();
+    m.apply({ kind: "egressStartResult", placement: m.here(), opId, egressId: "EG_2", error: null });
+    staleListing();
+    expect(m.state.egress.egressId).toBe("EG_2");
+    expect(m.state.egress.transition).not.toBe("failed");
+    expect(m.state.egress.lastFailure).toBeNull();
+  });
+
+  it("does not give up a restart's start on a listing asked for before it began", () => {
+    const { m, staleListing } = restarted();
+    m.advance(EGRESS_START_RESULT_TIMEOUT_MS);
+    staleListing();
+    // The start is still awaited: no second start while the first is in flight.
+    expect(m.state.egress.op).not.toBeNull();
+    expect(kinds(m.plan())).not.toContain("livekit.startEgress");
+  });
+
   it("keeps a recording a late start reply names after the room lookup adopted it", () => {
     const { m, opId } = recording();
     m.advance(EGRESS_START_RESULT_TIMEOUT_MS);
-    m.apply({ kind: "egressObserved", placement: m.here(), complete: true, egresses: [active("EG_1")] });
+    m.apply({ kind: "egressObserved", placement: m.here(), complete: true, requestedAt: m.now, egresses: [active("EG_1")] });
     expect(m.state.egress.egressId).toBe("EG_1");
     m.apply({ kind: "egressStartResult", placement: m.here(), opId, egressId: "EG_1", error: null });
     expect(m.state.egress.strays).toEqual([]);
@@ -282,6 +320,7 @@ describe("egress, late and failed", () => {
       kind: "egressObserved",
       placement: m.here(),
       complete: true,
+      requestedAt: m.now,
       egresses: [active("EG_1"), active("EG_2")],
     });
     expect(m.state.egress.egressId).toBe("EG_2");
@@ -291,7 +330,7 @@ describe("egress, late and failed", () => {
   it("reports a failure once, and still stops showing the egress when it ends", () => {
     const { m, opId } = recording();
     m.apply({ kind: "egressStartResult", placement: m.here(), opId, egressId: "EG_1", error: null });
-    m.apply({ kind: "egressObserved", placement: m.here(), complete: true, egresses: [active("EG_1")] });
+    m.apply({ kind: "egressObserved", placement: m.here(), complete: true, requestedAt: m.now, egresses: [active("EG_1")] });
     m.apply({
       kind: "egressObserved",
       complete: false,
@@ -305,6 +344,7 @@ describe("egress, late and failed", () => {
       kind: "egressObserved",
       placement: m.here(),
       complete: true,
+      requestedAt: m.now,
       egresses: [{ ...active("EG_1"), status: "complete" }],
     });
     expect(m.state.egress).toMatchObject({
@@ -320,12 +360,13 @@ describe("egress, late and failed", () => {
   it("reports a stop the host asked for as stopped", () => {
     const { m, opId } = recording();
     m.apply({ kind: "egressStartResult", placement: m.here(), opId, egressId: "EG_1", error: null });
-    m.apply({ kind: "egressObserved", placement: m.here(), complete: true, egresses: [active("EG_1")] });
+    m.apply({ kind: "egressObserved", placement: m.here(), complete: true, requestedAt: m.now, egresses: [active("EG_1")] });
     m.apply({ kind: "setEgress", subject: host, mode: "recording", on: false, target: null });
     m.apply({
       kind: "egressObserved",
       placement: m.here(),
       complete: true,
+      requestedAt: m.now,
       egresses: [{ ...active("EG_1"), status: "complete" }],
     });
     expect(m.state.egress.transition).toBe("stopped");

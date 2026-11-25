@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
 
 import {
   meetingWhiteboards,
@@ -106,6 +107,34 @@ describe("Meeting Whiteboard documents: duplicating", () => {
     });
     await expect(db.query.whiteboardAssetReferences.findFirst({
       where: { whiteboardId: secondCopy.whiteboardId, r2Key: assetKey },
+      columns: { sourceWhiteboardId: true },
+    })).resolves.toEqual({ sourceWhiteboardId: "whiteboard_source" });
+  });
+
+  it("duplicates a copy after the board it was copied from is deleted", async () => {
+    const { db, now } = await seedMeeting("ended");
+    const assetKey = "whiteboards/whiteboard_source/assets/page-1.png";
+    const snapshot = JSON.stringify({
+      documents: [{ state: { id: "asset:pdf-page", typeName: "asset", props: { src: `/api/wb-assets/${assetKey}` } } }],
+    });
+    await seedMeetingWhiteboard(db, { whiteboardId: "whiteboard_source", meetingId: "meeting_1", spaceId: "user_host_space", now });
+    await db.insert(whiteboardAssets).values({
+      id: "asset_page_1", whiteboardId: "whiteboard_source", spaceId: "user_host_space", r2Key: assetKey,
+      filename: "page-1.png", mimeType: "image/png", size: "image-bytes".length, status: "committed",
+      uploadedByUserId: null, guestAdmissionId: null, expiresAt: null, committedAt: now, createdAt: now,
+    });
+    const r2 = fakeR2({ [assetKey]: "image-bytes" });
+    rooms(r2).set("whiteboard_source", snapshot);
+    const copy = await duplicateWhiteboard(syncEnv(r2), { whiteboardId: "whiteboard_source", userId: "user_host" });
+
+    // The original goes, and its upload record with it; the copy's
+    // reference keeps the bytes.
+    await db.delete(meetingWhiteboards).where(eq(meetingWhiteboards.whiteboardId, "whiteboard_source"));
+    await db.delete(whiteboards).where(eq(whiteboards.id, "whiteboard_source"));
+
+    const copyOfCopy = await duplicateWhiteboard(syncEnv(r2), { whiteboardId: copy.whiteboardId, userId: "user_host" });
+    await expect(db.query.whiteboardAssetReferences.findFirst({
+      where: { whiteboardId: copyOfCopy.whiteboardId, r2Key: assetKey },
       columns: { sourceWhiteboardId: true },
     })).resolves.toEqual({ sourceWhiteboardId: "whiteboard_source" });
   });

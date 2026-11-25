@@ -8,6 +8,7 @@ import { ENDED_SUBSCRIPTION_STATUS } from "@/modules/billing/contract/subscripti
 import {
   planForCustomer,
   type BillingCustomer,
+  type PaidSubscriptionTier,
   type SubscriptionStatus,
 } from "@/modules/billing/contract/types";
 import { getRunChanges } from "@/platform/database/db-utils";
@@ -26,7 +27,8 @@ import { subscriptionVersion, type PolarSubscription } from "./polar-schema";
  * subscription is adopted only when its product is the customer's plan, so a
  * catalog mistake cannot grant a plan. Once adopted it is tracked by id
  * whatever its product, so a plan switch or a repriced product can never stop
- * its end from landing.
+ * its end from landing; and it is stored with the plan its product grants now
+ * (`grantedPlan`), so a switch to another product ends the plan it left.
  */
 
 export type SubscriptionStoreEnv = PolarCatalogConfig;
@@ -64,18 +66,28 @@ function customerExistsSql(customer: BillingCustomer) {
     : sql`select 1 from ${organizations} where ${organizations.id} = ${customer.organizationId}`;
 }
 
-/** Why this subscription may not become a customer's plan, or null when it may. */
-function adoptionRefusal(
+/**
+ * The plan this subscription's product grants its customer: theirs when it is
+ * their plan's configured product, none for any other (a product added in
+ * Polar but not here, one switched to in Polar's portal, a typo, or the other
+ * server's id).
+ */
+function grantedPlan(
   env: PolarCatalogConfig,
   customer: BillingCustomer,
   subscription: PolarSubscription,
+): PaidSubscriptionTier | null {
+  const plan = planForCustomer(customer);
+  return subscription.product_id.toLowerCase() === polarProductIdForPlan(env, plan) ? plan : null;
+}
+
+/** Why this subscription may not become a customer's plan, or null when it may. */
+function adoptionRefusal(
+  customer: BillingCustomer,
+  plan: PaidSubscriptionTier | null,
   seats: number | null,
 ): string | null {
-  const plan = planForCustomer(customer);
-  if (subscription.product_id.toLowerCase() !== polarProductIdForPlan(env, plan)) {
-    // A product added in Polar but not here, a typo, or the other server's id.
-    return `product is not the configured ${plan} product`;
-  }
+  if (plan === null) return `product is not the configured ${planForCustomer(customer)} product`;
   if (customer.kind === "organization" && seats === null) return "the Organization product is not seat-based";
   return null;
 }
@@ -91,38 +103,42 @@ async function storeSubscription(
   const status = Object.hasOwn(POLAR_STATUSES, subscription.status) ? POLAR_STATUSES[subscription.status] : undefined;
   if (!status) return { kind: "not_adopted", reason: `unknown status "${subscription.status}"` };
   const seats = customer.kind === "organization" && (subscription.seats ?? 0) >= 1 ? subscription.seats! : null;
-  const refusal = adoptionRefusal(env, customer, subscription, seats);
+  const plan = grantedPlan(env, customer, subscription);
+  const refusal = adoptionRefusal(customer, plan, seats);
 
   const cancelAtPeriodEnd = subscription.cancel_at_period_end ? 1 : 0;
   const currentPeriodEnd = subscription.current_period_end ? Date.parse(subscription.current_period_end) : null;
-  const version = subscriptionVersion(subscription).getTime();
+  const version = subscriptionVersion(subscription);
 
   const result = refusal === null
     ? await db.run(sql`
         insert into ${billingSubscriptions} (
           id, user_id, organization_id, status, seats,
-          cancel_at_period_end, current_period_end, source_version
+          cancel_at_period_end, current_period_end, plan, source_version
         )
         select
           ${subscription.id},
           ${customer.kind === "user" ? customer.userId : null},
           ${customer.kind === "organization" ? customer.organizationId : null},
-          ${status}, ${seats}, ${cancelAtPeriodEnd}, ${currentPeriodEnd}, ${version}
+          ${status}, ${seats}, ${cancelAtPeriodEnd}, ${currentPeriodEnd}, ${plan}, ${version}
         where exists (${customerExistsSql(customer)})
         on conflict (id) do update set
           status = excluded.status,
           seats = excluded.seats,
           cancel_at_period_end = excluded.cancel_at_period_end,
           current_period_end = excluded.current_period_end,
+          plan = excluded.plan,
           source_version = excluded.source_version
         where excluded.source_version > ${billingSubscriptions.sourceVersion}
       `)
     // Not adoptable: keep an already-tracked subscription current, and
-    // nothing more. An Organization keeps its last seat count when the new
-    // product carries none.
+    // nothing more. It grants what its product grants now, which for another
+    // product is nothing. An Organization keeps its last seat count when the
+    // new product carries none.
     : await db.run(sql`
         update ${billingSubscriptions} set
           status = ${status},
+          plan = ${plan},
           seats = coalesce(${seats}, ${billingSubscriptions.seats}),
           cancel_at_period_end = ${cancelAtPeriodEnd},
           current_period_end = ${currentPeriodEnd},

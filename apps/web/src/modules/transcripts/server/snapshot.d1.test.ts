@@ -127,6 +127,30 @@ describe("Transcript Summary preparation", () => {
     expect(prepared.chunks.join("\n")).toContain("[00:01 Alex (2)]");
   });
 
+  it("never numbers a shared name into someone else's name", async () => {
+    // Two Bobs, and a guest who named themselves "Bob (1)".
+    const db = await createTestDb();
+    const now = new Date("2026-06-12T12:00:00.000Z");
+    await seedMeeting(db, now);
+    await db.insert(transcripts).values(["bob-one", "bob-two", "bob-guest"].map((identity, index) => ({
+      id: `tr_${index}`,
+      meetingId: "meeting_1",
+      participantIdentity: identity,
+      participantName: identity === "bob-guest" ? "Bob (1)" : "Bob",
+      text: `Line ${index}.`,
+      segmentId: `segment-${index}`,
+      startedAt: new Date(now.getTime() + index * 1_000),
+      updatedAt: new Date(now.getTime() + index * 1_000),
+    })));
+
+    const prepared = await buildTranscriptChunks(db, "meeting_1", now);
+
+    expect(new Set(prepared.participantNames).size).toBe(3);
+    expect(prepared.participantNames).toContain("Bob (1)");
+    expect(prepared.chunks.join("\n")).toContain("[00:02 Bob (1)]: Line 2.");
+    expect(prepared.chunks.join("\n")).not.toContain("[00:00 Bob (1)]");
+  });
+
   it("keeps one person one speaker across their reconnects", async () => {
     const db = await createTestDb();
     const now = new Date("2026-06-12T12:00:00.000Z");

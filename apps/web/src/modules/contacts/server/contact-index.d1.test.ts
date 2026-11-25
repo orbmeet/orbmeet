@@ -329,6 +329,21 @@ spaceKind: "personal" as const,
     expect(search.candidates.map((candidate) => candidate.id)).toEqual(["spc_admin"]);
   });
 
+  it("never offers the user's own personal Space, titled after them", async () => {
+    await seedPersonalSpace(db, "usr_owner", { name: "Owner Person" });
+    await seedSharedSpace(db, {
+      id: "spc_named",
+      name: "Owner Person Book Club",
+      ownerUserId: "usr_owner",
+      members: [{ userId: "usr_owner", role: "owner" }],
+      now: createdAt,
+    });
+
+    const search = await searchAutomationTargets(db, "usr_owner", "Owner Person");
+    expect(search.candidates.filter((candidate) => candidate.type === "space").map((candidate) => candidate.id))
+      .toEqual(["spc_named"]);
+  });
+
   it("treats LIKE metacharacters in contact names and emails literally", async () => {
     await rememberInvitedContacts(
       db,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalDocumentPath, isCacheableDocument, isImmutableAsset, isServerPath } from "./policy";
+import { canonicalDocumentPath, documentsCacheName, isCacheableDocument, isImmutableAsset, isOutdatedDocumentsCache, isServerPath } from "./policy";
 
 describe("service worker policy", () => {
   it("leaves server routes and server functions to the network", () => {
@@ -31,5 +31,16 @@ describe("service worker policy", () => {
   it("keys documents by their slash-less path", () => {
     expect(canonicalDocumentPath("/pricing/")).toBe("/pricing");
     expect(canonicalDocumentPath("/")).toBe("/");
+  });
+
+  it("drops the documents of every other build, and only those", () => {
+    // A document loads its own build's entry chunks; once the next build's
+    // worker drops them from the precache, the document cannot load offline.
+    const current = documentsCacheName("b2");
+    expect(isOutdatedDocumentsCache(documentsCacheName("b1"), current)).toBe(true);
+    expect(isOutdatedDocumentsCache("orbmeet-public-documents", current)).toBe(true);
+    expect(isOutdatedDocumentsCache(current, current)).toBe(false);
+    expect(isOutdatedDocumentsCache("orbmeet-immutable", current)).toBe(false);
+    expect(isOutdatedDocumentsCache("workbox-precache-v2-https://app.test/", current)).toBe(false);
   });
 });

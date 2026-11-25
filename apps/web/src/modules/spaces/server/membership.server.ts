@@ -6,7 +6,7 @@
 
 import type { Database } from "@orbmeet/db";
 import { organizationMembers, spaces, spaceMemberRemovals, spaceMembers, users } from "@orbmeet/db/schema";
-import { eq, and, asc, count, gt, or, sql, type SQL } from "drizzle-orm";
+import { eq, and, asc, count, gt, isNull, or, sql, type SQL } from "drizzle-orm";
 import {
   addMemberByEmailSchema,
   removeMemberSchema,
@@ -503,6 +503,8 @@ export async function applyOwnershipTransfer(
         and(
           eq(spaces.id, spaceId),
           eq(spaces.ownerUserId, fromUserId),
+          // A Space being deleted keeps the owner it is being deleted under.
+          isNull(spaces.archivedAt),
           targetStillMember,
           ...recipientGates,
         ),

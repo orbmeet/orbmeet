@@ -21,6 +21,7 @@ async function mintToken(overrides: Partial<Parameters<typeof createLiveKitToken
     identity: "user_1",
     name: "Participant",
     roomName: "meet-meeting_1",
+    expiresAt: Date.now() + MEDIA_TOKEN_TTL_MS,
     ...overrides,
   });
   return decodeClaims(token);
@@ -67,7 +68,7 @@ describe("LiveKit token grants", () => {
    * would have minted a token outliving the meeting by a month.
    */
   it("issues a short-lived token that no caller can lengthen", async () => {
-    const claims = await mintToken();
+    const claims = await mintToken({ expiresAt: Date.now() + 100 * MEDIA_TOKEN_TTL_MS });
     const lifetimeSeconds = (claims.exp as number) - (claims.nbf as number);
     // The lifetime the meeting assumes when it decides a token can no longer
     // make its room.
@@ -80,11 +81,29 @@ describe("LiveKit token grants", () => {
       identity: "user_1",
       name: "Participant",
       roomName: "meet-meeting_1",
+      expiresAt: Date.now() + MEDIA_TOKEN_TTL_MS,
       // A stale caller passing the removed knob must not widen anything.
       ...({ ttl: "999h" } as Record<string, unknown>),
     });
     expect(access.expiresIn).toBe((MEDIA_TOKEN_TTL_MS / 1000));
     const replayed = decodeClaims(access.token);
     expect((replayed.exp as number) - (replayed.nbf as number)).toBe((MEDIA_TOKEN_TTL_MS / 1000));
+  });
+
+  it("expires a token minted again for the same join when the first one does", async () => {
+    // The meeting forgets its room once its newest attempt's tokens expire; a
+    // repeated join's token must not outlive that.
+    const issuedAt = Date.now() - 60_000;
+    const access = await createLiveKitAccess({
+      apiKey: API_KEY,
+      apiSecret: API_SECRET,
+      identity: "user_1",
+      name: "Participant",
+      roomName: "meet-meeting_1",
+      expiresAt: issuedAt + MEDIA_TOKEN_TTL_MS,
+    });
+    const claims = decodeClaims(access.token);
+    expect((claims.exp as number) * 1000).toBeLessThanOrEqual(issuedAt + MEDIA_TOKEN_TTL_MS);
+    expect(access.expiresIn).toBeLessThanOrEqual(MEDIA_TOKEN_TTL_MS / 1000 - 60);
   });
 });

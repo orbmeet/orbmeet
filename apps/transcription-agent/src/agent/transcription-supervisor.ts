@@ -5,7 +5,7 @@ import {
   removeTranscriptionConnectionStatus,
 } from "../outbox/transcription-health.js";
 import type { AudioSource } from "./audio-source.js";
-import { DeepgramAttempt, type OpenDeepgramSocket } from "./deepgram-attempt.js";
+import { DeepgramAttempt, DeepgramRefresh, type OpenDeepgramSocket } from "./deepgram-attempt.js";
 import type { TranscriptEvent } from "./transcript-assembler.js";
 import { logWarn } from "../log.js";
 
@@ -146,6 +146,11 @@ export class TranscriptionSupervisor {
       } catch (error) {
         // Turned off mid-attempt: the stop was ours, not a failure to retry.
         if (!this.enabled) continue;
+        // A quiet socket replaced before speech goes into it. Not a failure:
+        // counting it backed a participant who speaks only now and then off
+        // to half a minute, and called a healthy connection failed. A socket
+        // that never answers still fails, on the speech sent to its successor.
+        if (error instanceof DeepgramRefresh) continue;
         if (openedAt !== null && now() - openedAt >= STABLE_CONNECTION_MS) failures = 0;
         failures += 1;
         const retryDelay = RECONNECT_DELAYS_MS[Math.min(failures - 1, RECONNECT_DELAYS_MS.length - 1)];
