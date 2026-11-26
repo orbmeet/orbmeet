@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_STAGE_PARAMS,
   initStageState,
-  speakingSet,
   tickStage,
   type SpeakerSample,
   type StageParams,
@@ -121,12 +120,5 @@ describe("tickStage", () => {
     let { state, now } = run(initStageState(), [loud("a"), silent("b")], 1000, 0);
     state = tickStage(state, [silent("b")], now + 50, 50, P);
     expect(state.holderId).toBe("b");
-  });
-
-  it("speakingSet reflects who is above the activity floor", () => {
-    const { state } = run(initStageState(), [loud("a"), silent("b")], 1000, 0);
-    const set = speakingSet(state, P);
-    expect(set.has("a")).toBe(true);
-    expect(set.has("b")).toBe(false);
   });
 });

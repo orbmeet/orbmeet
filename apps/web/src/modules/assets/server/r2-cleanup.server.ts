@@ -4,14 +4,21 @@ import {
   files,
   meetingArtifacts,
   meetingWhiteboards,
+  meetings,
   r2ObjectCleanupTasks,
   whiteboardAssetReferences,
   whiteboardAssets,
   whiteboardRevisionAssetReferences,
   whiteboardRevisions,
+  whiteboards,
 } from "@orbmeet/db/schema";
-import { internalMeetingPrefix, meetingPrefix } from "@/platform/storage/r2-keys";
-import { and, asc, eq, inArray, isNull, lte, sql, type SQL } from "drizzle-orm";
+import {
+  internalMeetingPrefix,
+  internalWhiteboardPrefix,
+  meetingPrefix,
+  whiteboardPrefix,
+} from "@/platform/storage/r2-keys";
+import { and, asc, eq, inArray, isNull, lte, ne, sql, type SQL } from "drizzle-orm";
 import type { BatchStatement } from "@/platform/database/db-batching";
 import { boundedStatements } from "@/platform/database/db-batching";
 import { withD1Retry } from "@/platform/database/db-utils";
@@ -314,12 +321,93 @@ export async function deleteMeetingR2Namespaces(
   db: Database,
   bucket: R2Bucket,
   meetingId: string,
-  whiteboardId: string | null,
   budget = createR2CleanupBudget(),
 ): Promise<void> {
   await deleteR2Prefix(db, bucket, meetingPrefix(meetingId), budget);
   await deleteR2Prefix(db, bucket, internalMeetingPrefix(meetingId), budget);
-  void whiteboardId;
+}
+
+/**
+ * Verify that none of `whiteboardIds` are attached to a meeting belonging to
+ * another Space before deleting their R2 prefixes.
+ */
+export async function assertNoForeignWhiteboardUsage(
+  db: Database,
+  spaceId: string,
+  whiteboardIds: readonly string[],
+): Promise<void> {
+  for (const lookup of boundedStatements(whiteboardIds, (ids) =>
+    db
+      .select({ id: meetingWhiteboards.id })
+      .from(meetingWhiteboards)
+      .innerJoin(meetings, eq(meetings.id, meetingWhiteboards.meetingId))
+      .where(and(
+        inArray(meetingWhiteboards.whiteboardId, ids),
+        ne(meetings.spaceId, spaceId),
+      ))
+      .limit(1))) {
+    const [foreignUsage] = await lookup;
+    if (foreignUsage) {
+      throw new Error(
+        "Whiteboard ownership invariant violated: refusing to delete R2 data referenced by another Space",
+      );
+    }
+  }
+}
+
+/**
+ * Purge a Space-owned whiteboard's R2 namespaces while preserving cross-Space
+ * asset references:
+ * - Queues assets this board borrowed so the cleanup worker removes them once
+ *   no remaining owner references them after this board's rows cascade.
+ * - Retains objects under this board's prefix that boards in other Spaces
+ *   still reference.
+ */
+export async function purgeSpaceWhiteboardR2Objects(
+  db: Database,
+  bucket: R2Bucket,
+  options: {
+    spaceId: string;
+    whiteboardId: string;
+    budget: R2CleanupBudget;
+    beforePrefixDelete?: () => Promise<void>;
+  },
+): Promise<void> {
+  const borrowedAssets = await db
+    .select({ r2Key: whiteboardAssetReferences.r2Key })
+    .from(whiteboardAssetReferences)
+    .where(eq(whiteboardAssetReferences.whiteboardId, options.whiteboardId));
+  await enqueueR2ObjectCleanup(
+    db,
+    borrowedAssets.map((row) => row.r2Key),
+  );
+
+  const retainedAssets = await db
+    .select({ r2Key: whiteboardAssetReferences.r2Key })
+    .from(whiteboardAssetReferences)
+    .innerJoin(whiteboards, eq(whiteboards.id, whiteboardAssetReferences.whiteboardId))
+    .where(
+      and(
+        eq(whiteboardAssetReferences.sourceWhiteboardId, options.whiteboardId),
+        ne(whiteboards.spaceId, options.spaceId),
+      ),
+    );
+  if (options.beforePrefixDelete) {
+    await options.beforePrefixDelete();
+  }
+  await deleteR2Prefix(
+    db,
+    bucket,
+    internalWhiteboardPrefix(options.whiteboardId),
+    options.budget,
+  );
+  await deleteR2Prefix(
+    db,
+    bucket,
+    whiteboardPrefix(options.whiteboardId),
+    options.budget,
+    new Set(retainedAssets.map((row) => row.r2Key)),
+  );
 }
 
 /**

@@ -49,5 +49,4 @@ export const LIVEKIT_TOPICS = {
 export const MESSAGE_LIMITS = {
   MAX_TEXT_LENGTH: 500,
   MAX_NAME_LENGTH: 100,
-  MAX_EMOJI_LENGTH: 10,
 } as const;

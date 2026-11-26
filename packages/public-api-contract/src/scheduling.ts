@@ -128,7 +128,3 @@ export const cancelMeetingScheduleSchema = v.object({
   expectedRevision: revisionSchema,
   reason: v.optional(trimmedText(500)),
 });
-
-export const getMeetingScheduleSchema = v.object({
-  scheduleId: idSchema,
-});

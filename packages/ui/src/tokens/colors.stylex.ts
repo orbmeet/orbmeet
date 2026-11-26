@@ -217,15 +217,6 @@ export const decor = stylex.defineVars({
   paperCool: "light-dark(#f7f7f6, #18181c)",
   /** The recorder's dead-screen ground — near-black, but not the scrim. */
   voidGround: "#111111",
-  /**
-   * The orb drawn large — Home's "your room is ready", Orb's own mark — as a
-   * lit sphere: the highlight, the lit body, the turn, and the shaded limb.
-   * The flat `BrandMark` stays the logo; this is the same orb as an object.
-   */
-  orbHighlight: "#f4f1ff",
-  orbLit: "#b2a1ff",
-  orbBody: "#6646ff",
-  orbShade: "#2a1191",
 });
 
 /**

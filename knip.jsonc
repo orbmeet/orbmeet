@@ -1,8 +1,5 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
-  // `cloudflare:workers`, `cloudflare:test` and friends are runtime modules,
-  // not packages.
-  "ignoreDependencies": ["cloudflare"],
   "workspaces": {
     "apps/web": {
       // public/open-in-browser.js is loaded by its page, not imported.

@@ -1,4 +1,4 @@
-const WHITEBOARD_ASSET_API_PREFIX = "/api/wb-assets/";
+export const WHITEBOARD_ASSET_API_PREFIX = "/api/wb-assets/";
 // Deployed objects keep the historical namespace. Whiteboard is the domain name;
 // changing this prefix would orphan existing R2 objects.
 const WHITEBOARD_DOCUMENT_PREFIX = "whiteboards";

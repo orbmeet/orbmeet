@@ -16,15 +16,23 @@ export function formatMeetingTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-export function formatMeetingDuration(start: string | null, end: string | null): string {
+function formatDurationSpan(
+  start: string | null,
+  end: string | null,
+  units: { hour: string; minute: string },
+): string {
   if (!start || !end) return "";
   const mins = Math.floor((Date.parse(end) - Date.parse(start)) / 60_000);
-  if (mins < 1) return "< 1m";
+  if (mins < 1) return `< 1${units.minute}`;
   const h = Math.floor(mins / 60);
   const m = mins % 60;
-  if (h === 0) return `${m}m`;
-  // A whole number of hours reads as "1h", not "1h 0m".
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  if (h === 0) return `${m}${units.minute}`;
+  // A whole number of hours reads as "1h" / "1 h", not "1h 0m".
+  return m === 0 ? `${h}${units.hour}` : `${h}${units.hour} ${m}${units.minute}`;
+}
+
+export function formatMeetingDuration(start: string | null, end: string | null): string {
+  return formatDurationSpan(start, end, { hour: "h", minute: "m" });
 }
 
 /** "1 person in it", "3 people in it": who is in a live meeting, beside its Live pill. */
@@ -58,13 +66,7 @@ export function formatTimeRange(start: string, end: string | null): string {
 
 /** "57 min", "1 h 16 min", "2 h": how long a meeting ran, spelled out for a list. */
 export function formatMeetingLength(start: string | null, end: string | null): string {
-  if (!start || !end) return "";
-  const mins = Math.floor((Date.parse(end) - Date.parse(start)) / 60_000);
-  if (mins < 1) return "< 1 min";
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  if (h === 0) return `${m} min`;
-  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+  return formatDurationSpan(start, end, { hour: " h", minute: " min" });
 }
 
 /**

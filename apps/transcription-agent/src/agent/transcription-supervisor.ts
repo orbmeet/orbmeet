@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { childController, sleep } from "../abort.js";
+import { sleep } from "../abort.js";
 import {
   recordTranscriptionConnectionStatus,
   removeTranscriptionConnectionStatus,
@@ -38,7 +38,7 @@ export interface TranscriptionSupervisorOptions {
  * Keeps one Deepgram connection transcribing the job's audio source.
  *
  * It is the single owner of the job's transcription work. Every attempt runs
- * in a child of the supervisor's scope, so `close()` ends a retry wait, an
+ * with a signal linked to the supervisor's scope, so `close()` ends a retry wait, an
  * opening socket or a live connection alike, at once. A language change stops
  * the current attempt gracefully and the loop opens the next in the new
  * language; nothing else is queued behind it.
@@ -124,13 +124,14 @@ export class TranscriptionSupervisor {
         await this.untilEnabled();
         continue;
       }
-      const controller = childController(this.scope.signal);
+      const controller = new AbortController();
+      const signal = AbortSignal.any([this.scope.signal, controller.signal]);
       let openedAt: number | null = null;
       const attempt = new DeepgramAttempt({
         open: this.options.open,
         language: this.language,
         source: this.options.source,
-        signal: controller.signal,
+        signal,
         onEvent: this.options.onEvent,
         onOpen: () => {
           openedAt = now();

@@ -389,36 +389,39 @@ function unpinnedRestorePointSql() {
   )`;
 }
 
+function preparedRevisionSelectColumns(prepared: PreparedWhiteboardRevision) {
+  const values = prepared.values;
+  const createdAtSeconds = Math.floor((values.createdAt ?? new Date()).getTime() / 1000);
+  return {
+    id: sql<string>`${values.id}`.as("id"),
+    whiteboardId: sql<string>`${values.whiteboardId}`.as("whiteboard_id"),
+    spaceId: sql<string>`${values.spaceId}`.as("space_id"),
+    revisionNumber: nextWhiteboardRevisionNumber(values.whiteboardId).as("revision_number"),
+    kind: sql<typeof values.kind>`${values.kind}`.as("kind"),
+    sourceMeetingId: sql<string | null>`${values.sourceMeetingId ?? null}`.as("source_meeting_id"),
+    snapshotR2Key: sql<string>`${values.snapshotR2Key}`.as("snapshot_r2_key"),
+    snapshotHash: sql<string | null>`${values.snapshotHash ?? null}`.as("snapshot_hash"),
+    assetManifest: sql<string | null>`${values.assetManifest ?? null}`.as("asset_manifest"),
+    documentClock: sql<number | null>`${values.documentClock ?? null}`.as("document_clock"),
+    snapshotSize: sql<number>`${values.snapshotSize}`.as("snapshot_size"),
+    createdByUserId: sql<string | null>`${values.createdByUserId ?? null}`.as(
+      "created_by_user_id",
+    ),
+    createdAt: sql<number>`${createdAtSeconds}`.as("created_at"),
+  };
+}
+
 function insertPreparedWhiteboardRevision(
   db: Database,
   prepared: PreparedWhiteboardRevision,
   maxRestorePoints: number,
 ) {
   const values = prepared.values;
-  const createdAtSeconds = Math.floor((values.createdAt ?? new Date()).getTime() / 1000);
   return db
     .insert(whiteboardRevisions)
     .select(
       db
-        .select({
-          id: sql<string>`${values.id}`.as("id"),
-          whiteboardId: sql<string>`${values.whiteboardId}`.as("whiteboard_id"),
-          spaceId: sql<string>`${values.spaceId}`.as("space_id"),
-          revisionNumber: nextWhiteboardRevisionNumber(values.whiteboardId).as("revision_number"),
-          kind: sql<typeof values.kind>`${values.kind}`.as("kind"),
-          sourceMeetingId: sql<string | null>`${values.sourceMeetingId ?? null}`.as(
-            "source_meeting_id",
-          ),
-          snapshotR2Key: sql<string>`${values.snapshotR2Key}`.as("snapshot_r2_key"),
-          snapshotHash: sql<string | null>`${values.snapshotHash ?? null}`.as("snapshot_hash"),
-          assetManifest: sql<string | null>`${values.assetManifest ?? null}`.as("asset_manifest"),
-          documentClock: sql<number | null>`${values.documentClock ?? null}`.as("document_clock"),
-          snapshotSize: sql<number>`${values.snapshotSize}`.as("snapshot_size"),
-          createdByUserId: sql<string | null>`${values.createdByUserId ?? null}`.as(
-            "created_by_user_id",
-          ),
-          createdAt: sql<number>`${createdAtSeconds}`.as("created_at"),
-        })
+        .select(preparedRevisionSelectColumns(prepared))
         .from(whiteboards)
         .where(
           and(
@@ -450,28 +453,9 @@ function insertPreparedMeetingWhiteboardRevision(
   capturedSnapshotR2Key: string,
 ) {
   const values = prepared.values;
-  const createdAtSeconds = Math.floor((values.createdAt ?? new Date()).getTime() / 1000);
   return db.insert(whiteboardRevisions).select(
     db
-      .select({
-        id: sql<string>`${values.id}`.as("id"),
-        whiteboardId: sql<string>`${values.whiteboardId}`.as("whiteboard_id"),
-        spaceId: sql<string>`${values.spaceId}`.as("space_id"),
-        revisionNumber: nextWhiteboardRevisionNumber(values.whiteboardId).as("revision_number"),
-        kind: sql<typeof values.kind>`${values.kind}`.as("kind"),
-        sourceMeetingId: sql<string | null>`${values.sourceMeetingId ?? null}`.as(
-          "source_meeting_id",
-        ),
-        snapshotR2Key: sql<string>`${values.snapshotR2Key}`.as("snapshot_r2_key"),
-        snapshotHash: sql<string | null>`${values.snapshotHash ?? null}`.as("snapshot_hash"),
-        assetManifest: sql<string | null>`${values.assetManifest ?? null}`.as("asset_manifest"),
-        documentClock: sql<number | null>`${values.documentClock ?? null}`.as("document_clock"),
-        snapshotSize: sql<number>`${values.snapshotSize}`.as("snapshot_size"),
-        createdByUserId: sql<string | null>`${values.createdByUserId ?? null}`.as(
-          "created_by_user_id",
-        ),
-        createdAt: sql<number>`${createdAtSeconds}`.as("created_at"),
-      })
+      .select(preparedRevisionSelectColumns(prepared))
       .from(meetingWhiteboards)
       .where(
         and(

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { OPS } from "./catalog.ts";
-import { loadInventory, mediaNodes, rtcHost, turnHost, whiteboardHost, whiteboardNodes } from "./inventory.ts";
+import { loadInventory, mediaNodes, whiteboardNodes } from "./inventory.ts";
 import { INVENTORY, inventory } from "./test-fixtures.ts";
 
 // The production inventory stays on the operator's machine (.gitignore): a
@@ -24,9 +24,6 @@ describe("inventory", () => {
     expect(inv.nodes.my1.weight).toBe(1);
     // No region given: the node is a region of its own.
     expect(inv.nodes.my1.region).toBe("my1");
-    expect(rtcHost(inv, "my1")).toBe("my1.rtc.app.example.com");
-    expect(turnHost(inv, "my1")).toBe("my1.turn.app.example.com");
-    expect(whiteboardHost(inv, "sg1")).toBe("sg1.whiteboard.app.example.com");
   });
 
   it("lets any number of nodes run the whiteboard, or none", () => {

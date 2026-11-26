@@ -1,5 +1,5 @@
 import * as React from "react";
-import type { Room } from "livekit-client";
+import type { Participant, Room } from "livekit-client";
 import { PARTICIPANT_ATTRIBUTE, parseScreenShareAsk } from "@/modules/meetings/contract/live-state";
 import { decideScreenShare } from "@/modules/meetings/server/runtime/live.functions";
 import { useRoomParticipants } from "./use-meeting-live-state";
@@ -18,16 +18,18 @@ export interface PendingScreenShareRequest {
  */
 export function useLiveKitScreenShare({
   room,
+  participants: providedParticipants,
   meetingId,
   connectionId,
   isAdmin,
 }: {
   room: Room | undefined;
+  participants?: Participant[];
   meetingId: string;
   connectionId: string;
   isAdmin: boolean;
 }) {
-  const participants = useRoomParticipants(room);
+  const participants = useRoomParticipants(room, providedParticipants);
   const ownAsk = parseScreenShareAsk(room?.localParticipant.attributes[PARTICIPANT_ATTRIBUTE.screenShare]);
 
   // When each request was first seen here, for ordering the moderator's list.

@@ -1,4 +1,4 @@
-import { decodeBase64Url } from "@orbmeet/primitives";
+import { decodeBase64Url, sha256Hex as fullSha256Hex } from "@orbmeet/primitives";
 
 export { encodeBase64Url as base64urlEncode } from "@orbmeet/primitives";
 
@@ -41,8 +41,5 @@ export function importHmacSha256Key(
  * 2^64 distinct inputs, far past anything this system can hold.
  */
 export async function sha256Hex(input: string, chars = 64): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
-  let hex = "";
-  for (const byte of new Uint8Array(digest)) hex += byte.toString(16).padStart(2, "0");
-  return hex.slice(0, chars);
+  return (await fullSha256Hex(input)).slice(0, chars);
 }

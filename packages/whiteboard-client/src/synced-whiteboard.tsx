@@ -5,6 +5,7 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
+  useRef,
   type ReactNode,
   type Ref,
 } from "react";
@@ -19,7 +20,10 @@ import {
 import { GlowLaserOverlayUtil, GlowCollaboratorLaserOverlayUtil } from "./toolbar/glow-laser-overlay";
 import { useWhiteboardSync } from "./sync/use-whiteboard-sync";
 import type { WhiteboardConnectAttempt } from "./sync/whiteboard-socket-adapter";
-import { WhiteboardToolbarContext } from "./toolbar/whiteboard-toolbar-context";
+import {
+  WhiteboardToolbarContext,
+  type WhiteboardOverlayActions,
+} from "./toolbar/whiteboard-toolbar-context";
 import { isShowingSources, setShowingSources } from "./sources/show-sources-state";
 import { WhiteboardPageRail } from "./pages/whiteboard-page-rail";
 import { useWhiteboardPageThumbnails } from "./pages/use-page-thumbnails";
@@ -33,7 +37,6 @@ import { useWhiteboardPageAddRequests } from "./pages/use-whiteboard-page-add-re
 import type { AddWhiteboardPageFn as AddWhiteboardPageFunction } from "./pages/use-whiteboard-page-add-requests";
 import type { WhiteboardToastFn } from "./chrome/whiteboard-toast";
 import { usePageImagePreloader } from "./pages/use-page-image-preloader";
-import { buildWhiteboardConnectUrl } from "./sync/service-endpoints";
 import { installCanvasTransformGuard } from "./editor/install-canvas-transform-guard";
 import {
   WhiteboardCanvasSlotsContext,
@@ -44,7 +47,6 @@ import {
 import type { WhiteboardClientCapabilities } from "./editor/client-capabilities";
 import { StrokeEraserTool } from "./toolbar/stroke-eraser-tool";
 import { ScreenshotTool } from "./toolbar/screenshot-tool";
-import { TableTool } from "./shapes/table/table-tool";
 import { WHITEBOARD_CONFIG } from "@orbmeet/whiteboard-core/config";
 import { shapeAuthorOf } from "@orbmeet/whiteboard-core/shape-author";
 import { border, danger, neutral, surface, violet, warning } from "@orbmeet/ui/tokens/colors.stylex";
@@ -95,14 +97,14 @@ import { useBoardHostNotifications } from "./sync/use-board-host-notifications";
 import { useBoardChrome } from "./chrome/use-board-chrome";
 import { useRoomNavigation } from "./camera/use-room-navigation";
 import { WHITEBOARD_RECORD_SCHEMAS } from "@orbmeet/whiteboard-core/room-schema";
-import { WHITEBOARD_EVENTS } from "@orbmeet/whiteboard-core/protocol";
+import { buildWhiteboardConnectUrl, WHITEBOARD_EVENTS } from "@orbmeet/whiteboard-core/protocol";
 import { readPageTarget } from "@orbmeet/whiteboard-core/sync-commands";
 import { useBoardAssistant } from "./assistant/use-board-assistant";
 import { createRoomChannel } from "./sync/room-channel";
 import type { RoomMessage } from "@orbmeet/whiteboard-core/room-messages";
 
 // Stable arrays — defined outside component to prevent tldraw remount
-const whiteboardTools = [StrokeEraserTool, ScreenshotTool, TableTool];
+const whiteboardTools = [StrokeEraserTool, ScreenshotTool];
 const LazyAssistantPanel = lazy(async () => {
   const module = await import("./assistant/assistant-panel");
   return { default: module.AssistantPanel };
@@ -673,16 +675,8 @@ export function SyncedWhiteboard({
     addPageLocally: wb.addPage,
     insertPageAfterLocally: wb.insertPageAfter,
   });
-  const canRequestAddPages = canAddPages && !isAddingPage;
 
-  // Adding a page is two operations, kept where each one reads. A bare "+"
-  // appends: the rail's foot button and pull-to-create both sit past the last
-  // page, and appending renumbers nothing for the rest of the room. Inserting
-  // is positional — the rail's between-thumbnail carets — or, in the toolbar,
-  // relative to the page you are looking at.
-  const insertPageAfterCurrentAndSync = useCallback(() => {
-    insertPageAfterAndSync(navigator?.currentPage.get() ?? 1);
-  }, [navigator, insertPageAfterAndSync]);
+  const overlayActionsRef = useRef<WhiteboardOverlayActions>({});
 
   const toolbarContextValue = useMemo(
     () => ({
@@ -690,9 +684,6 @@ export function SyncedWhiteboard({
       onPagesChanged: wb.onPagesChanged,
       currentPage: wb.currentPage,
       pages: wb.pages,
-      onAddPage: canRequestAddPages ? insertPageAfterCurrentAndSync : undefined,
-      onInsertPageAfter: canRequestAddPages ? insertPageAfterAndSync : undefined,
-      onClearPage: pageDialogs.clearPage,
       onPageChange: turnPage,
       canEditWhiteboard: canMutateWhiteboard,
       canManagePages,
@@ -705,11 +696,10 @@ export function SyncedWhiteboard({
       aiEnabled: showsAssistantPanel,
       isAiPanelOpen,
       onToggleAi: toggleAssistant,
-      isLoading,
-      isConnected: syncOnline,
       whiteboardUrl,
       whiteboardToken: token,
       onToast,
+      overlayActionsRef,
     }),
     [
       wb.onPagesChanged,
@@ -718,18 +708,12 @@ export function SyncedWhiteboard({
       pageManager,
       canMutateWhiteboard,
       canManagePages,
-      canRequestAddPages,
-      insertPageAfterAndSync,
-      insertPageAfterCurrentAndSync,
-      pageDialogs.clearPage,
       turnPage,
       uploadFile,
       pdfLibrary,
       navigator,
       isCompactChrome,
       canvasChrome.isMeetingPhonePortrait,
-      isLoading,
-      syncOnline,
       isAiPanelOpen,
       toggleAssistant,
       showsAssistantPanel,

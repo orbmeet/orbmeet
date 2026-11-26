@@ -1,233 +1,205 @@
-import { chat } from "@tanstack/ai";
+import * as v from "valibot";
 import { describe, expect, it, vi } from "vitest";
-import { createGeminiTextAdapter, MAX_SSE_EVENT_LENGTH, splitSseEvents, toGeminiSchema } from "./gemini";
+import { generateGeminiJson, toGeminiSchema } from "./gemini";
 
 type FetchMock = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
-function streamFromText(text: string): ReadableStream<Uint8Array> {
-  return new ReadableStream({
-    start(controller) {
-      controller.enqueue(new TextEncoder().encode(text));
-      controller.close();
-    },
-  });
-}
+const sampleSchema = v.object({
+  summary: v.string(),
+  count: v.optional(v.number()),
+});
 
-describe("createGeminiTextAdapter", () => {
-  it("authenticates Gemini Developer API requests with x-goog-api-key", async () => {
+describe("generateGeminiJson", () => {
+  it("authenticates with x-goog-api-key and sends a schema-constrained request", async () => {
     const fetchMock = vi.fn<FetchMock>(async () =>
-      new Response(
-        streamFromText('data: {"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}\n\n'),
-        { status: 200 },
-      ),
+      Response.json({
+        candidates: [{ content: { parts: [{ text: JSON.stringify({ summary: "Done", count: 2 }) }] } }],
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const adapter = createGeminiTextAdapter("gemini-3.5-flash", "test-api-key");
+    const result = await generateGeminiJson({
+      apiKey: "test-api-key",
+      model: "gemini-3.5-flash",
+      prompt: "Summarize this",
+      systemPrompt: "Be concise",
+      schema: sampleSchema,
+      timeoutMs: 5_000,
+    });
 
-    for await (const _chunk of chat({
-      adapter,
-      messages: [{ role: "user", content: "Hello" }],
-    })) {
-      // Drain the stream so the request is issued.
-    }
-
+    expect(result).toEqual({ summary: "Done", count: 2 });
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0];
-    expect(String(url)).toContain(
-      "/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse",
-    );
-    expect(init?.headers).toMatchObject({
+    expect(String(url)).toContain("/v1beta/models/gemini-3.5-flash:generateContent");
+    expect(init?.headers).toEqual({
       "Content-Type": "application/json",
       "x-goog-api-key": "test-api-key",
     });
     expect(init?.headers).not.toHaveProperty("Authorization");
-  });
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
 
-  it("parses streamed Gemini SSE text chunks", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn<FetchMock>(async () =>
-        new Response(
-          streamFromText(
-            [
-              'data: {"candidates":[{"content":{"parts":[{"text":"Hello "}]} }]}',
-              'data: {"candidates":[{"content":{"parts":[{"text":"world"}]}}]}',
-              "",
-            ].join("\n\n"),
-          ),
-          { status: 200 },
-        ),
-      ),
-    );
-
-    const adapter = createGeminiTextAdapter("gemini-3.5-flash", "test-api-key");
-    const textChunks: string[] = [];
-
-    for await (const chunk of chat({
-      adapter,
-      messages: [{ role: "user", content: "Hello" }],
-    })) {
-      if (chunk.type === "TEXT_MESSAGE_CONTENT") {
-        textChunks.push(chunk.delta);
-      }
-    }
-
-    expect(textChunks.join("")).toBe("Hello world");
-  });
-
-  it("parses a final Gemini SSE event without a trailing newline", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn<FetchMock>(async () =>
-        new Response(
-          streamFromText('data: {"candidates":[{"content":{"parts":[{"text":"tail"}]}}]}'),
-          { status: 200 },
-        ),
-      ),
-    );
-
-    const adapter = createGeminiTextAdapter("gemini-3.5-flash", "test-api-key");
-    const textChunks: string[] = [];
-
-    for await (const chunk of chat({
-      adapter,
-      messages: [{ role: "user", content: "Hello" }],
-    })) {
-      if (chunk.type === "TEXT_MESSAGE_CONTENT") {
-        textChunks.push(chunk.delta);
-      }
-    }
-
-    expect(textChunks.join("")).toBe("tail");
-  });
-
-  it("ends the message and emits a run error when Gemini reports a blocked prompt", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn<FetchMock>(async () =>
-        new Response(
-          streamFromText('data: {"promptFeedback":{"blockReason":"SAFETY"}}\n\n'),
-          { status: 200 },
-        ),
-      ),
-    );
-
-    const adapter = createGeminiTextAdapter("gemini-3.5-flash", "test-api-key");
-
-    const chunks = [];
-    for await (const chunk of adapter.chatStream({
-        adapter,
-        messages: [{ role: "user", content: "Hello" }],
-        systemPrompts: [],
-        modelOptions: {},
-        logger: { request: vi.fn() },
-      } as never)) {
-      chunks.push(chunk);
-    }
-    expect(chunks.map((chunk) => chunk.type)).toEqual([
-      "RUN_STARTED",
-      "TEXT_MESSAGE_START",
-      "TEXT_MESSAGE_END",
-      "RUN_ERROR",
-    ]);
-    expect(chunks.at(-1)).toMatchObject({
-      message: "Gemini stream failed",
-      code: "PROVIDER_STREAM_ERROR",
-    });
-    // The provider's diagnostics stay in the server log, never in the stream.
-    expect(consoleError).toHaveBeenCalledOnce();
-    expect(JSON.parse(consoleError.mock.calls[0][0] as string)).toMatchObject({
-      level: "error",
-      msg: "[gemini-stream] Provider stream failed",
-      args: [{ message: "Gemini prompt blocked: SAFETY" }],
-    });
-    consoleError.mockRestore();
-  });
-
-  it("does not finish a stream after its abort signal is set", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn<FetchMock>(async () =>
-        new Response(
-          streamFromText('data: {"candidates":[{"content":{"parts":[{"text":"partial"}]}}]}\n\n'),
-          { status: 200 },
-        ),
-      ),
-    );
-    const adapter = createGeminiTextAdapter("gemini-3.5-flash", "test-api-key");
-    const abortController = new AbortController();
-    abortController.abort(new Error("summary cancelled"));
-
-    await expect(async () => {
-      for await (const _chunk of adapter.chatStream({
-        messages: [{ role: "user", content: "Hello" }],
-        systemPrompts: [],
-        modelOptions: {},
-        abortController,
-        logger: { request: vi.fn() },
-      } as never)) {
-        // Drain the adapter directly so a false RUN_FINISHED is observable.
-      }
-    }).rejects.toThrow("summary cancelled");
-  });
-
-  it("honors the request signal supplied by the chat engine", async () => {
-    let seenSignal: AbortSignal | null | undefined;
-    vi.stubGlobal("fetch", vi.fn<FetchMock>((_input, init) => {
-      seenSignal = init?.signal;
-      return new Promise<Response>(() => undefined);
-    }));
-    const adapter = createGeminiTextAdapter("gemini-3.5-flash", "test-api-key");
-    const abortController = new AbortController();
-    const draining = (async () => {
-      for await (const _chunk of adapter.chatStream({
-        messages: [{ role: "user", content: "Hello" }],
-        systemPrompts: [],
-        modelOptions: {},
-        request: { signal: abortController.signal },
-        logger: { request: vi.fn() },
-      } as never)) {
-        // Drain until cancellation.
-      }
-    })();
-    abortController.abort(new Error("summary cancelled"));
-    await expect(draining).rejects.toThrow("summary cancelled");
-    expect(seenSignal).toBe(abortController.signal);
-  });
-
-  it("cancels and unlocks the Gemini body when the stream consumer leaves early", async () => {
-    const cancel = vi.fn();
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(
-          'data: {"candidates":[{"content":{"parts":[{"text":"partial"}]}}]}\n\n',
-        ));
+    const sentBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    expect(sentBody).toMatchObject({
+      systemInstruction: { parts: [{ text: "Be concise" }] },
+      contents: [{ role: "user", parts: [{ text: "Summarize this" }] }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "object",
+          properties: {
+            summary: { type: "string" },
+            count: { type: "number" },
+          },
+          required: ["summary"],
+        },
       },
-      cancel,
     });
+  });
+
+  it("skips internal thought parts when assembling structured JSON", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn<FetchMock>(async () => new Response(body, { status: 200 })),
+      vi.fn<FetchMock>(async () =>
+        Response.json({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  { text: "internal reasoning not json", thought: true },
+                  { text: '{"summary":"Visible"}' },
+                ],
+              },
+            },
+          ],
+        }),
+      ),
     );
-    const adapter = createGeminiTextAdapter("gemini-3.5-flash", "test-api-key");
-    const stream = adapter.chatStream({
-      messages: [{ role: "user", content: "Hello" }],
-      systemPrompts: [],
-      modelOptions: {},
-      logger: { request: vi.fn() },
-    } as never)[Symbol.asyncIterator]();
 
-    await stream.next();
-    await stream.next();
-    await expect(stream.next()).resolves.toMatchObject({
-      value: { type: "TEXT_MESSAGE_CONTENT", delta: "partial" },
-    });
-    await stream.return?.();
+    await expect(
+      generateGeminiJson({
+        apiKey: "test-api-key",
+        model: "gemini-3.5-flash",
+        prompt: "Hello",
+        schema: sampleSchema,
+      }),
+    ).resolves.toEqual({ summary: "Visible" });
+  });
 
-    expect(cancel).toHaveBeenCalledOnce();
-    expect(body.locked).toBe(false);
+  it("rejects missing API keys before issuing a network call", async () => {
+    const fetchMock = vi.fn<FetchMock>();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      generateGeminiJson({
+        apiKey: "",
+        model: "gemini-3.5-flash",
+        prompt: "Hello",
+        schema: sampleSchema,
+      }),
+    ).rejects.toThrow("Missing Gemini API key");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces non-OK HTTP statuses, blocked prompts, blocked responses, and provider errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<FetchMock>(async () => new Response("rate limited", { status: 429 })),
+    );
+    await expect(
+      generateGeminiJson({
+        apiKey: "test-api-key",
+        model: "gemini-3.5-flash",
+        prompt: "Hello",
+        schema: sampleSchema,
+      }),
+    ).rejects.toThrow("Gemini request failed (429): rate limited");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<FetchMock>(async () =>
+        Response.json({ promptFeedback: { blockReason: "SAFETY" } }),
+      ),
+    );
+    await expect(
+      generateGeminiJson({
+        apiKey: "test-api-key",
+        model: "gemini-3.5-flash",
+        prompt: "Hello",
+        schema: sampleSchema,
+      }),
+    ).rejects.toThrow("Gemini prompt blocked: SAFETY");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<FetchMock>(async () =>
+        Response.json({ candidates: [{ finishReason: "RECITATION" }] }),
+      ),
+    );
+    await expect(
+      generateGeminiJson({
+        apiKey: "test-api-key",
+        model: "gemini-3.5-flash",
+        prompt: "Hello",
+        schema: sampleSchema,
+      }),
+    ).rejects.toThrow("Gemini response blocked: RECITATION");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<FetchMock>(async () =>
+        Response.json({ error: { message: "Upstream failure" } }),
+      ),
+    );
+    await expect(
+      generateGeminiJson({
+        apiKey: "test-api-key",
+        model: "gemini-3.5-flash",
+        prompt: "Hello",
+        schema: sampleSchema,
+      }),
+    ).rejects.toThrow("Upstream failure");
+  });
+
+  it("rejects unexpected response shapes, empty output, and schema mismatches", async () => {
+    vi.stubGlobal("fetch", vi.fn<FetchMock>(async () => Response.json("not-an-object")));
+    await expect(
+      generateGeminiJson({
+        apiKey: "test-api-key",
+        model: "gemini-3.5-flash",
+        prompt: "Hello",
+        schema: sampleSchema,
+      }),
+    ).rejects.toThrow("Gemini returned an unexpected response shape");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<FetchMock>(async () => Response.json({ candidates: [{ content: { parts: [] } }] })),
+    );
+    await expect(
+      generateGeminiJson({
+        apiKey: "test-api-key",
+        model: "gemini-3.5-flash",
+        prompt: "Hello",
+        schema: sampleSchema,
+      }),
+    ).rejects.toThrow("Gemini returned an empty structured response");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<FetchMock>(async () =>
+        Response.json({
+          candidates: [{ content: { parts: [{ text: JSON.stringify({ count: "wrong" }) }] } }],
+        }),
+      ),
+    );
+    await expect(
+      generateGeminiJson({
+        apiKey: "test-api-key",
+        model: "gemini-3.5-flash",
+        prompt: "Hello",
+        schema: sampleSchema,
+      }),
+    ).rejects.toThrow();
   });
 
   it("does not expose model-controlled text in structured JSON parse errors", async () => {
@@ -240,42 +212,53 @@ describe("createGeminiTextAdapter", () => {
         }),
       ),
     );
-    const adapter = createGeminiTextAdapter("gemini-3.5-flash", "test-api-key");
 
-    const result = adapter.structuredOutput({
-      chatOptions: {
-        messages: [{ role: "user", content: "Hello" }],
-        systemPrompts: [],
-        modelOptions: {},
-        logger: { request: vi.fn() },
-      },
-      outputSchema: { type: "object" },
-    } as never);
+    const result = generateGeminiJson({
+      apiKey: "test-api-key",
+      model: "gemini-3.5-flash",
+      prompt: "Hello",
+      schema: sampleSchema,
+    });
     await expect(result).rejects.toThrow("Gemini returned invalid structured JSON");
     await expect(result).rejects.not.toThrow(modelText);
-  });
-});
-
-describe("splitSseEvents bounds", () => {
-  it("refuses a partial event that never reaches a boundary", () => {
-    // The remainder is accumulated across reads by both stream consumers, so an
-    // upstream that never sends `\n\n` grew it for the life of the stream.
-    expect(() => splitSseEvents("x".repeat(MAX_SSE_EVENT_LENGTH + 1))).toThrow(
-      /without an event boundary/,
-    );
-  });
-
-  it("still returns a complete event of the same size", () => {
-    const payload = "x".repeat(MAX_SSE_EVENT_LENGTH);
-    const { events, remainder } = splitSseEvents(`${payload}\n\n`);
-    expect(events).toEqual([payload]);
-    expect(remainder).toBe("");
   });
 });
 
 describe("toGeminiSchema", () => {
   it("turns a const into a typed one-value enum", () => {
     expect(toGeminiSchema({ const: "message" })).toEqual({ enum: ["message"], type: "string" });
-    expect(toGeminiSchema({ type: "string", const: "message" })).toEqual({ type: "string", enum: ["message"] });
+    expect(toGeminiSchema({ type: "string", const: "message" })).toEqual({
+      type: "string",
+      enum: ["message"],
+    });
+  });
+
+  it("strips unsupported JSON Schema meta keys and collapses nullable unions", () => {
+    expect(
+      toGeminiSchema({
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+        $id: "summary",
+        $defs: {},
+        definitions: {},
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          note: { type: ["string", "null"] },
+          items: {
+            type: "array",
+            items: { type: "object", additionalProperties: false, properties: { ok: { const: true } } },
+          },
+        },
+      }),
+    ).toEqual({
+      type: "object",
+      properties: {
+        note: { type: "string", nullable: true },
+        items: {
+          type: "array",
+          items: { type: "object", properties: { ok: { enum: [true], type: "boolean" } } },
+        },
+      },
+    });
   });
 });

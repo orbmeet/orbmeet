@@ -1,5 +1,5 @@
 import { signingKey, truncateCodeUnits, type Keyring } from "@orbmeet/primitives";
-import { errors, jwtVerify, SignJWT } from "jose";
+import { decodeJwt, errors, jwtVerify, SignJWT } from "jose";
 import * as v from "valibot";
 import {
   isWhiteboardGrantPrincipal,
@@ -168,4 +168,19 @@ function verificationFailure(error: unknown): string {
     return `Invalid JWT ${error.claim} claim`;
   }
   return "Invalid JWT format";
+}
+
+/**
+ * Decode a JWT's JSON payload without verifying its signature.
+ *
+ * For client-side display and refresh scheduling only — never use the returned
+ * claims for authorization. Returns `null` for malformed tokens or non-object
+ * payloads.
+ */
+export function decodeUnverifiedWhiteboardJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    return decodeJwt(token);
+  } catch {
+    return null;
+  }
 }

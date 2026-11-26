@@ -3,6 +3,7 @@ import {
   LocalVideoTrack,
   RoomEvent,
   Track,
+  type Participant,
   type Room,
   type LocalTrack,
   type LocalTrackPublication,
@@ -202,12 +203,14 @@ function createCapture(
 
 export function useMeetingScreenShare({
   roomInstance,
+  participants,
   canModerate,
   meetingId,
   connectionId,
   addToast,
 }: {
   roomInstance: Room | undefined;
+  participants?: Participant[];
   canModerate: boolean;
   meetingId: string;
   connectionId: string;
@@ -218,7 +221,7 @@ export function useMeetingScreenShare({
     ownAsk,
     approveRequest: approveScreenShareRequest,
     denyRequest: denyScreenShareRequest,
-  } = useLiveKitScreenShare({ room: roomInstance, meetingId, connectionId, isAdmin: canModerate });
+  } = useLiveKitScreenShare({ room: roomInstance, participants, meetingId, connectionId, isAdmin: canModerate });
 
   const addToastRef = useCommittedRef(addToast);
   // One capture per room connection; later props reach it through the setters

@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { PopoverContent, PopoverRoot, PopoverTrigger } from "@orbmeet/ui/react/popover";
 import {
   ChevronLeft,
   ChevronRight,
@@ -208,22 +209,12 @@ const styles = stylex.create({
   },
   handoffWordCompact: { display: { default: "none", [bp.sm]: "inline" } },
 
-  /** The scrim behind an open menu. Legacy numeric z: below the board's own
-      chrome on purpose, so the toolbar strip stays above. */
-  menuScrim: { position: "fixed", inset: 0, zIndex: 40, cursor: "default" },
   handoffMenu: {
-    position: "absolute",
-    bottom: "100%",
-    zIndex: 50,
-    marginBottom: space.s2,
     minWidth: "11rem",
     overflow: "hidden",
   },
-  handoffMenuBand: { right: 0 },
   /** Under a name in the hand-off menu: what else handing them the board does. */
   handoffItemNote: { display: "block", fontSize: text.xs, lineHeight: leading.xs, color: neutral.n600 },
-  /** The handoff sits in the top band's leading capsule, so its menu opens down from that edge. */
-  handoffMenuStart: { left: 0, right: "auto", top: "100%", bottom: "auto", marginTop: space.s2, marginBottom: 0 },
   handoffItem: {
     display: "block",
     width: "100%",
@@ -387,14 +378,8 @@ const styles = stylex.create({
 
   /** The jump-to-page grid. */
   pagePicker: {
-    position: "absolute",
-    bottom: "100%",
-    left: "50%",
-    zIndex: 50,
-    marginBottom: space.s2,
     width: "max-content",
     maxWidth: "min(20rem, calc(100vw - 2rem))",
-    transform: "translateX(-50%)",
   },
   pageGrid: {
     display: "grid",
@@ -515,9 +500,6 @@ const styles = stylex.create({
   },
   /** A view that is on, like the page picker when it is open. */
   controlButtonPressed: { color: accent.a700, backgroundColor: accent.a50 },
-
-  /** An anchoring context for a menu or picker. */
-  anchor: { position: "relative" },
 
   /** Divider geometry; the rules are `boardDivider`'s. */
   bandDivider: { height: 16, marginInline: space.s1 },
@@ -700,55 +682,47 @@ export function WhiteboardViewportControls({
   );
 
   const handoff = canHandOff && (
-      <div {...stylex.props(styles.anchor)}>
-        {/* Labeled, not a bare broadcast glyph: this hands navigation
-            control to a participant, and the words say so — except in an
-            upright phone's capsule, which has no room for them. */}
-        <button
-          type="button"
-          onClick={() => setShowHandoffMenu((value) => !value)}
-          {...stylex.props(styles.handoff, styles.handoffBand, compact && styles.handoffCompact)}
-          aria-label="Give control of the pages to someone"
-          title="Let someone else choose the page everyone sees"
-        >
-          <Radio size={16} />
-          <span {...stylex.props(compact && styles.handoffWordCompact)}>Give control</span>
-        </button>
-        {showHandoffMenu && (
-          <>
-            <button
-              type="button"
-              {...stylex.props(styles.menuScrim)}
-              aria-label="Close handoff menu"
-              onClick={() => setShowHandoffMenu(false)}
-            />
-            <div
-              {...stylex.props(
-                styles.handoffMenu,
-                boardPanel.surface,
-                boardPanel.padSm,
-                styles.handoffMenuBand,
-                regular && styles.handoffMenuStart,
-              )}
-            >
-              {handoffCandidates.map((user) => (
-                <button
-                  key={user.userId}
-                  type="button"
-                  onClick={() => void handleSetNavigationController(user)}
-                  {...stylex.props(styles.handoffItem)}
-                >
-                  {user.userName}
-                  {user.canEdit === false && (
-                    <span {...stylex.props(styles.handoffItemNote)}>Gets edit access too</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-    );
+    <PopoverRoot open={showHandoffMenu} onOpenChange={setShowHandoffMenu}>
+      {/* Labeled, not a bare broadcast glyph: this hands navigation
+          control to a participant, and the words say so — except in an
+          upright phone's capsule, which has no room for them. */}
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            {...stylex.props(styles.handoff, styles.handoffBand, compact && styles.handoffCompact)}
+            aria-label="Give control of the pages to someone"
+            title="Let someone else choose the page everyone sees"
+          >
+            <Radio size={16} />
+            <span {...stylex.props(compact && styles.handoffWordCompact)}>Give control</span>
+          </button>
+        }
+      />
+      <PopoverContent
+        title="Give control"
+        side={regular ? "bottom" : "top"}
+        align={regular ? "start" : "end"}
+        sideOffset={8}
+        collisionPadding={8}
+        sx={[styles.handoffMenu, boardPanel.surface, boardPanel.padSm]}
+      >
+        {handoffCandidates.map((user) => (
+          <button
+            key={user.userId}
+            type="button"
+            onClick={() => void handleSetNavigationController(user)}
+            {...stylex.props(styles.handoffItem)}
+          >
+            {user.userName}
+            {user.canEdit === false && (
+              <span {...stylex.props(styles.handoffItemNote)}>Gets edit access too</span>
+            )}
+          </button>
+        ))}
+      </PopoverContent>
+    </PopoverRoot>
+  );
 
   // The follow pill names the presenter, so for a plain follower it says
   // everything "Maya controls navigation" did. The navigation status stays for
@@ -868,68 +842,6 @@ export function WhiteboardViewportControls({
     </div>
   );
 
-  const pagePicker = showPagePicker ? (
-    <>
-      <button
-        type="button"
-        {...stylex.props(styles.menuScrim)}
-        aria-label="Close page picker"
-        onClick={() => setShowPagePicker(false)}
-      />
-      <div {...stylex.props(styles.pagePicker, boardPanel.surface, boardPanel.padMd)}>
-        <div {...stylex.props(styles.pageGrid)}>
-          {pages.map((page) => (
-            <button
-              key={page.id}
-              type="button"
-              onClick={() => {
-                setShowPagePicker(false);
-                onPageChange(page.number);
-              }}
-              {...stylex.props(
-                styles.pageTile,
-                page.number === currentPage ? styles.pageTileCurrent : styles.pageTileIdle,
-              )}
-            >
-              {page.number}
-            </button>
-          ))}
-        </div>
-        {(canAddPages || (canEditWhiteboard && pages.length > 1)) && (
-          <div {...stylex.props(styles.pagePickerFoot)}>
-            {canAddPages && (onInsertPageAfter || onAddPage) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPagePicker(false);
-                  handleInsert();
-                }}
-                disabled={isAddingPage}
-                {...stylex.props(styles.newPage)}
-              >
-                <Plus size={16} />
-                New page
-              </button>
-            )}
-            {canEditWhiteboard && onDeletePage && pages.length > 1 && (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPagePicker(false);
-                  onDeletePage();
-                }}
-                {...stylex.props(styles.deletePage)}
-                aria-label="Delete current page"
-              >
-                <Trash2 size={16} />
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </>
-  ) : null;
-
   // The regular board: the corner at the top, one capsule — pages, then zoom,
   // then the rarer ways of looking. The page control opens the rail of
   // thumbnails rather than a grid of numbers — the rail is the page list, so
@@ -1034,17 +946,77 @@ export function WhiteboardViewportControls({
         >
           <ChevronLeft size={16} />
         </ControlButton>
-        <div {...stylex.props(styles.anchor)}>
-          <button
-            type="button"
-            onClick={() => setShowPagePicker((value) => !value)}
-            {...stylex.props(styles.pager, compact ? styles.pagerCompact : styles.pagerRegular)}
-            aria-label={`Page ${pageLabel} of ${pageCount}. Choose page`}
+        <PopoverRoot open={showPagePicker} onOpenChange={setShowPagePicker}>
+          <PopoverTrigger
+            render={
+              <button
+                type="button"
+                {...stylex.props(styles.pager, compact ? styles.pagerCompact : styles.pagerRegular)}
+                aria-label={`Page ${pageLabel} of ${pageCount}. Choose page`}
+              >
+                {pageLabel} / {pageCount}
+              </button>
+            }
+          />
+          <PopoverContent
+            title="Choose page"
+            side="top"
+            align="center"
+            sideOffset={8}
+            collisionPadding={8}
+            sx={[styles.pagePicker, boardPanel.surface, boardPanel.padMd]}
           >
-            {pageLabel} / {pageCount}
-          </button>
-          {pagePicker}
-        </div>
+            <div {...stylex.props(styles.pageGrid)}>
+              {pages.map((page) => (
+                <button
+                  key={page.id}
+                  type="button"
+                  onClick={() => {
+                    setShowPagePicker(false);
+                    onPageChange(page.number);
+                  }}
+                  {...stylex.props(
+                    styles.pageTile,
+                    page.number === currentPage ? styles.pageTileCurrent : styles.pageTileIdle,
+                  )}
+                >
+                  {page.number}
+                </button>
+              ))}
+            </div>
+            {(canAddPages || (canEditWhiteboard && pages.length > 1)) && (
+              <div {...stylex.props(styles.pagePickerFoot)}>
+                {canAddPages && (onInsertPageAfter || onAddPage) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPagePicker(false);
+                      handleInsert();
+                    }}
+                    disabled={isAddingPage}
+                    {...stylex.props(styles.newPage)}
+                  >
+                    <Plus size={16} />
+                    New page
+                  </button>
+                )}
+                {canEditWhiteboard && onDeletePage && pages.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPagePicker(false);
+                      onDeletePage();
+                    }}
+                    {...stylex.props(styles.deletePage)}
+                    aria-label="Delete current page"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
+            )}
+          </PopoverContent>
+        </PopoverRoot>
         <ControlButton
           label="Next page"
           onClick={() => onPageChange(Math.min(pageCount, currentPage + 1))}

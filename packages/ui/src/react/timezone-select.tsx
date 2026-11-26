@@ -4,7 +4,7 @@ import { Check, ChevronDown, Search } from "lucide-react";
 import * as React from "react";
 import { currentTimeZoneName } from "@orbmeet/public-api-contract/time-zone";
 
-import { layout } from "../styles/atoms";
+import { layout, motion } from "../styles/atoms";
 import { control, listbox } from "../styles/controls";
 import { ink } from "../tokens/colors.stylex";
 import { space } from "../tokens/space.stylex";
@@ -196,7 +196,7 @@ export function TimeZoneSelect({ label, value, onChange }: TimeZoneSelectProps) 
           collisionPadding={12}
           {...stylex.props(listbox.positioner)}
         >
-          <Combobox.Popup {...stylex.props(listbox.popup, listbox.matchAnchorWidth)}>
+          <Combobox.Popup {...stylex.props(motion.popup, motion.popupAnchored, listbox.popup, listbox.matchAnchorWidth)}>
             <div {...stylex.props(listbox.searchRow)}>
               <Search size={14} {...stylex.props(listbox.searchIcon)} />
               <Combobox.Input

@@ -13,9 +13,8 @@ import { env } from "../tokens/media.stylex";
  *   - `listening`: transcription is on. The face drifts in and out, slowly,
  *     like breathing — the crescent thins and fattens.
  *   - `thinking`: Orb is working on a request. The light orbits the sphere.
- *   - `speaking`: Orb is answering. A quick pulse of the whole mark.
  */
-export type BrandMarkState = "rest" | "listening" | "thinking" | "speaking";
+export type BrandMarkState = "rest" | "listening" | "thinking";
 
 const kfBreathe = stylex.keyframes({
   "0%, 100%": { transform: "translate(0, 0)" },
@@ -27,13 +26,6 @@ const kfOrbit = stylex.keyframes({
   to: { transform: "rotate(360deg)" },
 });
 
-const kfSpeak = stylex.keyframes({
-  "0%, 100%": { transform: "scale(1)" },
-  "25%": { transform: "scale(1.07)" },
-  "55%": { transform: "scale(0.97)" },
-  "75%": { transform: "scale(1.04)" },
-});
-
 const REDUCED = env.reducedMotion;
 
 const styles = stylex.create({
@@ -42,8 +34,8 @@ const styles = stylex.create({
   shade: { fill: violet.v600 },
   /** The lit face, set up and to the left of the shade. */
   face: { fill: violet.v400, transformBox: "view-box", transformOrigin: "16px 16px" },
-  // Listening and speaking are decoration: with reduced motion they park on
-  // the resting mark, which still reads as the logo.
+  // Listening is decoration: with reduced motion it parks on the resting mark,
+  // which still reads as the logo.
   listening: {
     animationName: { default: kfBreathe, [REDUCED]: "none" },
     animationDuration: "2.6s",
@@ -55,19 +47,6 @@ const styles = stylex.create({
     animationName: kfOrbit,
     animationDuration: "1.6s",
     animationTimingFunction: "linear",
-    animationIterationCount: "infinite",
-  },
-  speakingFace: {
-    animationName: { default: kfBreathe, [REDUCED]: "none" },
-    animationDuration: "0.55s",
-    animationTimingFunction: "ease-in-out",
-    animationIterationCount: "infinite",
-  },
-  speakingRoot: {
-    transformOrigin: "center",
-    animationName: { default: kfSpeak, [REDUCED]: "none" },
-    animationDuration: "1.1s",
-    animationTimingFunction: "ease-in-out",
     animationIterationCount: "infinite",
   },
 });
@@ -110,7 +89,7 @@ export function BrandMark({ size = 28, title, state = "rest", sx }: BrandMarkPro
       role={title ? "img" : undefined}
       aria-label={title}
       aria-hidden={title ? undefined : true}
-      {...stylex.props(styles.root, state === "speaking" && styles.speakingRoot, sx)}
+      {...stylex.props(styles.root, sx)}
     >
       <defs>
         <clipPath id={clipId}>
@@ -127,7 +106,6 @@ export function BrandMark({ size = 28, title, state = "rest", sx }: BrandMarkPro
             styles.face,
             state === "listening" && styles.listening,
             state === "thinking" && styles.thinking,
-            state === "speaking" && styles.speakingFace,
           )}
         />
       </g>

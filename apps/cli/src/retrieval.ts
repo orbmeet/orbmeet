@@ -1,11 +1,13 @@
-import type { PublicTranscript } from "@orbmeet/public-api-contract";
+import {
+  publicMeetingResponseSchema,
+  publicMeetingTranscriptPageResponseSchema,
+  publicTranscriptSchema,
+  type PublicTranscript,
+} from "@orbmeet/public-api-contract";
 
 import {
   MAX_PAGINATION_PAGES,
   parseResponse,
-  publicMeetingResponseSchema,
-  publicMeetingTranscriptPageResponseSchema,
-  publicTranscriptSchema,
   type ApiRequest,
   type RetrievedMeeting,
 } from "./api.ts";

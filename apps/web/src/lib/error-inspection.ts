@@ -62,14 +62,6 @@ export function getServerErrorStatusCode(error: unknown): number | undefined {
   );
 }
 
-export function getServerErrorStringValue(error: unknown, key: string): string | undefined {
-  return getNestedServerErrorValue(
-    error,
-    key,
-    (value): value is string => typeof value === "string" && value.length > 0,
-  );
-}
-
 /**
  * Type guard to check if error is a ServerFunctionError
  */

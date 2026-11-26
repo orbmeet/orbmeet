@@ -100,14 +100,12 @@ export const control = stylex.create({
   field: { width: "100%" },
 });
 
-const STARTING = ":is([data-starting-style])";
-const ENDING = ":is([data-ending-style])";
 const HIGHLIGHTED = ":is([data-highlighted])";
 const SELECTED = ":is([data-selected])";
 const SELECTED_HIGHLIGHTED = ":is([data-selected][data-highlighted])";
 const DISABLED = ":is([data-disabled])";
 
-/** The list a control opens. */
+/** The list a control opens. Pair `popup` with `motion.popup` and `motion.popupAnchored`. */
 export const listbox = stylex.create({
   positioner: { zIndex: zIndex.popover, outlineStyle: "none" },
   popup: {
@@ -118,12 +116,6 @@ export const listbox = stylex.create({
     backgroundColor: surface.raised,
     boxShadow: `0 12px 40px color-mix(in oklab, ${scrimBase.black} 15%, transparent)`,
     overflow: "hidden",
-    transformOrigin: "var(--transform-origin)",
-    opacity: { default: 1, [STARTING]: 0, [ENDING]: 0 },
-    scale: { default: 1, [STARTING]: 0.95, [ENDING]: 0.95 },
-    transitionProperty: "opacity, scale",
-    transitionDuration: { default: duration.fast, [env.reducedMotion]: "0s" },
-    transitionTimingFunction: easing.gentle,
   },
   /** Base UI publishes the trigger's box, so the list can match its width. */
   anchorWidth: { minWidth: "var(--anchor-width)" },

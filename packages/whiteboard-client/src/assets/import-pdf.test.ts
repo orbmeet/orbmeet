@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TLShapeId } from "tldraw";
 import type { PageManager } from "../pages/page-manager";
-import { importPdfToWhiteboard } from "./import-pdf";
-import { PdfImportPartialError } from "./pdf-import-partial-error";
+import { importPdfToWhiteboard, PdfImportPartialError } from "./import-pdf";
 
 const JOB_ID = "00000000-0000-4000-8000-000000000001";
 const START_URL = "https://whiteboard.example/pdf-import";

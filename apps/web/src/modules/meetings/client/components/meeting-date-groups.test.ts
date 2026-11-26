@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   formatDayLabel,
-  formatMeetingTimeRange,
   groupMeetingsByDay,
 } from "./meeting-date-groups";
 
@@ -11,44 +10,6 @@ const NOW = new Date(2026, 6, 10, 15, 0);
 function iso(year: number, month: number, day: number, hour = 12, minute = 0): string {
   return new Date(year, month, day, hour, minute).toISOString();
 }
-
-describe("formatMeetingTimeRange", () => {
-  it("formats a same-day range", () => {
-    const start = new Date(2026, 6, 10, 6, 58);
-    const end = new Date(2026, 6, 10, 7, 0);
-    const expected = new Intl.DateTimeFormat([], {
-      hour: "numeric",
-      minute: "2-digit",
-    }).formatRange(start, end);
-    expect(formatMeetingTimeRange(start.toISOString(), end.toISOString())).toBe(expected);
-  });
-
-  it("appends the end date when the meeting crosses midnight", () => {
-    const start = new Date(2026, 6, 9, 23, 13);
-    const end = new Date(2026, 6, 10, 1, 2);
-    const result = formatMeetingTimeRange(start.toISOString(), end.toISOString());
-    const time = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit" });
-    expect(result).toBe(`${time.format(start)} – ${time.format(end)} (${formatDayLabel(end)})`);
-  });
-
-  it("falls back to the start time without an end", () => {
-    const start = new Date(2026, 6, 10, 6, 58);
-    const expected = new Intl.DateTimeFormat([], {
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(start);
-    expect(formatMeetingTimeRange(start.toISOString(), null)).toBe(expected);
-  });
-
-  it("falls back to the start time when the end is not after the start", () => {
-    const start = new Date(2026, 6, 10, 6, 58);
-    const expected = new Intl.DateTimeFormat([], {
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(start);
-    expect(formatMeetingTimeRange(start.toISOString(), start.toISOString())).toBe(expected);
-  });
-});
 
 describe("formatDayLabel", () => {
   it("omits the year for the current year and includes it otherwise", () => {

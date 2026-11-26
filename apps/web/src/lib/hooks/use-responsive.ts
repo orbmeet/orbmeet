@@ -20,7 +20,11 @@ export interface ResponsiveState {
   controlBarAutoHide: boolean;
   /** True when panels should render as bottom sheets */
   useBottomSheet: boolean;
+  /** True when the viewport is short (`max-height: 600px`, matching `env.shortWindow`) */
+  isShortWindow: boolean;
 }
+
+const SHORT_WINDOW_MAX_HEIGHT_PX = 600;
 
 function computeState(): ResponsiveState {
   if (typeof window === "undefined") return DESKTOP_DEFAULT;
@@ -34,6 +38,7 @@ function computeState(): ResponsiveState {
     ...classified,
     isCompact: classified.isNarrow,
     controlBarAutoHide: classified.isPhone && classified.isLandscape,
+    isShortWindow: window.innerHeight <= SHORT_WINDOW_MAX_HEIGHT_PX,
   };
 }
 
@@ -48,6 +53,7 @@ const DESKTOP_DEFAULT: ResponsiveState = {
   isCompact: false,
   controlBarAutoHide: false,
   useBottomSheet: false,
+  isShortWindow: false,
 };
 
 let cache: ResponsiveState | null = null;

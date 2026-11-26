@@ -5,7 +5,6 @@ import {
   cancelMeetingScheduleSchema,
   createAutomationMeetingScheduleSchema,
   createMeetingScheduleSchema,
-  getMeetingScheduleSchema,
   rescheduleMeetingSchema,
 } from "./scheduling";
 
@@ -50,7 +49,6 @@ describe("meeting schedule timestamps", () => {
 
 describe("meeting schedule mutation boundaries", () => {
   it.each([
-    ["get", getMeetingScheduleSchema, { scheduleId: "schedule_1" }],
     [
       "cancel",
       cancelMeetingScheduleSchema,
@@ -66,7 +64,6 @@ describe("meeting schedule mutation boundaries", () => {
   });
 
   it.each([
-    getMeetingScheduleSchema,
     cancelMeetingScheduleSchema,
     rescheduleMeetingSchema,
   ])("keeps accepting legacy v1 schedule-id lengths", (schema) => {

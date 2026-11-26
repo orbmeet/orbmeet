@@ -7,8 +7,7 @@ import { hashSessionToken } from "@/platform/crypto/tokens.server";
 import { generateId } from "@/lib/ids";
 import {
   DELETION_RECOVERY_SESSION_TTL_SECONDS,
-  insertActiveAccountSessionStatement,
-  insertDeletionResumeSessionStatement,
+  insertFencedSessionStatement,
 } from "./session-issuance";
 import { getRunChanges } from "@/platform/database/db-utils";
 
@@ -57,7 +56,7 @@ async function sessionInput(userId: string) {
 describe("deletion-resume session issuance", () => {
   it("issues a recovery session only while the deletion gate is closed", async () => {
     const input = await sessionInput("user_deleting");
-    const [result] = await db.batch([insertDeletionResumeSessionStatement(db, input)]);
+    const [result] = await db.batch([insertFencedSessionStatement(db, input, "deletion_resume")]);
     expect(getRunChanges(result)).toBe(1);
 
     const row = await db.query.sessions.findFirst();
@@ -72,7 +71,7 @@ describe("deletion-resume session issuance", () => {
 
   it("refuses to issue one for an account that is not deletion-gated", async () => {
     const input = await sessionInput("user_active");
-    const [result] = await db.batch([insertDeletionResumeSessionStatement(db, input)]);
+    const [result] = await db.batch([insertFencedSessionStatement(db, input, "deletion_resume")]);
     expect(getRunChanges(result)).toBe(0);
     expect(await db.select().from(sessions)).toHaveLength(0);
   });
@@ -80,20 +79,20 @@ describe("deletion-resume session issuance", () => {
   it("refuses to issue one once the deletion completes between verify and insert", async () => {
     await db.delete(users).where(eq(users.id, "user_deleting"));
     const input = await sessionInput("user_deleting");
-    const [result] = await db.batch([insertDeletionResumeSessionStatement(db, input)]);
+    const [result] = await db.batch([insertFencedSessionStatement(db, input, "deletion_resume")]);
     expect(getRunChanges(result)).toBe(0);
   });
 
   it("keeps the ordinary issuance fenced the opposite way", async () => {
     const activeInput = await sessionInput("user_active");
-    const [activeResult] = await db.batch([insertActiveAccountSessionStatement(db, activeInput)]);
+    const [activeResult] = await db.batch([insertFencedSessionStatement(db, activeInput, "active")]);
     expect(getRunChanges(activeResult)).toBe(1);
 
     // The sign-in statement an authenticated (non-gated) flow uses must never
     // mint a session for a gated account — that fence is what makes the
     // recovery session the only kind a gated sign-in can produce.
     const gatedInput = await sessionInput("user_deleting");
-    const [gatedResult] = await db.batch([insertActiveAccountSessionStatement(db, gatedInput)]);
+    const [gatedResult] = await db.batch([insertFencedSessionStatement(db, gatedInput, "active")]);
     expect(getRunChanges(gatedResult)).toBe(0);
 
     const rows = await db.select().from(sessions);
@@ -103,7 +102,7 @@ describe("deletion-resume session issuance", () => {
 
   it("leaves the recovery session invisible to raw-request session verification", async () => {
     const input = await sessionInput("user_deleting");
-    await db.batch([insertDeletionResumeSessionStatement(db, input)]);
+    await db.batch([insertFencedSessionStatement(db, input, "deletion_resume")]);
     const { verifySessionFromRawRequest } = await import("./session");
     const request = new Request("https://example.com/api/billing/checkout", {
       headers: { Cookie: "session=token-for-user_deleting" },

@@ -86,31 +86,11 @@ const kfPulseGlow = stylex.keyframes({
   "50%": { opacity: 1, transform: "scale(1.05)" },
 });
 
-const kfBlob = stylex.keyframes({
-  "0%": { transform: "translate(0px, 0px) scale(1)" },
-  "33%": { transform: "translate(40px, -60px) scale(1.1)" },
-  "66%": { transform: "translate(-30px, 30px) scale(0.9)" },
-  "100%": { transform: "translate(0px, 0px) scale(1)" },
-});
-
 const kfOrbDrift1 = stylex.keyframes({
   "0%": { transform: "translate(0%, 0%) scale(1)", opacity: 0.55 },
   "30%": { transform: "translate(8%, -12%) scale(1.12)", opacity: 0.7 },
   "60%": { transform: "translate(-6%, 8%) scale(0.92)", opacity: 0.5 },
   "100%": { transform: "translate(0%, 0%) scale(1)", opacity: 0.55 },
-});
-
-const kfOrbDrift2 = stylex.keyframes({
-  "0%": { transform: "translate(0%, 0%) scale(1)", opacity: 0.45 },
-  "40%": { transform: "translate(-10%, 6%) scale(1.08)", opacity: 0.6 },
-  "70%": { transform: "translate(5%, -10%) scale(0.9)", opacity: 0.4 },
-  "100%": { transform: "translate(0%, 0%) scale(1)", opacity: 0.45 },
-});
-
-const kfOrbDrift3 = stylex.keyframes({
-  "0%": { transform: "translate(0%, 0%) scale(1)", opacity: 0.4 },
-  "50%": { transform: "translate(6%, 10%) scale(1.15)", opacity: 0.55 },
-  "100%": { transform: "translate(0%, 0%) scale(1)", opacity: 0.4 },
 });
 
 const kfEq1 = stylex.keyframes({
@@ -286,33 +266,13 @@ export const ambient = stylex.create({
     animationIterationCount: "infinite",
     opacity: { default: null, [REDUCED]: 0.8 },
   },
-  blob: {
-    animationName: { default: kfBlob, [REDUCED]: "none" },
-    animationDuration: "15s",
-    animationIterationCount: "infinite",
-    animationDirection: "alternate",
-  },
-  /** The three drifting orbs behind a meeting, in mount order. */
+  /** The drifting orb behind a meeting. */
   orb1: {
     animationName: { default: kfOrbDrift1, [REDUCED]: "none" },
     animationDuration: "18s",
     animationTimingFunction: "ease-in-out",
     animationIterationCount: "infinite",
     opacity: { default: null, [REDUCED]: 0.55 },
-  },
-  orb2: {
-    animationName: { default: kfOrbDrift2, [REDUCED]: "none" },
-    animationDuration: "22s",
-    animationTimingFunction: "ease-in-out",
-    animationIterationCount: "infinite",
-    opacity: { default: null, [REDUCED]: 0.45 },
-  },
-  orb3: {
-    animationName: { default: kfOrbDrift3, [REDUCED]: "none" },
-    animationDuration: "26s",
-    animationTimingFunction: "ease-in-out",
-    animationIterationCount: "infinite",
-    opacity: { default: null, [REDUCED]: 0.4 },
   },
 });
 

@@ -1,18 +1,20 @@
 import * as React from "react";
-import type { Room } from "livekit-client";
+import type { Participant, Room } from "livekit-client";
 import { useCommittedRef, type useToast } from "@orbmeet/ui/react";
 import { logError } from "@/lib/logger";
 import {
   PARTICIPANT_ATTRIBUTE,
   parseTranscriptionStopRequest,
+  type MeetingRoomState,
 } from "@/modules/meetings/contract/live-state";
-import { useMeetingRoomState, useRoomParticipants } from "@/modules/meetings/client/use-meeting-live-state";
+import { useMeetingRoomState } from "@/modules/meetings/client/use-meeting-live-state";
 import {
   declineTranscriptionStop,
   requestTranscriptionStop,
   setTranscription,
 } from "@/modules/meetings/server/runtime/live.functions";
 import type { HostPermissionRequest } from "@/modules/meetings/client/types";
+import { useParticipantAttributeAsk } from "./use-participant-attribute-ask";
 
 /** Tray ids for asks to stop transcription; the rest of the id is the asker's admission. */
 const TRANSCRIPTION_STOP_REQUEST_PREFIX = "transcription-stop:";
@@ -31,6 +33,8 @@ const TRANSCRIPTION_STOP_REQUEST_PREFIX = "transcription-stop:";
  */
 export function useMeetingTranscription({
   room,
+  roomState: providedRoomState,
+  participants,
   meetingId,
   connectionId,
   canModerate,
@@ -38,6 +42,8 @@ export function useMeetingTranscription({
   addToast,
 }: {
   room: Room | undefined;
+  roomState?: MeetingRoomState | null;
+  participants?: Participant[];
   meetingId: string;
   connectionId: string;
   canModerate: boolean;
@@ -45,15 +51,10 @@ export function useMeetingTranscription({
   initiallyOn: boolean;
   addToast: ReturnType<typeof useToast>["add"];
 }) {
-  const roomState = useMeetingRoomState(room);
+  const roomState = useMeetingRoomState(room, providedRoomState);
   const on = roomState?.transcription ?? initiallyOn;
-  const participants = useRoomParticipants(room);
   const [pending, setPending] = React.useState(false);
-  const [sending, setSending] = React.useState(false);
-  const takenBackRef = React.useRef(false);
   const addToastRef = useCommittedRef(addToast);
-  const onRef = useCommittedRef(on);
-  const canModerateRef = useCommittedRef(canModerate);
 
   // Tell everyone when it changes; joining is not a change.
   const previousOnRef = React.useRef(on);
@@ -73,59 +74,50 @@ export function useMeetingTranscription({
     );
   }, [addToastRef, on]);
 
-  // This participant's own ask, and its quiet end: an ask that disappears
-  // while transcription stays on, without this client taking it back, was
-  // declined — unless this participant now runs the meeting, which hides the
-  // ask rather than answering it.
-  const own = parseTranscriptionStopRequest(
-    room?.localParticipant.attributes[PARTICIPANT_ATTRIBUTE.transcriptionStop],
-  );
-  const previousOwnRef = React.useRef(own);
-  React.useEffect(() => {
-    const previous = previousOwnRef.current;
-    previousOwnRef.current = own;
-    if (!previous || own) return;
-    const takenBack = takenBackRef.current;
-    takenBackRef.current = false;
-    if (takenBack) return;
-    // Turning it off also clears the ask, and room metadata may land a beat
-    // after the attribute: give it that beat before calling it a no.
-    const timer = setTimeout(() => {
-      if (onRef.current && !canModerateRef.current) {
+  const sendAsk = React.useCallback(
+    async (requested: boolean) => {
+      try {
+        await requestTranscriptionStop({ data: { meetingId, connectionId, requested } });
+      } catch (error) {
+        logError("[Meeting] Could not send the transcription ask:", error);
         addToastRef.current({
-          title: "Transcription stays on",
-          description: "The host chose to keep it on. You can ask again.",
+          title: "Couldn't reach the host",
+          description: "Try asking again in a moment.",
+          data: { variant: "error" },
         });
       }
-    }, 1_500);
-    return () => clearTimeout(timer);
-  }, [addToastRef, canModerateRef, onRef, own]);
+    },
+    [addToastRef, connectionId, meetingId],
+  );
+
+  const askState = useParticipantAttributeAsk({
+    room,
+    participants,
+    attribute: PARTICIPANT_ATTRIBUTE.transcriptionStop,
+    parse: parseTranscriptionStopRequest,
+    canAsk: !canModerate && on,
+    canListRequests: canModerate && on,
+    isStillUnresolved: () => on && !canModerate,
+    onDeclined: () => {
+      addToastRef.current({
+        title: "Transcription stays on",
+        description: "The host chose to keep it on. You can ask again.",
+      });
+    },
+    sendRequest: sendAsk,
+  });
 
   const requests = React.useMemo<HostPermissionRequest[]>(
     () =>
-      canModerate && on
-        ? participants
-            .filter(
-              (participant) =>
-                participant !== room?.localParticipant &&
-                parseTranscriptionStopRequest(participant.attributes[PARTICIPANT_ATTRIBUTE.transcriptionStop]),
-            )
-            .map((participant) => ({
-              admissionId: participant.attributes[PARTICIPANT_ATTRIBUTE.participant] ?? "",
-              identity: participant.identity,
-              userName: participant.name?.trim() || "Participant",
-            }))
-            .filter((request) => request.admissionId !== "")
-            .map((request) => ({
-              kind: "extension" as const,
-              id: `${TRANSCRIPTION_STOP_REQUEST_PREFIX}${request.admissionId}`,
-              userId: request.identity,
-              userName: request.userName,
-              actionLabel: "stopping transcription",
-              description: "Asks to turn transcription off",
-            }))
-        : [],
-    [canModerate, on, participants, room],
+      askState.requests.map((request) => ({
+        kind: "extension" as const,
+        id: `${TRANSCRIPTION_STOP_REQUEST_PREFIX}${request.admissionId}`,
+        userId: request.identity,
+        userName: request.userName,
+        actionLabel: "stopping transcription",
+        description: "Asks to turn transcription off",
+      })),
+    [askState.requests],
   );
 
   const turn = React.useCallback(
@@ -146,31 +138,6 @@ export function useMeetingTranscription({
     },
     [addToastRef, connectionId, meetingId],
   );
-
-  const sendAsk = React.useCallback(
-    async (requested: boolean) => {
-      setSending(true);
-      try {
-        await requestTranscriptionStop({ data: { meetingId, connectionId, requested } });
-      } catch (error) {
-        logError("[Meeting] Could not send the transcription ask:", error);
-        addToastRef.current({
-          title: "Couldn't reach the host",
-          description: "Try asking again in a moment.",
-          data: { variant: "error" },
-        });
-      } finally {
-        setSending(false);
-      }
-    },
-    [addToastRef, connectionId, meetingId],
-  );
-
-  const askToStop = React.useCallback(() => sendAsk(true), [sendAsk]);
-  const takeBackAsk = React.useCallback(() => {
-    takenBackRef.current = true;
-    return sendAsk(false);
-  }, [sendAsk]);
 
   /** The tray's answers to one ask, by its id. False when the id is not one of these. */
   const answerRequest = React.useCallback(
@@ -202,9 +169,9 @@ export function useMeetingTranscription({
     /** Host and co-host: turn it on or off for everyone. */
     setOn: turn,
     /** This attendee is waiting on a host to answer their ask. */
-    asked: !canModerate && on && (own || sending),
-    askToStop,
-    takeBackAsk,
+    asked: askState.asked,
+    askToStop: askState.ask,
+    takeBackAsk: askState.takeBack,
     /** Moderators: who is asking, as tray requests. */
     requests,
     answerRequest,

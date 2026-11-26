@@ -5,22 +5,19 @@ import {
   whiteboardFileReferences,
   meetingAdmissions,
   meetingArtifacts,
-  meetingWhiteboards,
   meetings,
   files,
   spaces,
-  whiteboardAssetReferences,
   whiteboards,
 } from "@orbmeet/db/schema";
-import { and, asc, eq, inArray, isNotNull, lte, ne, or, sql } from "drizzle-orm";
-import { internalWhiteboardPrefix, whiteboardPrefix } from "@/platform/storage/r2-keys";
+import { and, asc, eq, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
 import { getRunChanges } from "@/platform/database/db-utils";
 import {
+  assertNoForeignWhiteboardUsage,
   consumeR2CleanupOperation,
   createR2CleanupBudget,
   deleteMeetingR2Namespaces,
-  deleteR2Prefix,
-  enqueueR2ObjectCleanup,
+  purgeSpaceWhiteboardR2Objects,
   type R2CleanupBudget,
 } from "@/modules/assets/server/r2-cleanup.server";
 import { callCoordinator } from "@/modules/meetings/server/runtime/client.server";
@@ -112,7 +109,7 @@ async function cleanupMeeting(
   // Whiteboards belong to the Space and may be used by other Meetings. A
   // Meeting purge removes only Meeting-scoped objects; Space deletion later
   // purges each durable board aggregate explicitly.
-  await deleteMeetingR2Namespaces(db, env.R2_BUCKET, current.id, null, r2Budget);
+  await deleteMeetingR2Namespaces(db, env.R2_BUCKET, current.id, r2Budget);
   const deleted = await db.delete(meetings).where(
     and(
       eq(meetings.id, current.id),
@@ -240,51 +237,16 @@ export async function purgeSpaceWhiteboard(
     .get();
   if (!current) return { remainingOperations: r2Budget.remainingOperations };
 
-  const [foreignUsage] = await db
-    .select({ id: meetingWhiteboards.id })
-    .from(meetingWhiteboards)
-    .innerJoin(meetings, eq(meetings.id, meetingWhiteboards.meetingId))
-    .where(and(eq(meetingWhiteboards.whiteboardId, whiteboardId), ne(meetings.spaceId, spaceId)))
-    .limit(1);
-  if (foreignUsage) {
-    throw new Error(
-      "Whiteboard ownership invariant violated: refusing to delete R2 data referenced by another Space",
-    );
-  }
-
-  // Queue assets this board borrowed before its outgoing references
-  // disappear through the board cascade. If no other owner remains, the
-  // central cleanup worker will remove the physical source object.
-  const borrowedAssets = await db
-    .select({ r2Key: whiteboardAssetReferences.r2Key })
-    .from(whiteboardAssetReferences)
-    .where(eq(whiteboardAssetReferences.whiteboardId, whiteboardId));
-  await enqueueR2ObjectCleanup(
-    db,
-    borrowedAssets.map((row) => row.r2Key),
-  );
+  await assertNoForeignWhiteboardUsage(db, spaceId, [whiteboardId]);
 
   // Incoming references are stable here: duplication runs in this same
   // serial scope before it reads the source.
-  const retainedAssets = await db
-    .select({ r2Key: whiteboardAssetReferences.r2Key })
-    .from(whiteboardAssetReferences)
-    .innerJoin(whiteboards, eq(whiteboards.id, whiteboardAssetReferences.whiteboardId))
-    .where(
-      and(
-        eq(whiteboardAssetReferences.sourceWhiteboardId, whiteboardId),
-        ne(whiteboards.spaceId, spaceId),
-      ),
-    );
-  await purgeWhiteboardRoom(env, whiteboardId);
-  await deleteR2Prefix(db, env.R2_BUCKET, internalWhiteboardPrefix(whiteboardId), r2Budget);
-  await deleteR2Prefix(
-    db,
-    env.R2_BUCKET,
-    whiteboardPrefix(whiteboardId),
-    r2Budget,
-    new Set(retainedAssets.map((row) => row.r2Key)),
-  );
+  await purgeSpaceWhiteboardR2Objects(db, env.R2_BUCKET, {
+    spaceId,
+    whiteboardId,
+    budget: r2Budget,
+    beforePrefixDelete: () => purgeWhiteboardRoom(env, whiteboardId),
+  });
   await db
     .delete(whiteboards)
     .where(and(eq(whiteboards.id, whiteboardId), eq(whiteboards.spaceId, spaceId)));

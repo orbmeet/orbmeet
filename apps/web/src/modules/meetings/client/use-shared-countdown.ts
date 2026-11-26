@@ -1,10 +1,14 @@
 import * as React from "react";
 import type { Room } from "livekit-client";
+import { useNow } from "@/lib/hooks/use-now";
 import { logError } from "@/lib/logger";
+import type { MeetingRoomState } from "@/modules/meetings/contract/live-state";
 import { setCountdown } from "@/modules/meetings/server/runtime/live.functions";
 import type { MeetingClockSync } from "./meeting-clock";
-import { MAX_COUNTDOWN_MINUTES } from "./shared-countdown";
 import { useMeetingRoomState } from "./use-meeting-live-state";
+
+/** The longest countdown a moderator can start. */
+const MAX_COUNTDOWN_MINUTES = 999;
 
 export interface SharedCountdownState {
   endsAtMs: number | null;
@@ -22,32 +26,25 @@ export interface SharedCountdownState {
  */
 export function useSharedCountdown({
   room,
+  roomState: providedRoomState,
   meetingId,
   connectionId,
   canControl,
   meetingClock,
 }: {
   room: Room | undefined;
+  roomState?: MeetingRoomState | null;
   meetingId: string;
   connectionId: string;
   canControl: boolean;
   meetingClock: MeetingClockSync;
 }): SharedCountdownState {
-  const roomState = useMeetingRoomState(room);
+  const roomState = useMeetingRoomState(room, providedRoomState);
   const endsAtMs = roomState?.countdown.endsAt ?? null;
   const offsetMs = meetingClock.serverClockOffsetMs;
-  const remaining = React.useCallback(
-    () => (endsAtMs === null ? 0 : Math.max(0, Math.ceil((endsAtMs - (Date.now() + offsetMs)) / 1_000))),
-    [endsAtMs, offsetMs],
-  );
-  const [remainingSeconds, setRemainingSeconds] = React.useState(remaining);
-
-  React.useEffect(() => {
-    setRemainingSeconds(remaining());
-    if (endsAtMs === null) return;
-    const timer = window.setInterval(() => setRemainingSeconds(remaining()), 500);
-    return () => window.clearInterval(timer);
-  }, [endsAtMs, remaining]);
+  const now = useNow(500, endsAtMs !== null);
+  const remainingSeconds =
+    endsAtMs === null ? 0 : Math.max(0, Math.ceil((endsAtMs - (now + offsetMs)) / 1_000));
 
   const send = React.useCallback((endsAt: number | null) => {
     if (!canControl) return false;

@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
-import { createWhiteboardJWT, verifyWhiteboardJWT, type WhiteboardJWTClaims, type WhiteboardRole } from "./whiteboard-jwt.ts";
+import {
+  createWhiteboardJWT,
+  decodeUnverifiedWhiteboardJwtPayload,
+  verifyWhiteboardJWT,
+  type WhiteboardJWTClaims,
+  type WhiteboardRole,
+} from "./whiteboard-jwt.ts";
 import type { WhiteboardRoomId } from "./whiteboard-room-id.ts";
 
 const SECRET = "test-secret-at-least-32-chars-long!!";
@@ -316,5 +322,30 @@ describe("createWhiteboardJWT / verifyWhiteboardJWT", () => {
   it("rejects an empty document identity", async () => {
     await expect(verifyWhiteboardJWT(await makeToken({ documentId: "" }), KEYRING))
       .rejects.toThrow("Invalid JWT document id");
+  });
+});
+
+describe("decodeUnverifiedWhiteboardJwtPayload", () => {
+  it("decodes a signed JWT payload including UTF-8 display names", async () => {
+    const token = await makeToken({ name: "Zoë 李雷 👋" });
+    const payload = decodeUnverifiedWhiteboardJwtPayload(token);
+    expect(payload).not.toBeNull();
+    expect(payload?.sub).toBe("user-abc");
+    expect(payload?.name).toBe("Zoë 李雷 👋");
+    expect(typeof payload?.exp).toBe("number");
+  });
+
+  it("returns null for malformed tokens, invalid base64url, invalid JSON, or non-object payloads", () => {
+    const enc = (value: string) =>
+      btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    expect(decodeUnverifiedWhiteboardJwtPayload("")).toBeNull();
+    expect(decodeUnverifiedWhiteboardJwtPayload("only.two")).toBeNull();
+    expect(decodeUnverifiedWhiteboardJwtPayload("a.b.c.d")).toBeNull();
+    expect(decodeUnverifiedWhiteboardJwtPayload("a..c")).toBeNull();
+    expect(decodeUnverifiedWhiteboardJwtPayload("a.!!!not-base64!!!.c")).toBeNull();
+    expect(decodeUnverifiedWhiteboardJwtPayload(`a.${enc("{not-json")}.c`)).toBeNull();
+    expect(decodeUnverifiedWhiteboardJwtPayload(`a.${enc("[1,2,3]")}.c`)).toBeNull();
+    expect(decodeUnverifiedWhiteboardJwtPayload(`a.${enc("null")}.c`)).toBeNull();
+    expect(decodeUnverifiedWhiteboardJwtPayload(`a.${enc('"str"')}.c`)).toBeNull();
   });
 });

@@ -6,8 +6,7 @@ import { createTestDb } from "@/test/db";
 import { seedPersonalSpace } from "@/test/fixtures";
 
 const model = vi.hoisted(() => ({ answer: vi.fn() }));
-vi.mock("@/platform/ai/gemini", () => ({ createGeminiTextAdapter: vi.fn() }));
-vi.mock("@tanstack/ai", () => ({ chat: () => model.answer() }));
+vi.mock("@/platform/ai/gemini", () => ({ generateGeminiJson: () => model.answer() }));
 
 const { generateMeetingSummaryForMeeting } = await import("./generate-summary.server");
 

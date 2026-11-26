@@ -1,6 +1,7 @@
 import * as React from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { Room } from "livekit-client";
+import type { MeetingRoomState } from "@/modules/meetings/contract/live-state";
 import { getErrorMessage } from "@/lib/error-inspection";
 import { logError } from "@/lib/logger";
 import type { useToast } from "@orbmeet/ui/react";
@@ -26,15 +27,17 @@ export function useMeetingAdmissions({
   managerConnectionId,
   canModerate,
   room,
+  roomState: providedRoomState,
   addToast,
 }: {
   meetingId: string;
   managerConnectionId: string;
   canModerate: boolean;
   room: Room | undefined;
+  roomState?: MeetingRoomState | null;
   addToast: ReturnType<typeof useToast>["add"];
 }) {
-  const admissionsVersion = useMeetingRoomState(room)?.admissionsVersion;
+  const admissionsVersion = useMeetingRoomState(room, providedRoomState)?.admissionsVersion;
   const queryKey = React.useMemo(
     () => queryKeys.meetings.pendingAdmissions(meetingId, managerConnectionId, admissionsVersion),
     [admissionsVersion, managerConnectionId, meetingId],

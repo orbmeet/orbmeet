@@ -76,19 +76,3 @@ export function parseResponse<T>(schema: StandardSchema<T>, result: unknown, mes
   if (!parsed.ok) throw new Error(message, { cause: parsed.issues });
   return parsed.value;
 }
-
-// Re-exported so every CLI module takes the shared contract through this
-// module instead of importing the package ad hoc.
-export {
-  publicApiErrorSchema,
-  publicApiMeResponseSchema,
-  publicApiTargetsResponseSchema,
-  publicMeetingResponseSchema,
-  publicMeetingTranscriptPageResponseSchema,
-  publicScheduleCreateResponseSchema,
-  publicScheduleCancelResponseSchema,
-  publicScheduleListResponseSchema,
-  publicScheduleResponseSchema,
-  publicScheduleUpdateResponseSchema,
-  publicTranscriptSchema,
-} from "@orbmeet/public-api-contract";

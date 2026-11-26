@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { deviceTimeZone } from "@/lib/time-zone";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarCheck, Check, Copy } from "lucide-react";
@@ -244,10 +244,10 @@ function wallClockToIso(value: string, timeZone: string): string {
   return instant.toISOString();
 }
 
-function defaultStart(timeZone: string): string {
+function defaultStart(timeZone: string, nowMs = Date.now()): string {
   // Keep the default one-hour reminder in the future even after rounding the
   // meeting start down to second precision at an exact quarter hour.
-  const next = new Date(Date.now() + 61 * 60_000);
+  const next = new Date(nowMs + 61 * 60_000);
   next.setMinutes(Math.ceil(next.getMinutes() / 15) * 15, 0, 0);
   return isoToWallClock(next.toISOString(), timeZone);
 }
@@ -313,32 +313,21 @@ function ScheduleMeetingDialogForm({
   const sessionQuery = useQuery(sessionQueryOptions());
   const isRescheduling = Boolean(schedule);
   const homeTimeZone = sessionQuery.data?.user.timeZone ?? null;
-  const initialTimeZone = schedule?.timeZone
-    ?? initialSpace?.timeZone
-    ?? homeTimeZone
-    ?? deviceTimeZone();
+  const manageableSpaces = useMemo(
+    () => (spacesQuery.data?.spaces ?? []).filter((space) => space.capabilities.canManage),
+    [spacesQuery.data?.spaces],
+  );
+  const personalLinks = useMemo(
+    () => (threadsQuery.data?.threads ?? []).filter((thread) => thread.kind === "personal"),
+    [threadsQuery.data?.threads],
+  );
 
-  const [startsAt, setStartsAt] = useState(() =>
-    schedule
-      ? isoToWallClock(schedule.startsAt, schedule.timeZone)
-      : // A picked slot that is already past (or about to be) falls back to the
-        // next quarter hour, as if nothing had been picked.
-        initialStartsAt && Date.parse(initialStartsAt) > Date.now() + 61 * 60_000
-        ? isoToWallClock(initialStartsAt, initialTimeZone)
-        : defaultStart(initialTimeZone),
-  );
+  const [openedAt] = useState(() => Date.now());
+  const [contextOverride, setContextOverride] = useState<string | null>(null);
+  const [timeZoneOverride, setTimeZoneOverride] = useState<string | null>(null);
+  const [startsAtOverride, setStartsAtOverride] = useState<string | null>(null);
   const [duration, setDuration] = useState(schedule ? durationMinutes(schedule) : 30);
-  const [timeZone, setTimeZone] = useState(initialTimeZone);
   const [title, setTitle] = useState(schedule?.title ?? "");
-  const [context, setContext] = useState(
-    schedule?.spaceId
-      ? `space:${schedule.spaceId}`
-      : initialSpace
-        ? `space:${initialSpace.id}`
-        : schedule?.meetingLinkReusePolicy === "reusable"
-          ? `link:${schedule.meetingLinkId}`
-          : "new-personal",
-  );
   const [attendeeText, setAttendeeText] = useState("");
   const [joinPolicy, setJoinPolicy] = useState<EntryModeChoice>("open");
   const [reminder, setReminder] = useState(
@@ -350,6 +339,47 @@ function ScheduleMeetingDialogForm({
   const [guestProblem, setGuestProblem] = useState<string | null>(null);
   const guestField = useRef<HTMLTextAreaElement>(null);
   const [created, setCreated] = useState<CreatedSchedule | null>(null);
+
+  const defaultContext = schedule?.spaceId
+    ? `space:${schedule.spaceId}`
+    : initialSpace
+      ? `space:${initialSpace.id}`
+      : schedule?.meetingLinkReusePolicy === "reusable"
+        ? `link:${schedule.meetingLinkId}`
+        : personalLinks[0]
+          ? `link:${personalLinks[0].id}`
+          : "new-personal";
+  const context = contextOverride ?? defaultContext;
+
+  const isSpaceMeeting = context.startsWith("space:");
+  const isReusablePersonalMeeting = context.startsWith("link:");
+  const selectedSpace = manageableSpaces.find(
+    (space) => space.id === context.slice("space:".length),
+  );
+  const selectedSpaceName = selectedSpace?.name
+    ?? (context === `space:${initialSpace?.id}` ? initialSpace?.name : undefined);
+
+  const defaultTimeZone = schedule?.timeZone
+    ?? (isSpaceMeeting
+      ? (selectedSpace?.timeZone ?? (context === `space:${initialSpace?.id}` ? initialSpace?.timeZone : undefined))
+      : undefined)
+    ?? homeTimeZone
+    ?? deviceTimeZone();
+  const timeZone = timeZoneOverride ?? defaultTimeZone;
+
+  const defaultStartsAt = useMemo(
+    () =>
+      schedule
+        ? isoToWallClock(schedule.startsAt, schedule.timeZone)
+        : // A picked slot that is already past (or about to be) falls back to the
+          // next quarter hour, as if nothing had been picked.
+          initialStartsAt && Date.parse(initialStartsAt) > openedAt + 61 * 60_000
+          ? isoToWallClock(initialStartsAt, timeZone)
+          : defaultStart(timeZone, openedAt),
+    [initialStartsAt, openedAt, schedule, timeZone],
+  );
+  const startsAt = startsAtOverride ?? defaultStartsAt;
+
   // One key per intent. A submit whose response never arrived — a dropped
   // connection, a reloaded tab, a second click while the first request is
   // still in flight — replays the schedule that was already created instead of
@@ -360,9 +390,6 @@ function ScheduleMeetingDialogForm({
   // scheduled in separate sittings come from separate dialogs, and so from
   // separate keys.
   const idempotency = useRef<{ signature: string; key: string } | null>(null);
-  const destinationTouched = useRef(false);
-  const startsAtTouched = useRef(false);
-  const timeZoneTouched = useRef(false);
   const createIdempotencyKey = (signature: string): string => {
     if (idempotency.current?.signature !== signature) {
       idempotency.current = { signature, key: crypto.randomUUID() };
@@ -430,40 +457,6 @@ function ScheduleMeetingDialogForm({
   });
 
   const attendeeCount = useMemo(() => parseGuestEmails(attendeeText).length, [attendeeText]);
-  const manageableSpaces = useMemo(
-    () => (spacesQuery.data?.spaces ?? []).filter((space) => space.capabilities.canManage),
-    [spacesQuery.data?.spaces],
-  );
-  const personalLinks = useMemo(
-    () => (threadsQuery.data?.threads ?? []).filter((thread) => thread.kind === "personal"),
-    [threadsQuery.data?.threads],
-  );
-  useEffect(() => {
-    const personalLink = personalLinks[0];
-    if (!schedule && !initialSpace && personalLink && !destinationTouched.current) {
-      setContext(`link:${personalLink.id}`);
-    }
-  }, [initialSpace, personalLinks, schedule]);
-  useEffect(() => {
-    if (
-      !schedule
-      && !initialSpace
-      && homeTimeZone
-      && !destinationTouched.current
-      && !timeZoneTouched.current
-    ) {
-      setTimeZone(homeTimeZone);
-      if (!startsAtTouched.current) setStartsAt(defaultStart(homeTimeZone));
-    }
-  }, [homeTimeZone, initialSpace, schedule]);
-
-  const isSpaceMeeting = context.startsWith("space:");
-  const isReusablePersonalMeeting = context.startsWith("link:");
-  const selectedSpace = manageableSpaces.find(
-    (space) => space.id === context.slice("space:".length),
-  );
-  const selectedSpaceName = selectedSpace?.name
-    ?? (context === `space:${initialSpace?.id}` ? initialSpace?.name : undefined);
   const dialogTitle = isRescheduling
     ? isSpaceMeeting
       ? `Reschedule the meeting in ${selectedSpaceName ?? "this Space"}`
@@ -529,17 +522,8 @@ function ScheduleMeetingDialogForm({
                 label="Meet using"
                 value={context}
                 onValueChange={(value) => {
-                  destinationTouched.current = true;
-                  const nextContext = value ?? "new-personal";
-                  setContext(nextContext);
-                  const nextSpace = nextContext.startsWith("space:")
-                    ? manageableSpaces.find(
-                        (space) => space.id === nextContext.slice("space:".length),
-                      )
-                    : null;
-                  const nextTimeZone = nextSpace?.timeZone ?? homeTimeZone ?? deviceTimeZone();
-                  setTimeZone(nextTimeZone);
-                  if (!startsAtTouched.current) setStartsAt(defaultStart(nextTimeZone));
+                  setContextOverride(value ?? "new-personal");
+                  setTimeZoneOverride(null);
                 }}
                 options={[
                   ...personalLinks.map((link) => ({
@@ -563,10 +547,7 @@ function ScheduleMeetingDialogForm({
                   label="Starts"
                   type="datetime-local"
                   value={startsAt}
-                  onChange={(event) => {
-                    startsAtTouched.current = true;
-                    setStartsAt(event.target.value);
-                  }}
+                  onChange={(event) => setStartsAtOverride(event.target.value)}
                   required
                 />
                 <Select
@@ -588,10 +569,7 @@ function ScheduleMeetingDialogForm({
                 <TimeZoneSelect
                   label="Time zone"
                   value={timeZone}
-                  onChange={(value) => {
-                    timeZoneTouched.current = true;
-                    setTimeZone(value);
-                  }}
+                  onChange={setTimeZoneOverride}
                 />
                 <p {...stylex.props(styles.count, styles.countOk)}>
                   {isSpaceMeeting

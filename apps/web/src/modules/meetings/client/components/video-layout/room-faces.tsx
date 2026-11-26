@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useState } from "react";
 import { useIsMuted, useIsSpeaking, useParticipants, useSpeakingParticipants } from "@livekit/components-react";
+import { useResponsive } from "@/lib/hooks/use-responsive";
 import { CONNECTION_EVENTS } from "@/modules/meetings/client/use-livekit-connections";
 import { Track, type Participant } from "livekit-client";
 import { ChevronDown, ChevronUp, Hand, MicOff } from "lucide-react";
@@ -13,6 +14,7 @@ import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { text, weight } from "@orbmeet/ui/tokens/typography.stylex";
 import { scrim } from "@orbmeet/ui/tokens/wash.stylex";
 import { videoTrack } from "@/modules/meetings/client/meeting-styles";
+import { firstName } from "../meeting-format";
 import { MeetingVideoTrack } from "../meeting-video-track";
 import { PeopleFacepile } from "../people-facepile";
 import { useHandRaised } from "./hand-badge";
@@ -227,7 +229,7 @@ export function RoomFaces({
   // Folded by your choice, else by the window: in a short one, faces over a
   // panel left the Chat a 55px slit between them and the box.
   const [foldChoice, setFolded] = useState<boolean | null>(null);
-  const short = useShortWindow();
+  const { isShortWindow: short } = useResponsive();
   const folded = foldChoice ?? (!roomy && short);
   const participants = useParticipants({ updateOnlyOn: CONNECTION_EVENTS });
   const max =
@@ -311,8 +313,8 @@ export function RoomFaces({
         <div role="status" aria-label="Raised hands" {...stylex.props(styles.hands)}>
           <Hand size={13} strokeWidth={2.2} aria-hidden="true" />
           <span {...stylex.props(styles.handsText, layout.truncate)}>
-            <span {...stylex.props(styles.handsFirst)}>{firstWord(first.userName)}</span>
-            {second && `, then ${firstWord(second.userName)}`}
+            <span {...stylex.props(styles.handsFirst)}>{firstName(first.userName)}</span>
+            {second && `, then ${firstName(second.userName)}`}
             {raisedHands.length > 2 && ` +${raisedHands.length - 2}`}
           </span>
           <button
@@ -321,7 +323,7 @@ export function RoomFaces({
             aria-label={`Let ${first.userName} speak`}
             {...stylex.props(pressable.base, motion.tint, focus.ring, styles.callOn)}
           >
-            Call on {firstWord(first.userName)}
+            Call on {firstName(first.userName)}
           </button>
         </div>
       )}
@@ -401,7 +403,7 @@ function Face({
   const self = participant.isLocal;
   const name = participant.name || "Participant";
   // Three across leaves room for a first name; the roomy column, a full one.
-  const shownName = self ? "You" : variant === "column" && roomy ? name : firstWord(name);
+  const shownName = self ? "You" : variant === "column" && roomy ? name : firstName(name);
   const frame = variant === "row" ? styles.frameRow : roomy ? styles.frameColumnRoomy : styles.frameColumn;
   return (
     <div
@@ -432,23 +434,4 @@ function Face({
       </div>
     </div>
   );
-}
-
-/** `env.shortWindow`, for JS. */
-const SHORT_WINDOW_QUERY = "(max-height: 600px)";
-
-function useShortWindow(): boolean {
-  return useSyncExternalStore(
-    (onChange) => {
-      const query = window.matchMedia(SHORT_WINDOW_QUERY);
-      query.addEventListener("change", onChange);
-      return () => query.removeEventListener("change", onChange);
-    },
-    () => window.matchMedia(SHORT_WINDOW_QUERY).matches,
-    () => false,
-  );
-}
-
-function firstWord(name: string): string {
-  return name.trim().split(/\s+/)[0] || name;
 }

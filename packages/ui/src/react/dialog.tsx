@@ -3,6 +3,7 @@ import * as stylex from "@stylexjs/stylex";
 import type { StyleXStyles } from "@stylexjs/stylex";
 import type { ComponentProps } from "react";
 
+import { motion } from "../styles/atoms";
 import { blur } from "../styles/surfaces";
 import { accent, ink, neutral, surface } from "../tokens/colors.stylex";
 import { zIndex } from "../tokens/layers.stylex";
@@ -83,12 +84,7 @@ const styles = stylex.create({
     outlineStyle: "solid",
     outlineColor: accent.a500,
     outlineOffset: 2,
-
-    opacity: { default: 1, [STARTING]: 0, [ENDING]: 0 },
-    scale: { default: 1, [STARTING]: 0.95, [ENDING]: 0.95 },
-    transitionProperty: "opacity, scale",
     transitionDuration: { default: duration.base, [env.reducedMotion]: "0s" },
-    transitionTimingFunction: easing.gentle,
   },
 
   /**
@@ -216,7 +212,7 @@ export function DialogContent({
       <BaseDialog.Viewport {...stylex.props(styles.viewport)}>
         <BaseDialog.Popup
           {...props}
-          {...stylex.props(styles.popup, styles.width(sizeMap[size]), sx)}
+          {...stylex.props(motion.popup, styles.popup, styles.width(sizeMap[size]), sx)}
         >
           {children}
         </BaseDialog.Popup>

@@ -4,26 +4,14 @@ import { createDb } from "@orbmeet/db";
 import { users, accounts, verifications } from "@orbmeet/db/schema";
 import { eq, and, gte } from "drizzle-orm";
 import { normalizeEmail } from "@/modules/identity/contract/auth/email-normalization";
-import {
-  SESSION_EXPIRY_MS,
-  SESSION_EXPIRY_SECONDS,
-  SESSION_ABSOLUTE_EXPIRY_MS,
-} from "@/modules/identity/contract/auth/constants";
 import { generateId } from "@/lib/ids";
-import { hashSessionToken, generateSessionToken } from "@/platform/crypto/tokens.server";
-import { createCookieString, appendCookies } from "@/platform/http/cookies.server";
-import { getClientIP } from "@/platform/http/client-ip.server";
+import { appendCookies } from "@/platform/http/cookies.server";
 import { getEnv, getOptionalEnv } from "@/platform/runtime/server-runtime.server";
 import { enforceIpRateLimit } from "@/platform/http/rate-limit.server";
-import {
-  sanitizeUser,
-  enforceSessionCapStatement,
-  rememberDevice,
-} from "./session";
+import { sanitizeUser } from "./session";
 import { loadUserBilling } from "@/modules/billing/server/entitlements.server";
 import { checkDisposableEmail } from "./disposable-email";
 import { Errors } from "@/lib/app-errors";
-import { getRunChanges } from "@/platform/database/db-utils";
 import { sanitizeDisplayName } from "@/lib/sanitize";
 import { findOAuthStateCookie } from "./oauth-state";
 import {
@@ -34,11 +22,7 @@ import {
 import { isUniqueConstraintError } from "@/platform/database/db-utils";
 import { logInfo } from "@/lib/logger";
 import { clearOAuthStateCookies } from "./oauth-cookies";
-import {
-  insertActiveAccountSessionStatement,
-  insertDeletionResumeSessionStatement,
-  DELETION_RECOVERY_SESSION_TTL_SECONDS,
-} from "./session-issuance";
+import { issueBrowserSession } from "./session-issuance";
 
 /** Where a deletion-gated account must land instead of the signed-in app. */
 const ACCOUNT_DELETION_PENDING_PATH = "/account/deletion-pending";
@@ -206,12 +190,6 @@ export async function handleGoogleCallbackRequest(
     }
   }
 
-  const oauthSessionId = generateId("SESSION");
-  const sessionToken = generateSessionToken();
-  const sessionTokenHash = await hashSessionToken(sessionToken);
-  const oauthNow = Date.now();
-  const oauthNowSeconds = Math.floor(oauthNow / 1000);
-
   // The lifecycle fence has to be read before the insert statement is built:
   // a gated account fails every ordinary issuance, so it gets the
   // deletion-resume session and a redirect to the recovery page instead of a
@@ -223,39 +201,10 @@ export async function handleGoogleCallbackRequest(
   if (!authenticatedUser) throw Errors.UNAUTHORIZED();
   const deletionPending = authenticatedUser.deletionStartedAt !== null;
 
-  const sessionInput = {
-    id: oauthSessionId,
-    tokenHash: sessionTokenHash,
+  await issueBrowserSession(db, env, request, {
     userId,
-    expiresAtSeconds: deletionPending
-      ? oauthNowSeconds + DELETION_RECOVERY_SESSION_TTL_SECONDS
-      : Math.floor((oauthNow + SESSION_EXPIRY_MS) / 1000),
-    absoluteExpiresAtSeconds: deletionPending
-      ? oauthNowSeconds + DELETION_RECOVERY_SESSION_TTL_SECONDS
-      : Math.floor((oauthNow + SESSION_ABSOLUTE_EXPIRY_MS) / 1000),
-    ipAddress: getClientIP(),
-    userAgent: request.headers.get("User-Agent")?.slice(0, 500) ?? null,
-    createdAtSeconds: oauthNowSeconds,
-  };
-  const [insertResult] = await db.batch([
-      deletionPending
-        ? insertDeletionResumeSessionStatement(db, sessionInput)
-        : insertActiveAccountSessionStatement(db, sessionInput),
-      enforceSessionCapStatement(db, userId),
-  ]);
-  if (getRunChanges(insertResult) !== 1) throw Errors.UNAUTHORIZED();
-  if (!deletionPending) {
-    // A remembered-device cookie cannot resolve a deletion-gated account
-    // (the lookup excludes gated users), so do not mint a dead row.
-    await rememberDevice(db, env, userId, oauthSessionId).catch(() => {});
-  }
-
-  appendCookies([
-    createCookieString("session", sessionToken, SESSION_EXPIRY_SECONDS, {
-      appUrl: env.APP_URL,
-      environment: env.ENVIRONMENT,
-    }),
-  ]);
+    deletionPending,
+  });
 
   const user = await db.query.users.findFirst({
     where: { id: userId },

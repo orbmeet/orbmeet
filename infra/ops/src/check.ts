@@ -4,8 +4,9 @@ import { connect as tcpConnect, type Socket } from "node:net";
 import { networkInterfaces } from "node:os";
 import { randomBytes } from "node:crypto";
 import { connect as tlsConnect } from "node:tls";
+import { nodeHostnames } from "@orbmeet/nodes";
 import { INTERNAL_PORTS } from "./catalog.ts";
-import { mediaNodes, rtcHost, turnHost, whiteboardHost, whiteboardNodes, type Inventory } from "./inventory.ts";
+import { mediaNodes, whiteboardNodes, type Inventory } from "./inventory.ts";
 import { liveKitApi } from "./livekit.ts";
 import { ssh } from "./remote.ts";
 import type { Secrets } from "./secrets.ts";
@@ -183,20 +184,21 @@ export async function check(shell: Shell, inv: Inventory, c: Secrets, { external
   }
   for (const name of mediaNodes(inv)) {
     const node = inv.nodes[name];
-    await checkDns(rtcHost(inv, name), node.ipv4, node.ipv6);
-    await checkDns(turnHost(inv, name), node.ipv4, node.ipv6);
+    const { rtc, turn } = nodeHostnames(inv.domain, name);
+    await checkDns(rtc, node.ipv4, node.ipv6);
+    await checkDns(turn, node.ipv4, node.ipv6);
     const rooms = await liveKitApi(inv, c, name).rooms.listRooms();
     console.log(`PASS ${name}: DNS, TLS and signed LiveKit API, ${rooms.length} rooms`);
     (await tcpOpen(node.ipv4, 7881)).destroy();
     console.log(`PASS ${name}: WebRTC TCP listener`);
     await stun(node.ipv4);
     console.log(`PASS ${name}: TURN/UDP STUN binding`);
-    await turnTls(node.ipv4, turnHost(inv, name));
-    console.log(`PASS ${name}: TURN/TLS response for ${turnHost(inv, name)} (unauthenticated allocation)`);
+    await turnTls(node.ipv4, turn);
+    console.log(`PASS ${name}: TURN/TLS response for ${turn} (unauthenticated allocation)`);
   }
   for (const name of whiteboardNodes(inv)) {
     const node = inv.nodes[name];
-    const host = whiteboardHost(inv, name);
+    const host = nodeHostnames(inv.domain, name).whiteboard;
     await checkDns(host, node.ipv4, node.ipv6);
     // Through its public name and Caddy, the way clients reach it.
     const response = await fetch(`https://${host}/health`, {

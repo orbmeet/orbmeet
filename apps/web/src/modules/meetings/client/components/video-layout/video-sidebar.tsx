@@ -17,7 +17,6 @@ import { duration } from "@orbmeet/ui/tokens/motion.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { text, weight } from "@orbmeet/ui/tokens/typography.stylex";
-import { CONTENT_RAIL_PADDING_PX, CONTENT_RAIL_TILE_PX, STAGE_STRIP_PADDING_PX, STAGE_STRIP_TILE_PX } from "@/modules/meetings/client/chrome";
 import { Avatar } from "@orbmeet/ui/react";
 import { type ParticipantConnection } from "@/modules/meetings/client";
 import { videoTrack } from "@/modules/meetings/client/meeting-styles";
@@ -42,10 +41,6 @@ const styles = stylex.create({
     overflowX: "auto",
     padding: space.s2,
   },
-  railStripCompact: { display: "flex", width: "100%", overflowX: "auto", padding: 0 },
-  /** The stage strip centres its faces over the content rather than packing them left. */
-  railStripCentred: { justifyContent: "safe center" },
-  railGap: (gap: number) => ({ gap }),
   stripTile: {
     position: "relative",
     flexShrink: 0,
@@ -57,9 +52,6 @@ const styles = stylex.create({
   },
   stripTileVertical: { aspectRatio: "16 / 9", width: "100%" },
   stripTileSquare: { aspectRatio: "1 / 1", height: 80 },
-  stripTileWide: { aspectRatio: "16 / 9" },
-  stripTileCompact: { borderRadius: radii.control },
-  fixedHeight: (height: number) => ({ height }),
   stripTileFull: { borderRadius: radii.card },
   stripTilePinned: { boxShadow: `0 0 0 1px ${accent.a500}` },
   stripTileHover: {
@@ -74,20 +66,6 @@ const styles = stylex.create({
     backgroundImage: `linear-gradient(to bottom right, ${neutral.n100}, ${neutral.n200})`,
   },
   stripAvatar: { boxShadow: `0 0 0 2px color-mix(in oklab, ${surface.raised} 70%, transparent)` },
-  /** The compact strip drops names — at that size the caption covered a third of the face. */
-  stripMuteCompact: {
-    position: "absolute",
-    bottom: 2,
-    left: 2,
-    display: "flex",
-    height: 16,
-    width: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radii.pill,
-    backgroundColor: scrim.strong,
-    color: danger.d300,
-  },
   stripNameBand: {
     position: "absolute",
     insetInline: 0,
@@ -110,7 +88,6 @@ const styles = stylex.create({
     color: neutral.n600,
     boxShadow: `0 0 0 1px ${scrim.edge}`,
   },
-  stripOverflowCompact: { borderRadius: radii.control, fontSize: text.xs },
   stripOverflowFull: { borderRadius: radii.card, fontSize: text.sm },
 });
 
@@ -142,18 +119,6 @@ interface ParticipantRailProps {
   maxTiles: number;
   pinnedId: string | null;
   onTileClick: (identity: string) => void;
-  /**
-   * Inline rail above a content surface. Tiles shrink to
-   * {@link CONTENT_RAIL_TILE_PX} and drop their name captions — at that size
-   * the caption covered a third of the face to render two truncated
-   * characters. Mute state stays, as a badge.
-   */
-  compact?: boolean;
-  /**
-   * The strip above a board on a tablet or a desktop: centred, named 16:9
-   * tiles at {@link STAGE_STRIP_TILE_PX}.
-   */
-  strip?: boolean;
 }
 
 /**
@@ -169,8 +134,6 @@ export function ParticipantRail({
   maxTiles,
   pinnedId,
   onTileClick,
-  compact = false,
-  strip = false,
 }: ParticipantRailProps) {
   const ordered = useMemo(
     () => orderParticipants(participants, connectionsById, pinnedId),
@@ -186,13 +149,7 @@ export function ParticipantRail({
     <div
       {...stylex.props(
         layout.hideScrollbar,
-        isVertical
-          ? styles.railStripVertical
-          : compact || strip
-            ? styles.railStripCompact
-            : styles.railStripHorizontal,
-        compact && styles.railGap(CONTENT_RAIL_PADDING_PX),
-        strip && [styles.railGap(STAGE_STRIP_PADDING_PX), styles.railStripCentred],
+        isVertical ? styles.railStripVertical : styles.railStripHorizontal,
       )}
     >
       {shown.map((p) => {
@@ -209,11 +166,9 @@ export function ParticipantRail({
               pressable.base,
               motion.tint,
               styles.stripTile,
-              compact || strip ? styles.stripTileCompact : styles.stripTileFull,
+              styles.stripTileFull,
               pinned ? styles.stripTilePinned : styles.stripTileHover,
-              isVertical ? styles.stripTileVertical : strip ? styles.stripTileWide : styles.stripTileSquare,
-              compact && styles.fixedHeight(CONTENT_RAIL_TILE_PX),
-              strip && styles.fixedHeight(STAGE_STRIP_TILE_PX),
+              isVertical ? styles.stripTileVertical : styles.stripTileSquare,
             )}
           >
             {track ? (
@@ -226,23 +181,15 @@ export function ParticipantRail({
                 <Avatar name={name} size="md" sx={styles.stripAvatar} />
               </div>
             )}
-            {compact ? (
-              !p.isMicrophoneEnabled && (
-                <div {...stylex.props(styles.stripMuteCompact)}>
-                  <MicOff size={10} color={danger.d300} />
-                </div>
-              )
-            ) : (
-              <div {...stylex.props(styles.stripNameBand)}>
-                {!p.isMicrophoneEnabled && (
-                  <MicOff size={10} strokeWidth={2} color={danger.d300} />
-                )}
-                <span {...stylex.props(layout.minZero, styles.stripName, layout.truncate)}>
-                  {name}
-                  {p.isLocal && " (You)"}
-                </span>
-              </div>
-            )}
+            <div {...stylex.props(styles.stripNameBand)}>
+              {!p.isMicrophoneEnabled && (
+                <MicOff size={10} strokeWidth={2} color={danger.d300} />
+              )}
+              <span {...stylex.props(layout.minZero, styles.stripName, layout.truncate)}>
+                {name}
+                {p.isLocal && " (You)"}
+              </span>
+            </div>
           </button>
         );
       })}
@@ -250,10 +197,8 @@ export function ParticipantRail({
         <div
           {...stylex.props(
             styles.stripOverflow,
-            compact || strip ? styles.stripOverflowCompact : styles.stripOverflowFull,
-            isVertical ? styles.stripTileVertical : strip ? styles.stripTileWide : styles.stripTileSquare,
-            compact && styles.fixedHeight(CONTENT_RAIL_TILE_PX),
-            strip && styles.fixedHeight(STAGE_STRIP_TILE_PX),
+            styles.stripOverflowFull,
+            isVertical ? styles.stripTileVertical : styles.stripTileSquare,
           )}
         >
           +{overflow}

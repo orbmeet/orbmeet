@@ -17,21 +17,3 @@ export function recordingStartedAt(filename: string): Date | null {
   const at = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
   return Number.isNaN(at.getTime()) ? null : at;
 }
-
-/**
- * How far into a recording a point of its meeting falls, in seconds. Null
- * when the recording had not begun yet at that point, or when it is unknown
- * when either began: better no way to play from there than the wrong place.
- */
-export function recordingSecondsAt(
-  meetingSeconds: number,
-  meetingStartedAt: string | null,
-  recordingFilename: string,
-): number | null {
-  const recordingStart = recordingStartedAt(recordingFilename);
-  if (!meetingStartedAt || !recordingStart) return null;
-  const offset = (recordingStart.getTime() - Date.parse(meetingStartedAt)) / 1000;
-  if (!Number.isFinite(offset)) return null;
-  const seconds = meetingSeconds - Math.max(0, offset);
-  return seconds >= 0 ? Math.floor(seconds) : null;
-}

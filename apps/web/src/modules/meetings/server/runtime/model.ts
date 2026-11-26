@@ -8,7 +8,10 @@
  * MeetingRoom Durable Object (./room.server.ts), its only writer.
  */
 
-import type { MeetingRole } from "@/modules/meetings/contract/constants";
+import {
+  ADMISSION_PENDING_TTL_MS,
+  type MeetingRole,
+} from "@/modules/meetings/contract/constants";
 import type { SurfaceFocus } from "@/modules/meetings/contract/live-state";
 import type { MeetingEndReason } from "@orbmeet/domain-model";
 import {
@@ -19,6 +22,8 @@ import {
   type MeetingRoomState,
   type ScreenShareState,
 } from "@/modules/meetings/contract/live-state";
+
+export { ADMISSION_PENDING_TTL_MS };
 
 // ─── Timing ──────────────────────────────────────────────────────────────────
 
@@ -37,8 +42,6 @@ export const ISSUE_GRACE_MS = 60_000;
 export const MEDIA_TOKEN_TTL_MS = 5 * 60_000;
 /** A joined attempt missing from the room this long has left. */
 export const ABSENT_GRACE_MS = 30_000;
-/** A waiter nobody decides on is turned away after this. */
-export const ADMISSION_PENDING_TTL_MS = 5 * 60_000;
 /**
  * A screen-share request nobody decides on is dropped after this. The asking
  * client gives up much sooner; this clears the moderators' list when it cannot.

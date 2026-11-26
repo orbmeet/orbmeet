@@ -11,6 +11,7 @@ import {
 } from "./whiteboard-image";
 import { readImageDimensionsFromFile } from "./read-image-dimensions";
 import { isPageFrameShape } from "@orbmeet/whiteboard-core/page-frame-model";
+import { isSafeExternalBrowserUrl } from "@orbmeet/whiteboard-core/public-host";
 import { commitUploadBeforePublish } from "./managed-upload";
 import { placeImageOnPage } from "./image-placement";
 
@@ -40,22 +41,9 @@ export interface ImageImportRuntimeOptions {
 }
 
 const MULTI_IMPORT_CASCADE_STEP = 24;
-
-// block obvious private/loopback hostnames to limit SSRF surface
-// (full DNS-rebinding prevention is not possible client-side, but this
-// catches the trivial cases — literal IPs and known-loopback names)
-const PRIVATE_HOSTNAME_RE =
-  /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.0\.0\.0|::1|fc00:|fd[0-9a-f]{2}:|fe80:)/i;
 const WHITEBOARD_OPTIMIZED_IMAGE_MAX_EDGE = 2400;
 const WHITEBOARD_OPTIMIZED_IMAGE_TARGET_BYTES = 2 * 1024 * 1024;
 const WHITEBOARD_OPTIMIZED_IMAGE_QUALITY = 0.9;
-
-function isSafeImageHostname(parsed: URL): boolean {
-  const h = parsed.hostname.toLowerCase().replace(/^\[/, "").replace(/\]$/, "");
-  if (PRIVATE_HOSTNAME_RE.test(h)) return false;
-  if (!["http:", "https:"].includes(parsed.protocol)) return false;
-  return true;
-}
 
 function shouldOptimizeImageForWhiteboard(
   file: File,
@@ -251,13 +239,12 @@ export async function fetchExternalImage(
   url: string,
   signal?: AbortSignal,
 ): Promise<File> {
-  let parsed: URL;
   try {
-    parsed = new URL(url);
+    new URL(url);
   } catch {
     throw new Error("Invalid image URL");
   }
-  if (!isSafeImageHostname(parsed)) {
+  if (!isSafeExternalBrowserUrl(url)) {
     throw new Error("Image URL hostname is not allowed");
   }
   try {

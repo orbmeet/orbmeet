@@ -5,7 +5,7 @@ import type { Database } from "@orbmeet/db";
 import { verifications } from "@orbmeet/db/schema";
 import { OTP_EXPIRY_MS } from "@/modules/identity/contract/auth/constants";
 import { createValidationError } from "@/lib/app-errors";
-import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { readCloudflareContext } from "@/platform/runtime/cloudflare-context";
 import { logError } from "@/lib/logger";
 import {
@@ -24,9 +24,13 @@ import { networkOf } from "@/platform/http/client-ip";
 import { getClientIP } from "@/platform/http/client-ip.server";
 import { getRunChanges, withD1Retry } from "@/platform/database/db-utils";
 import {
+  claimOtpDeliveryLease,
   hasVerificationAttemptsRemaining,
+  parseScopedFlowToken,
+  releaseOtpDeliveryLease,
   reserveVerificationAttempt,
   verificationAttemptBudgetRemainingSql,
+  type OtpDeliveryLease,
   type VerificationAttemptData,
 } from "./verification-attempts";
 
@@ -109,20 +113,6 @@ function codeScope(type: EmailAuthFlowType | "otp_step_up", flowId: string): str
   return `${type}:${flowId}`;
 }
 
-function parseFlowToken(flowToken: string): { id: string; secret: string } | null {
-  const separator = flowToken.indexOf(".");
-  if (separator < 1 || separator !== flowToken.lastIndexOf(".")) return null;
-  const id = flowToken.slice(0, separator);
-  const secret = flowToken.slice(separator + 1);
-  if (
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) ||
-    !/^[a-f0-9]{64}$/i.test(secret)
-  ) {
-    return null;
-  }
-  return { id, secret };
-}
-
 function parseFlowData(raw: string | null): EmailAuthFlowData | null {
   if (!raw) return null;
   try {
@@ -150,63 +140,23 @@ async function claimDeliveryLease(
   env: Env,
   purpose: string,
   subject: string,
-): Promise<{ identifier: string; claimId: string } | null> {
-  const now = new Date();
+): Promise<OtpDeliveryLease | null> {
   const requester = await deliveryRequester(env);
-  const identifier = `${purpose}:${subject}:${requester}`;
-  const claimId = crypto.randomUUID();
-  const result = await db
-    .insert(verifications)
-    .values({
-      id: crypto.randomUUID(),
-      type: "otp_delivery",
-      identifier,
-      value: claimId,
-      data: null,
-      expiresAt: new Date(now.getTime() + EMAIL_DELIVERY_COOLDOWN_MS),
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [verifications.type, verifications.identifier],
-      set: {
-        value: claimId,
-        expiresAt: new Date(now.getTime() + EMAIL_DELIVERY_COOLDOWN_MS),
-        updatedAt: now,
-      },
-      setWhere: lte(verifications.expiresAt, now),
-    })
-    .run();
-  if (getRunChanges(result) !== 1) return null;
-  const lease = { identifier, claimId };
+  const lease = await claimOtpDeliveryLease(
+    db,
+    `${purpose}:${subject}:${requester}`,
+    EMAIL_DELIVERY_COOLDOWN_MS,
+  );
+  if (!lease) return null;
   // The per-minute lease is held; now enforce the per-day volume cap. If the
   // requester is over its daily budget for the address, release the lease so
   // the throttle state reflects the real reason delivery was refused, and
   // report no lease.
   if (!(await withinDailyDeliveryCap(db, purpose, subject, requester))) {
-    await releaseDeliveryLease(db, lease);
+    await releaseOtpDeliveryLease(db, lease);
     return null;
   }
   return lease;
-}
-
-async function releaseDeliveryLease(
-  db: Database,
-  lease: { identifier: string; claimId: string },
-): Promise<void> {
-  await withD1Retry(
-    () =>
-      db
-        .delete(verifications)
-        .where(
-          and(
-            eq(verifications.type, "otp_delivery"),
-            eq(verifications.identifier, lease.identifier),
-            eq(verifications.value, lease.claimId),
-          ),
-        ),
-    { idempotent: true },
-  ).catch(() => undefined);
 }
 
 export async function createEmailAuthFlow(
@@ -279,7 +229,7 @@ export async function createEmailAuthFlow(
       ctx.waitUntil(
         deliver().catch(async (error) => {
           logError("[auth] Verification delivery failed", error);
-          await releaseDeliveryLease(db, lease);
+          await releaseOtpDeliveryLease(db, lease);
         }),
       );
     } else {
@@ -289,7 +239,7 @@ export async function createEmailAuthFlow(
     await withD1Retry(() => db.delete(verifications).where(eq(verifications.id, flowId)), {
       idempotent: true,
     }).catch(() => undefined);
-    await releaseDeliveryLease(db, lease);
+    await releaseOtpDeliveryLease(db, lease);
     throw error;
   }
 
@@ -306,7 +256,7 @@ export async function loadEmailAuthFlow(
   expiresAt: Date;
   data: EmailAuthFlowData;
 } | null> {
-  const token = parseFlowToken(flowToken);
+  const token = parseScopedFlowToken(flowToken);
   if (!token) return null;
   const row = await db.query.verifications.findFirst({
     where: {
@@ -404,7 +354,7 @@ export async function resendEmailAuthFlowCode(
   const lease = await claimDeliveryLease(db, env, input.deliveryPurpose, flow.data.normalizedEmail);
   if (!lease) return false;
   if (flow.data.recipientEmail && !isEmailConfigured(env.EMAIL)) {
-    await releaseDeliveryLease(db, lease);
+    await releaseOtpDeliveryLease(db, lease);
     throw new Error("Email authentication is not configured");
   }
 
@@ -431,7 +381,7 @@ export async function resendEmailAuthFlowCode(
     )
     .run();
   if (getRunChanges(updated) !== 1) {
-    await releaseDeliveryLease(db, lease);
+    await releaseOtpDeliveryLease(db, lease);
     throw createValidationError("Authentication flow expired. Please start again.");
   }
 
@@ -462,7 +412,7 @@ export async function resendEmailAuthFlowCode(
             .where(and(eq(verifications.id, flow.id), eq(verifications.value, codeHash))),
         { idempotent: true },
       );
-      await releaseDeliveryLease(db, lease);
+      await releaseOtpDeliveryLease(db, lease);
       throw createValidationError("Failed to send verification email. Please try again.");
     }
   };

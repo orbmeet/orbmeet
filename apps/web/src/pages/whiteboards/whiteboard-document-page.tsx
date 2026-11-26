@@ -4,7 +4,7 @@ import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ArrowLeft, Check, Copy, History, MoreHorizontal, Pencil, PenTool } from "lucide-react";
 import { resolveWhiteboardChrome, SyncedWhiteboard } from "@orbmeet/whiteboard-client/react";
-import type { WhiteboardToast } from "@orbmeet/whiteboard-client/react";
+import { buildWhiteboardConnectUrl } from "@orbmeet/whiteboard-core/protocol";
 import {
   addStandaloneWhiteboardPage,
   getStandaloneWhiteboardAccess,
@@ -19,7 +19,7 @@ import { getErrorMessage } from "@/lib/error-inspection";
 import { queryKeys } from "@/app/query-client/query-keys";
 import { Button } from "@orbmeet/ui/react";
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@orbmeet/ui/react";
-import { useToast } from "@orbmeet/ui/react";
+import { useWhiteboardToastAdapter } from "@/modules/whiteboards/client/use-whiteboard-toast-adapter";
 import { useWhiteboardDocumentAssets } from "@/modules/whiteboards/client/components/use-whiteboard-document-assets";
 import { WhiteboardUploadProgress } from "@/modules/whiteboards/client/components/whiteboard-upload-progress";
 import { getWhiteboardClientCapabilities } from "@/lib/browser-capabilities";
@@ -267,14 +267,7 @@ export function WhiteboardDocumentPage() {
   } = useWhiteboardDocumentAssets({
     whiteboardId: document.id,
   });
-  const { add: addAppToast } = useToast();
-  const handleWhiteboardToast = React.useCallback((toast: WhiteboardToast) => {
-    addAppToast({
-      title: toast.title,
-      description: toast.description,
-      data: { variant: toast.variant ?? "info" },
-    });
-  }, [addAppToast]);
+  const handleWhiteboardToast = useWhiteboardToastAdapter();
   const handleAddPage = React.useCallback((target?: { afterPageNumber?: number }) => (
     addStandaloneWhiteboardPage({
       data: {
@@ -296,10 +289,7 @@ export function WhiteboardDocumentPage() {
       queryKeys.whiteboards.standaloneAccess(document.id),
       refreshed,
     );
-    const url = new URL("/connect", refreshed.whiteboardUrl);
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    url.hash = new URLSearchParams({ token: refreshed.token }).toString();
-    return url.toString();
+    return buildWhiteboardConnectUrl(refreshed.whiteboardUrl, refreshed.token);
   }, [document.id, queryClient]);
 
   return (

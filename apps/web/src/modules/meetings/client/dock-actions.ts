@@ -20,7 +20,6 @@
  */
 
 export type DockActionId =
-  | "hand"
   | "surface-existing"
   | "share"
   | "audio"
@@ -55,37 +54,15 @@ export interface DockGroup {
 }
 
 /**
- * What the hand button acts on. A moderator's opens the timeline, where raised
- * hands wait at the top (`queue`); anyone else's raises or lowers their own
- * hand (`queue: null`).
- */
-export interface HandRaiseState {
-  isHandRaised: boolean;
-  queue: { open: boolean; pendingCount: number } | null;
-}
-
-export interface HandRaiseControl {
-  label: string;
-  active: boolean;
-}
-
-/** Your own hand: raise it, or lower it. */
-export function handRaiseControl({ isHandRaised }: Pick<HandRaiseState, "isHandRaised">): HandRaiseControl {
-  return { label: isHandRaised ? "Lower hand" : "Raise hand", active: isHandRaised };
-}
-
-/**
  * The sheet holds what a phone reaches for occasionally. What it reaches for
- * every minute has a place of its own: the Timeline and Talk/Board are on the
- * dock, and People and the lock are in the header, so none of them
+ * every minute has a place of its own: the Timeline, the hand, and Talk/Board
+ * are on the dock, and People and the lock are in the header, so none of them
  * is a row here as well.
  */
 export interface DockActionsInput {
   isHost: boolean;
 
   // Collaborate
-  /** Absent when the dock has no hand button. */
-  handRaise: HandRaiseState | null;
   surfaceActive?: boolean;
   canChooseExistingSurface: boolean;
   chooseExistingSurfaceLabel?: string;
@@ -120,9 +97,6 @@ function compact(actions: (DockAction | null)[]): DockAction[] {
 
 export function selectDockGroups(input: DockActionsInput): DockGroup[] {
   const collaborate = compact([
-    // A moderator's raised hands are answered in the timeline, which carries
-    // their count; only someone who can raise a hand gets a hand button.
-    input.handRaise && !input.handRaise.queue ? { id: "hand", ...handRaiseControl(input.handRaise) } : null,
     // Only offered while the surface is closed — once it is open, "choose a
     // different one" is a job for the surface's own chrome, not this menu.
     input.canChooseExistingSurface && !input.surfaceActive

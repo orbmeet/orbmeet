@@ -1,5 +1,5 @@
-import { ClientOnly, Link } from "@tanstack/react-router";
-import { lazy, Suspense, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, X, Zap, Building2, Users, ChevronDown } from "lucide-react";
 import { formatPlanDuration, getPlanLimits, type SubscriptionTier } from "@/modules/billing/contract/plan-limits";
@@ -10,8 +10,9 @@ import {
 import { sessionQueryOptions } from "@/app/query-client/queries/session";
 import { planPricesQueryOptions } from "@/app/query-client/queries/plan-prices";
 import { DEFAULT_PLAN_PRICES, formatPlanPrice, type PlanPrices } from "@/modules/billing/contract/plan-prices";
+import { Button, buttonStyles } from "@orbmeet/ui/react";
 import { enter, stagger } from "@orbmeet/ui/styles/animations";
-import { focus, layout, motion, pressable } from "@orbmeet/ui/styles/atoms";
+import { focus, layout, motion } from "@orbmeet/ui/styles/atoms";
 import { accent, border, danger, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
 import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";
@@ -24,13 +25,7 @@ import { PublicNav } from "@/app/shell/public-nav";
 import { PublicFooter } from "@/app/shell/public-footer";
 import { MAIN_CONTENT_ID } from "@/app/shell/skip-link";
 import { PRICING_FAQS } from "@/lib/seo";
-import { faq } from "@/pages/pricing/components/pricing-faq-styles";
 import { glass } from "@orbmeet/ui/tokens/wash.stylex";
-
-const PricingFaqAccordion = lazy(async () => {
-  const module = await import("@/pages/pricing/components/pricing-faq-accordion");
-  return { default: module.PricingFaqAccordion };
-});
 
 interface PricingTier {
   id: SubscriptionTier;
@@ -88,17 +83,27 @@ function formatBytes(bytes: number | null): string {
   return `${gb} GB`;
 }
 
-interface FeatureRow {
-  label: string;
-  getValue: (plan: SubscriptionTier) => React.ReactNode;
-  /**
-   * Present on the rows that are a yes/no rather than a number. Returns the
-   * answer, not a glyph: a tick and a cross are the same element to a screen
-   * reader unless something says which is which, and for a while nothing did
-   * — all three plans read out an identical list of feature names.
-   */
-  getIncluded?: (plan: SubscriptionTier) => boolean;
-}
+type NumericLimitKey =
+  | "maxParticipants"
+  | "maxConcurrentMeetings"
+  | "maxSpaces"
+  | "maxMembersPerSpace"
+  | "maxWhiteboardRestorePointsPerBoard";
+
+type BooleanLimitKey =
+  | "recordingEnabled"
+  | "streamingEnabled"
+  | "pdfExportEnabled"
+  | "aiFeaturesEnabled"
+  | "customPersonalMeetingCode";
+
+type FeatureRow =
+  | { label: string; kind: "limit"; key: NumericLimitKey }
+  | { label: string; kind: "duration" }
+  | { label: string; kind: "storage" }
+  | { label: string; kind: "text"; value: string | ((plan: SubscriptionTier) => string) }
+  /** Yes/no rows render a readable sr-only label alongside the check/cross glyph. */
+  | { label: string; kind: "boolean"; key?: BooleanLimitKey };
 
 const checkStyles = stylex.create({
   mark: {
@@ -125,14 +130,6 @@ const checkStyles = stylex.create({
   },
 });
 
-/**
- * A single yes/no cell. The glyph is decoration over a word, rather than the
- * only thing carrying the answer.
- */
-function formatFeatureValue(value: React.ReactNode): React.ReactNode {
-  return typeof value === "number" ? value.toLocaleString("en-US") : value;
-}
-
 function FeatureMark({ included }: { included: boolean }) {
   return (
     <span {...stylex.props(checkStyles.mark, included ? checkStyles.check : checkStyles.cross)}>
@@ -143,96 +140,41 @@ function FeatureMark({ included }: { included: boolean }) {
 }
 
 const FEATURES: FeatureRow[] = [
-  {
-    label: "Participants per meeting",
-    getValue: (plan) => {
-      const val = getPlanLimits(plan).maxParticipants;
-      return val === null ? "Unlimited" : val;
-    },
-  },
-  {
-    label: "Concurrent meetings",
-    getValue: (plan) => {
-      const val = getPlanLimits(plan).maxConcurrentMeetings;
-      return val === null ? "Unlimited" : val;
-    },
-  },
-  {
-    label: "Meeting duration",
-    getValue: (plan) => formatPlanDuration(getPlanLimits(plan).maxMeetingDurationMinutes),
-  },
-  {
-    label: "Spaces",
-    getValue: (plan) => {
-      const val = getPlanLimits(plan).maxSpaces;
-      return val === null ? "Unlimited" : val;
-    },
-  },
-  {
-    label: "Members per Space",
-    getValue: (plan) => {
-      const val = getPlanLimits(plan).maxMembersPerSpace;
-      return val === null ? "Unlimited" : val;
-    },
-  },
-  {
-    label: "Whiteboard restore points",
-    getValue: (plan) => getPlanLimits(plan).maxWhiteboardRestorePointsPerBoard,
-  },
-  {
-    label: "Organization members",
-    getValue: (plan) => plan === "organization" ? "Unlimited" : "—",
-  },
-  {
-    label: "Storage",
-    getValue: (plan) => formatBytes(getPlanLimits(plan).maxStorageBytes),
-  },
-  {
-    label: "Meeting history",
-    // Short, as every value in the column is: the row above is the allowance it counts toward.
-    getValue: () => "No expiry",
-  },
-  {
-    label: "Collaborative Whiteboard",
-    getIncluded: () => true,
-    getValue: () => null,
-  },
-  {
-    label: "Cloud recording",
-    getIncluded: (plan) => getPlanLimits(plan).recordingEnabled,
-    getValue: () => null,
-  },
-  {
-    label: "Live streaming",
-    getIncluded: (plan) => getPlanLimits(plan).streamingEnabled,
-    getValue: () => null,
-  },
-  {
-    label: "Whiteboard PDF export",
-    getIncluded: (plan) => getPlanLimits(plan).pdfExportEnabled,
-    getValue: () => null,
-  },
-  {
-    label: "AI meeting summary",
-    getIncluded: (plan) => getPlanLimits(plan).aiFeaturesEnabled,
-    getValue: () => null,
-  },
-  {
-    label: "In-meeting Whiteboard AI",
-    getIncluded: (plan) => getPlanLimits(plan).aiFeaturesEnabled,
-    getValue: () => null,
-  },
-  {
-    label: "Permanent personal meeting link",
-    getIncluded: () => true,
-    getValue: () => null,
-  },
-  {
-    label: "Custom personal codes",
-    getIncluded: (plan) => getPlanLimits(plan).customPersonalMeetingCode,
-    getValue: () => null,
-  },
+  { label: "Participants per meeting", kind: "limit", key: "maxParticipants" },
+  { label: "Concurrent meetings", kind: "limit", key: "maxConcurrentMeetings" },
+  { label: "Meeting duration", kind: "duration" },
+  { label: "Spaces", kind: "limit", key: "maxSpaces" },
+  { label: "Members per Space", kind: "limit", key: "maxMembersPerSpace" },
+  { label: "Whiteboard restore points", kind: "limit", key: "maxWhiteboardRestorePointsPerBoard" },
+  { label: "Organization members", kind: "text", value: (plan) => (plan === "organization" ? "Unlimited" : "—") },
+  { label: "Storage", kind: "storage" },
+  // Short, as every value in the column is: the row above is the allowance it counts toward.
+  { label: "Meeting history", kind: "text", value: "No expiry" },
+  { label: "Collaborative Whiteboard", kind: "boolean" },
+  { label: "Cloud recording", kind: "boolean", key: "recordingEnabled" },
+  { label: "Live streaming", kind: "boolean", key: "streamingEnabled" },
+  { label: "Whiteboard PDF export", kind: "boolean", key: "pdfExportEnabled" },
+  { label: "AI meeting summary", kind: "boolean", key: "aiFeaturesEnabled" },
+  { label: "In-meeting Whiteboard AI", kind: "boolean", key: "aiFeaturesEnabled" },
+  { label: "Permanent personal meeting link", kind: "boolean" },
+  { label: "Custom personal codes", kind: "boolean", key: "customPersonalMeetingCode" },
 ];
+
+function formatFeatureText(feature: Exclude<FeatureRow, { kind: "boolean" }>, plan: SubscriptionTier): string {
+  const limits = getPlanLimits(plan);
+  switch (feature.kind) {
+    case "limit": {
+      const value = limits[feature.key];
+      return value === null ? "Unlimited" : value.toLocaleString("en-US");
+    }
+    case "duration":
+      return formatPlanDuration(limits.maxMeetingDurationMinutes);
+    case "storage":
+      return formatBytes(limits.maxStorageBytes);
+    case "text":
+      return typeof feature.value === "function" ? feature.value(plan) : feature.value;
+  }
+}
 
 const cardStyles = stylex.create({
   root: {
@@ -396,49 +338,7 @@ const cardStyles = stylex.create({
   featureValue: { fontWeight: weight.bold, color: ink.strong },
 
   actions: { marginTop: "auto", paddingTop: space.s4 },
-
-  /** The plan CTAs. All of them press in slightly and recover. */
-  cta: {
-    display: "inline-flex",
-    width: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radii.control,
-    paddingBlock: space.s3,
-    fontSize: text.sm,
-    fontWeight: weight.bold,
-    transform: {
-      default: "scale(1)",
-      [env.hoverable]: { default: "scale(1)", ":hover:not(:disabled)": "scale(1.02)" },
-      ":active:not(:disabled)": "scale(0.98)",
-    },
-    opacity: { default: 1, ":disabled": 0.6 },
-  },
-  /**
-   * One primary per screen: the recommended tier's button is the blue one,
-   * every other tier's is secondary. There is no dark button in the system.
-   */
-  ctaSecondary: {
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: { default: neutral.n200, [env.hoverable]: { default: neutral.n200, ":hover:not(:disabled)": neutral.n300 } },
-    backgroundColor: { default: surface.raised, [env.hoverable]: { default: surface.raised, ":hover:not(:disabled)": neutral.n50 } },
-    color: ink.strong,
-    boxShadow: shadows.hairline,
-  },
-  ctaPrimary: {
-    backgroundColor: { default: accent.a700, [env.hoverable]: { default: accent.a700, ":hover:not(:disabled)": accent.a800 } },
-    color: ink.onAccent,
-    boxShadow: shadows.lift1,
-  },
-  ctaSoft: {
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: `color-mix(in oklab, ${accent.a200} 50%, transparent)`,
-    backgroundImage: `linear-gradient(to right, ${accent.a50}, color-mix(in oklab, ${accent.a100} 50%, transparent))`,
-    color: accent.a700,
-    boxShadow: shadows.lift1,
-  },
+  ctaFull: { width: "100%" },
   ctaError: {
     marginTop: space.s2,
     textAlign: "center",
@@ -553,116 +453,168 @@ function PricingCard({
               <span {...stylex.props(cardStyles.featureLabel, motion.tint)}>
                 {feature.label}
               </span>
-              {feature.getIncluded ? (
+              {feature.kind === "boolean" ? (
                 <span {...stylex.props(cardStyles.featureIcon, motion.move)}>
-                  <FeatureMark included={feature.getIncluded(tier.id)} />
+                  <FeatureMark included={feature.key ? getPlanLimits(tier.id)[feature.key] : true} />
                 </span>
               ) : (
-                <span {...stylex.props(cardStyles.featureValue)}>{formatFeatureValue(feature.getValue(tier.id))}</span>
+                <span {...stylex.props(cardStyles.featureValue)}>
+                  {formatFeatureText(feature, tier.id)}
+                </span>
               )}
             </li>
           ))}
         </ul>
 
         <div {...stylex.props(cardStyles.actions)}>
-          {managesExistingSubscription && tier.id === "pro" ? (
-            <>
-              <button
-                onClick={() => {
-                  void handleBillingAction();
-                }}
-                disabled={loading}
-                {...stylex.props(
-                  pressable.base,
-                  focus.ring,
-                  cardStyles.cta,
-                  cardStyles.ctaSecondary,
-                  motion.move,
-                )}
-              >
-                {loading ? "Opening..." : "Manage billing"}
-              </button>
-              {error && (
-                <p {...stylex.props(cardStyles.ctaError)}>{error}</p>
-              )}
-            </>
-          ) : isCurrentPlan ? (
-            <Link
-              to="/home"
-              {...stylex.props(pressable.base, focus.ring, cardStyles.cta, cardStyles.ctaSoft, motion.move)}
-            >
-              Open Orb Meet
-            </Link>
-          ) : currentPlan && tier.id === "organization" ? (
-            <Link
-              to="/settings"
-              search={{ tab: "plan-&-billing" }}
-              {...stylex.props(pressable.base, focus.ring, cardStyles.cta, cardStyles.ctaSecondary, motion.move)}
-            >
-              Set up an Organization
-            </Link>
-          ) : currentPlan && tier.id === "pro" ? (
-            <>
-              <button
-                onClick={() => {
-                  void handleBillingAction();
-                }}
-                disabled={loading}
-                {...stylex.props(
-                  pressable.base,
-                  focus.ring,
-                  cardStyles.cta,
-                  tier.popular ? cardStyles.ctaPrimary : cardStyles.ctaSecondary,
-                  motion.move,
-                )}
-              >
-                {loading ? "Loading..." : "Upgrade"}
-              </button>
-              {error && (
-                <p {...stylex.props(cardStyles.ctaError)}>{error}</p>
-              )}
-            </>
-          ) : currentPlan ? (
-            <Link
-              to="/home"
-              {...stylex.props(pressable.base, focus.ring, cardStyles.cta, cardStyles.ctaSoft, motion.move)}
-            >
-              Open Orb Meet
-            </Link>
-          ) : (
-            <Link
-              to="/auth"
-              search={{ mode: "signup" }}
-              {...stylex.props(
-                pressable.base,
-                focus.ring,
-                cardStyles.cta,
-                tier.popular ? cardStyles.ctaPrimary : cardStyles.ctaSecondary,
-                motion.move,
-              )}
-            >
-              Get started
-            </Link>
-          )}
+          {renderAction()}
         </div>
       </div>
     </div>
   );
+
+  function renderAction() {
+    if (!currentPlan) {
+      return (
+        <Link
+          to="/auth"
+          search={{ mode: "signup" }}
+          {...stylex.props(...buttonStyles({ variant: tier.popular ? "primary" : "secondary", size: "lg", sx: cardStyles.ctaFull }))}
+        >
+          Get started
+        </Link>
+      );
+    }
+
+    if (tier.id === "pro" && (managesExistingSubscription || !isCurrentPlan)) {
+      const label = managesExistingSubscription
+        ? (loading ? "Opening..." : "Manage billing")
+        : (loading ? "Loading..." : "Upgrade");
+      return (
+        <>
+          <Button
+            variant={managesExistingSubscription ? "secondary" : tier.popular ? "primary" : "secondary"}
+            size="lg"
+            sx={cardStyles.ctaFull}
+            loading={loading}
+            onClick={() => { void handleBillingAction(); }}
+          >
+            {label}
+          </Button>
+          {error && <p {...stylex.props(cardStyles.ctaError)}>{error}</p>}
+        </>
+      );
+    }
+
+    if (!isCurrentPlan && tier.id === "organization") {
+      return (
+        <Link
+          to="/settings"
+          search={{ tab: "plan-&-billing" }}
+          {...stylex.props(...buttonStyles({ variant: "secondary", size: "lg", sx: cardStyles.ctaFull }))}
+        >
+          Set up an Organization
+        </Link>
+      );
+    }
+
+    return (
+      <Link
+        to="/home"
+        {...stylex.props(...buttonStyles({ variant: "outline", size: "lg", sx: cardStyles.ctaFull }))}
+      >
+        Open Orb Meet
+      </Link>
+    );
+  }
 }
 
-function PricingFaqFallback({ faqs }: { faqs: Array<{ q: string; a: string }> }) {
+const faqStyles = stylex.create({
+  grid: {
+    display: "grid",
+    gap: space.s3,
+    gridTemplateColumns: { default: "minmax(0, 1fr)", [bp.sm]: "repeat(2, minmax(0, 1fr))" },
+    alignItems: "start",
+  },
+  item: {
+    overflow: "hidden",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: {
+      default: border.subtle,
+      [env.hoverable]: { default: border.subtle, ":hover": border.strong },
+    },
+    borderRadius: radii.card,
+    backgroundColor: surface.raised,
+    transitionProperty: "border-color",
+    transitionDuration: { default: "150ms", [env.reducedMotion]: "0s" },
+  },
+  trigger: {
+    display: "flex",
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: space.s3,
+    margin: 0,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    paddingInline: space.s5,
+    paddingBlock: space.s4,
+    fontFamily: "inherit",
+    textAlign: "start",
+    cursor: "pointer",
+    listStyleType: "none",
+    // A real pseudo-element, just missing from the rule's allowlist. It is how
+    // Safari's default disclosure triangle is removed from the <summary>.
+    // oxlint-disable-next-line @stylexjs/valid-styles
+    "::-webkit-details-marker": { display: "none" },
+  },
+  question: {
+    fontSize: text.sm,
+    lineHeight: leading.sm,
+    fontWeight: weight.semibold,
+    color: {
+      default: ink.strong,
+      [env.hoverable]: { default: ink.strong, [stylex.when.ancestor(":hover")]: accent.a700 },
+    },
+  },
+  chevron: {
+    height: 16,
+    width: 16,
+    flexShrink: 0,
+    color: {
+      default: neutral.n400,
+      [env.hoverable]: { default: neutral.n400, [stylex.when.ancestor(":hover")]: accent.a600 },
+      [stylex.when.ancestor(":is([open])", disclosure)]: accent.a600,
+    },
+    transform: {
+      default: "rotate(0deg)",
+      [stylex.when.ancestor(":is([open])", disclosure)]: "rotate(180deg)",
+    },
+  },
+  answer: {
+    margin: 0,
+    paddingInline: space.s5,
+    paddingBottom: space.s4,
+    fontSize: text.sm,
+    lineHeight: leading.relaxed,
+    color: ink.muted,
+  },
+});
+
+function PricingFaqList({ faqs }: { faqs: Array<{ q: string; a: string }> }) {
   return (
-    <div {...stylex.props(faq.grid)}>
+    <div {...stylex.props(faqStyles.grid)}>
       {faqs.map(({ q, a }, index) => (
         <details
           key={q}
-          {...stylex.props(faq.item, enter.fadeUp, stagger.by(600 + index * 100), disclosure)}
+          {...stylex.props(faqStyles.item, enter.fadeUp, stagger.by(600 + index * 100), disclosure)}
         >
-          <summary {...stylex.props(faq.trigger, focus.ring, stylex.defaultMarker())}>
-            <span {...stylex.props(faq.question, motion.tint)}>{q}</span>
-            <ChevronDown aria-hidden {...stylex.props(faq.chevron, motion.move)} />
+          <summary {...stylex.props(faqStyles.trigger, focus.ring, stylex.defaultMarker())}>
+            <span {...stylex.props(faqStyles.question, motion.tint)}>{q}</span>
+            <ChevronDown aria-hidden {...stylex.props(faqStyles.chevron, motion.move)} />
           </summary>
-          <p {...stylex.props(faq.answer)}>{a}</p>
+          <p {...stylex.props(faqStyles.answer)}>{a}</p>
         </details>
       ))}
     </div>
@@ -801,11 +753,7 @@ export function PricingPage() {
             </h2>
             <p {...stylex.props(styles.faqLede)}>About plans, Organizations and what membership covers.</p>
           </div>
-          <ClientOnly fallback={<PricingFaqFallback faqs={faqs} />}>
-            <Suspense fallback={<PricingFaqFallback faqs={faqs} />}>
-              <PricingFaqAccordion faqs={faqs} />
-            </Suspense>
-          </ClientOnly>
+          <PricingFaqList faqs={faqs} />
         </section>
 
       </main>

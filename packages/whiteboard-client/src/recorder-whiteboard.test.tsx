@@ -41,10 +41,8 @@ function authResponse(token: string, documentId = "wb_1") {
 }
 
 // The auth endpoint is host-supplied; nothing in the package may embed a
-// default route, so the test uses a URL that only the adapter could provide.
-const SERVICE_ENDPOINTS = {
-  recorderAuth: "https://api.example.test/whiteboard/recorder-auth",
-};
+// default route, so the test uses a URL that only the host could provide.
+const RECORDER_AUTH_URL = "https://api.example.test/whiteboard/recorder-auth";
 
 afterEach(() => {
   cleanup();
@@ -74,7 +72,7 @@ describe("RecorderWhiteboard auth refresh", () => {
         whiteboardUrl="https://whiteboard.example.com"
         recorderToken="recorder-token"
         whiteboardId="wb_1"
-        serviceEndpoints={SERVICE_ENDPOINTS}
+        recorderAuthUrl={RECORDER_AUTH_URL}
         onStatusChange={onStatusChange}
       />,
     );
@@ -82,7 +80,7 @@ describe("RecorderWhiteboard auth refresh", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      SERVICE_ENDPOINTS.recorderAuth,
+      RECORDER_AUTH_URL,
       expect.objectContaining({ method: "POST" }),
     );
     expect(screen.getByTestId("recorder-whiteboard").textContent).toBe(initialToken);
@@ -118,7 +116,7 @@ describe("RecorderWhiteboard auth refresh", () => {
         whiteboardUrl="https://whiteboard.example.com"
         recorderToken="recorder-token"
         whiteboardId="wb_1"
-        serviceEndpoints={SERVICE_ENDPOINTS}
+        recorderAuthUrl={RECORDER_AUTH_URL}
       />,
     );
     await act(async () => {
@@ -151,7 +149,7 @@ describe("RecorderWhiteboard auth refresh", () => {
       capabilities: { reduceRasterMemory: false, disableCoalescedPointerEvents: false },
       whiteboardUrl: "https://whiteboard.example.com",
       recorderToken: "recorder-token",
-      serviceEndpoints: SERVICE_ENDPOINTS,
+      recorderAuthUrl: RECORDER_AUTH_URL,
     };
 
     const { rerender } = render(<RecorderWhiteboard {...props} whiteboardId="wb_1" />);

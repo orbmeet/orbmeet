@@ -9,6 +9,8 @@ import { buildWhiteboardAssetViewerUrl } from "@orbmeet/whiteboard-core/whiteboa
 export interface RevisionAssetScope {
   whiteboardId: string;
   revisionId: string;
+  meetingId?: string;
+  admissionId?: string;
 }
 
 /**
@@ -25,6 +27,9 @@ export function revisionAssetUrl(src: string | null, scope: RevisionAssetScope |
   const sameOrigin = buildWhiteboardAssetViewerUrl(src, scope?.whiteboardId);
   if (!sameOrigin) return null;
   if (!scope || !sameOrigin.includes("/api/wb-assets/")) return sameOrigin;
+  const params = new URLSearchParams({ revisionId: scope.revisionId });
+  if (scope.meetingId !== undefined) params.set("meetingId", scope.meetingId);
+  if (scope.admissionId !== undefined) params.set("admissionId", scope.admissionId);
   const separator = sameOrigin.includes("?") ? "&" : "?";
-  return `${sameOrigin}${separator}revisionId=${encodeURIComponent(scope.revisionId)}`;
+  return `${sameOrigin}${separator}${params.toString()}`;
 }

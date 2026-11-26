@@ -83,8 +83,8 @@ const styles = stylex.create({
   lockedWord: { display: { default: "inline", [SINGLE_ROW_TIGHT]: "none" } },
   recordingDot: { height: 6, width: 6, flexShrink: 0, borderRadius: radii.pill, backgroundColor: "currentColor" },
 });
-import type { MeetingClockSync } from "@/modules/meetings/client/meeting-clock";
-import { useMeetingElapsedSeconds } from "@/modules/meetings/client/use-meeting-elapsed-seconds";
+import { getMeetingElapsedSeconds, type MeetingClockSync } from "@/modules/meetings/client/meeting-clock";
+import { useNow } from "@/lib/hooks/use-now";
 import { formatClock } from "@/modules/meetings/client/format-duration";
 
 interface MeetingIdentityProps {
@@ -163,7 +163,7 @@ export function MeetingIdentity({
   onCopyLink,
   peopleCount,
 }: MeetingIdentityProps) {
-  const elapsed = useMeetingElapsedSeconds(meetingClock);
+  const elapsed = getMeetingElapsedSeconds(meetingClock, useNow(1_000));
   const showCopy = onCopyLink !== undefined && !readOnly;
 
   // The heading is the most human name the meeting has: its own title, then

@@ -14,7 +14,7 @@ import { Avatar, Button, MenuContent, MenuItem, MenuRoot, MenuTrigger, Switch } 
 
 import { sidePanel } from "@/modules/meetings/client/meeting-styles";
 import { PARTICIPANT_ATTRIBUTE, parseRaisedHand } from "@/modules/meetings/contract/live-state";
-import type { MeetingRole } from "@/modules/meetings/contract/constants";
+import type { ParticipantConnection } from "@/modules/meetings/client/use-livekit-connections";
 import { env } from "@orbmeet/ui/tokens/media.stylex";
 import type { DockSecurityControls } from "./dock-controls";
 import { canChangeModerator, canMessagePrivately, canRemoveParticipant, useRemovalConfirmation } from "./participant-actions";
@@ -26,16 +26,8 @@ const HAND_EVENTS = [
   RoomEvent.ParticipantDisconnected,
 ];
 
-interface Participant {
-  id: string;
-  name: string;
-  role: MeetingRole;
-  isGuest?: boolean;
-  isMicOn?: boolean;
-}
-
 interface ParticipantsPanelProps {
-  participants: Participant[];
+  participants: ParticipantConnection[];
   currentIdentity?: string;
   onClose: () => void;
   canManageModerators?: boolean;
@@ -298,12 +290,12 @@ export function ParticipantsPanel({
     if (a.role !== "host" && b.role === "host") return 1;
 
     // Then current user
-    if (a.id === currentIdentity) return -1;
-    if (b.id === currentIdentity) return 1;
+    if (a.identity === currentIdentity) return -1;
+    if (b.identity === currentIdentity) return 1;
 
     // Then raised hands, in the order they went up
-    const aHand = raisedAt.get(a.id);
-    const bHand = raisedAt.get(b.id);
+    const aHand = raisedAt.get(a.identity);
+    const bHand = raisedAt.get(b.identity);
     if (aHand !== undefined || bHand !== undefined) {
       if (aHand === undefined) return 1;
       if (bHand === undefined) return -1;
@@ -311,7 +303,7 @@ export function ParticipantsPanel({
     }
 
     // Then alphabetically
-    return a.name.localeCompare(b.name);
+    return a.userName.localeCompare(b.userName);
   });
 
   const hostCount = participants.filter(p => p.role === "host").length;
@@ -357,18 +349,18 @@ export function ParticipantsPanel({
       <div {...stylex.props(sidePanel.body, sidePanel.bodyTinted)}>
         <div {...stylex.props(stack.x1)}>
           {sortedParticipants.map((p) => {
-            const isYou = p.id === currentIdentity;
+            const isYou = p.identity === currentIdentity;
             const isHost = p.role === "host";
             const isModerator = p.role === "moderator";
-            const isMicOn = p.isMicOn ?? true;
-            const roleUpdatePending = moderatorUpdatePending?.has(p.id) ?? false;
+            const isMicOn = p.isMicrophoneEnabled ?? true;
+            const roleUpdatePending = moderatorUpdatePending?.has(p.identity) ?? false;
             const canRemove = canRemoveParticipant(p, management);
             const canMessage = canMessagePrivately(p, management);
             const canModerate = canChangeModerator(p, management);
 
             return (
               <div
-                key={p.id}
+                key={p.identity}
                 {...stylex.props(
                   styles.row,
                   motion.tint,
@@ -377,10 +369,10 @@ export function ParticipantsPanel({
               >
                 {/* Avatar with status indicator */}
                 <div {...stylex.props(styles.portrait)}>
-                  <Avatar name={p.name || p.id || "User"} size="md" />
+                  <Avatar name={p.userName || p.identity || "User"} size="md" />
 
                   {/* Speaking indicator */}
-                  {speakingIds.has(p.id) && (
+                  {speakingIds.has(p.identity) && (
                     <div {...stylex.props(styles.speakingDot)}>
                       <div {...stylex.props(styles.speakingDotCore, progress.pulse)} />
                     </div>
@@ -391,7 +383,7 @@ export function ParticipantsPanel({
                 <div {...stylex.props(styles.rowBody)}>
                   <div {...stylex.props(row.x2)}>
                     <span {...stylex.props(styles.name, layout.truncate)}>
-                      {p.name || p.id || "Unknown"}
+                      {p.userName || p.identity || "Unknown"}
                     </span>
 
                     {/* You badge */}
@@ -415,7 +407,7 @@ export function ParticipantsPanel({
                   ) : null}
                 </div>
 
-                {raisedAt.has(p.id) && (
+                {raisedAt.has(p.identity) && (
                   <span role="img" aria-label="Hand raised" title="Hand raised" {...stylex.props(styles.hand)}>
                     <Hand size={13} aria-hidden="true" />
                   </span>
@@ -438,7 +430,7 @@ export function ParticipantsPanel({
                 {canMessage || canModerate || canRemove ? (
                   <MenuRoot>
                     <MenuTrigger
-                      aria-label={`More actions for ${p.name || "participant"}`}
+                      aria-label={`More actions for ${p.userName || "participant"}`}
                       title="More actions"
                       {...stylex.props(pressable.base, motion.tint, focus.ring, styles.moreAction)}
                     >
@@ -446,19 +438,19 @@ export function ParticipantsPanel({
                     </MenuTrigger>
                     <MenuContent sideOffset={4}>
                       {canMessage ? (
-                        <MenuItem onClick={() => onMessagePrivately?.({ id: p.id, name: p.name || "Participant" })}>
+                        <MenuItem onClick={() => onMessagePrivately?.({ id: p.identity, name: p.userName || "Participant" })}>
                           <MessageSquareLock size={14} aria-hidden="true" />
                           Message privately
                         </MenuItem>
                       ) : null}
                       {canModerate ? (
-                        <MenuItem disabled={roleUpdatePending} onClick={() => onSetModerator?.(p.id, !isModerator)}>
+                        <MenuItem disabled={roleUpdatePending} onClick={() => onSetModerator?.(p.identity, !isModerator)}>
                           <ShieldCheck size={14} aria-hidden="true" />
                           {roleUpdatePending ? "Updating…" : isModerator ? "Remove moderator" : "Make moderator"}
                         </MenuItem>
                       ) : null}
                       {canRemove ? (
-                        <MenuItem disabled={removalPending?.has(p.id) ?? false} onClick={() => removal.requestRemoval(p)}>
+                        <MenuItem disabled={removalPending?.has(p.identity) ?? false} onClick={() => removal.requestRemoval(p)}>
                           <UserMinus size={14} aria-hidden="true" />
                           Remove from meeting
                         </MenuItem>

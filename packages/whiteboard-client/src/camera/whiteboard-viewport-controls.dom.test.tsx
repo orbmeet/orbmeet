@@ -84,13 +84,16 @@ describe("WhiteboardViewportControls handoff menu", () => {
 
   it("stays closed when its trigger comes back after someone else took control", () => {
     const { rerender } = render(<WhiteboardViewportControls {...handoffProps(null)} />);
-    fireEvent.click(screen.getByRole("button", { name: "Give control of the pages to someone" }));
-    expect(screen.getByRole("button", { name: "Close handoff menu" })).toBeTruthy();
+    const trigger = screen.getByRole("button", { name: "Give control of the pages to someone" });
+    fireEvent.pointerDown(trigger, { pointerType: "mouse", button: 0 });
+    fireEvent.pointerUp(trigger, { pointerType: "mouse", button: 0 });
+    fireEvent.click(trigger, { detail: 1 });
+    expect(screen.getByRole("button", { name: "Maya" })).toBeTruthy();
 
     rerender(<WhiteboardViewportControls {...handoffProps("Maya")} />);
     rerender(<WhiteboardViewportControls {...handoffProps(null)} />);
 
     expect(screen.getByRole("button", { name: "Give control of the pages to someone" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Close handoff menu" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Maya" })).toBeNull();
   });
 });

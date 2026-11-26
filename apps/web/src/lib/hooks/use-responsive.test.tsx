@@ -42,4 +42,22 @@ describe("useResponsive", () => {
     expect(latest).toBe("phone");
     expect(renders).toBe(initialRenders + 1);
   });
+
+  it("tracks whether the window is short (<= 600px tall)", () => {
+    resizeTo(1200, 800);
+    let isShort = false;
+    function Probe() {
+      isShort = useResponsive().isShortWindow;
+      return null;
+    }
+    root = createRoot(document.createElement("div"));
+    act(() => root!.render(<Probe />));
+    expect(isShort).toBe(false);
+
+    act(() => resizeTo(1200, 600));
+    expect(isShort).toBe(true);
+
+    act(() => resizeTo(1200, 601));
+    expect(isShort).toBe(false);
+  });
 });

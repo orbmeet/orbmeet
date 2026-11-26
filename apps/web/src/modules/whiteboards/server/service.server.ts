@@ -20,58 +20,24 @@ import {
 } from "@/modules/whiteboards/server/meeting/grants";
 import { isWhiteboardConfigured } from "@/modules/whiteboards/server/config.server";
 
-async function resolveAuthenticatedCallerIdentity(
+async function resolveMeetingCallerIdentity(
   db: Database,
-  meetingId: string,
-  userId: string,
-  connectionId?: string,
-) {
-  if (!connectionId) throw Errors.UNAUTHORIZED();
-
-  const meeting = await assertMeetingExists(db, meetingId, { requireActive: true });
-  const connection = await findWhiteboardEligibleConnectionById(db, meetingId, connectionId);
-  if (!connection || connection.userId !== userId) throw Errors.FORBIDDEN();
-  const grantPrincipal = whiteboardGrantPrincipalForConnection(connection);
-  if (!grantPrincipal) throw Errors.FORBIDDEN();
-  // The role the meeting's room decided and projected onto the connection.
-  const baseCapabilities = whiteboardCapabilitiesForMeetingRole(connection.role);
-  const { capabilities } = await resolveWhiteboardCapabilities(db, {
-    meetingId: meeting.id,
-    principal: grantPrincipal,
-    base: baseCapabilities,
-  });
-
-  const participant = connection.admissionId
-    ? await db.query.meetingAdmissions.findFirst({
-        where: { id: connection.admissionId },
-      })
-    : null;
-
-  return {
-    connectionId: connection.connectionId,
-    identity: connection.livekitIdentity,
-    displayName: participant?.displayName ?? null,
-    role: whiteboardRoleForMeetingConnection(connection),
-    capabilities,
-    grantPrincipal,
-    canEditWhiteboard: capabilities.canEditWhiteboard,
-  };
-}
-
-async function resolveGuestCallerIdentity(
-  db: Database,
-  meetingId: string,
+  meeting: { id: string },
   connectionId: string | undefined,
+  userId: string | null,
 ) {
   if (!connectionId) throw Errors.UNAUTHORIZED();
 
-  const meeting = await assertMeetingExists(db, meetingId, { requireActive: true });
-  const connection = await findWhiteboardEligibleConnectionById(db, meetingId, connectionId);
-  if (!connection || connection.userId !== null || !connection.admissionId) {
+  const connection = await findWhiteboardEligibleConnectionById(db, meeting.id, connectionId);
+  if (userId !== null) {
+    if (!connection || connection.userId !== userId) throw Errors.FORBIDDEN();
+  } else if (!connection || connection.userId !== null || !connection.admissionId) {
     throw Errors.FORBIDDEN();
   }
+
   const grantPrincipal = whiteboardGrantPrincipalForConnection(connection);
   if (!grantPrincipal) throw Errors.FORBIDDEN();
+
   // The role the meeting's room decided and projected onto the connection.
   const baseCapabilities = whiteboardCapabilitiesForMeetingRole(connection.role);
   const { capabilities } = await resolveWhiteboardCapabilities(db, {
@@ -80,17 +46,29 @@ async function resolveGuestCallerIdentity(
     base: baseCapabilities,
   });
 
-  const guestSecretHash = getGuestCookieSecret(connection.admissionId);
-  await verifyGuestAdmissionBySecret(db, meetingId, connection.admissionId, guestSecretHash);
-
-  return {
-    connectionId: connection.connectionId,
-    identity: connection.livekitIdentity,
+  let displayName: string | null;
+  if (userId !== null) {
+    const participant = connection.admissionId
+      ? await db.query.meetingAdmissions.findFirst({
+          where: { id: connection.admissionId },
+        })
+      : null;
+    displayName = participant?.displayName ?? null;
+  } else {
+    const admissionId = connection.admissionId;
+    const guestSecretHash = getGuestCookieSecret(admissionId);
+    await verifyGuestAdmissionBySecret(db, meeting.id, admissionId, guestSecretHash);
     // The name the guest joined under, not the word "Guest". A host reading
     // "Guest requested whiteboard edit access" with three guests in the room
     // has been told nothing they can act on; the admission has carried the
     // typed name all along.
-    displayName: connection.displayName,
+    displayName = connection.displayName;
+  }
+
+  return {
+    connectionId: connection.connectionId,
+    identity: connection.livekitIdentity,
+    displayName,
     role: whiteboardRoleForMeetingConnection(connection),
     capabilities,
     grantPrincipal,
@@ -120,18 +98,13 @@ export async function resolveActiveWhiteboardCallerIdentity(
     await enforceRateLimit(env, `${rateLimitPrefix}:${user.id}`);
     const meeting = await assertMeetingExists(db, meetingId, { requireActive: true });
     await assertActiveMeetingParticipantWithSpaceAccess(db, meeting.id, user.id, { meeting });
-    const callerIdentity = await resolveAuthenticatedCallerIdentity(
-      db,
-      meeting.id,
-      user.id,
-      connectionId,
-    );
+    const callerIdentity = await resolveMeetingCallerIdentity(db, meeting, connectionId, user.id);
     return { meeting, callerIdentity };
   }
 
   await enforceRateLimit(env, `${rateLimitPrefix}:guest:${connectionId ?? "unknown"}`);
   await enforceRateLimit(env, `${rateLimitPrefix}:ip:${clientIP}`);
   const meeting = await assertMeetingExists(db, meetingId, { requireActive: true });
-  const callerIdentity = await resolveGuestCallerIdentity(db, meeting.id, connectionId);
+  const callerIdentity = await resolveMeetingCallerIdentity(db, meeting, connectionId, null);
   return { meeting, callerIdentity };
 }

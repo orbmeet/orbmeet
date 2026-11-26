@@ -17,7 +17,6 @@ const styles = stylex.create({
     paddingBlock: space.s16,
     textAlign: "center",
   },
-  illustration: { marginBottom: space.s6 },
   iconWell: {
     marginBottom: space.s4,
     borderRadius: radii.panel,
@@ -57,7 +56,6 @@ interface EmptyStateProps {
    * caller passing a Lucide glyph gets the right tint without saying so.
    */
   icon?: ComponentType<{ size?: number }>;
-  illustration?: ReactNode;
   title: string;
   description?: string;
   action?: ReactNode;
@@ -66,7 +64,6 @@ interface EmptyStateProps {
 
 export function EmptyState({
   icon: Icon,
-  illustration,
   title,
   titleAs: Title = "h3",
   description,
@@ -75,9 +72,7 @@ export function EmptyState({
 }: EmptyStateProps) {
   return (
     <div {...stylex.props(styles.root, enter.fadeUp, sx)}>
-      {illustration ? (
-        <div {...stylex.props(styles.illustration)}>{illustration}</div>
-      ) : Icon ? (
+      {Icon ? (
         <div {...stylex.props(styles.iconWell)}>
           <Icon size={32} />
         </div>

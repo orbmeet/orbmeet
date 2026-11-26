@@ -51,6 +51,7 @@ import {
 import { composeOutput } from "./compose-output";
 import { cancelCodeRun, runCode } from "./run-code";
 import { useWhiteboardToolbarContext } from "../../toolbar/whiteboard-toolbar-context";
+import { useShapeInteractionState } from "../use-shape-interaction-state";
 import { codeColors } from "./code-shape-tokens.stylex";
 import { CODE_SVG_PALETTE, codeDark, type CodeSvgPalette } from "./code-shape-theme";
 
@@ -316,18 +317,11 @@ interface CodeShapeComponentProps {
 }
 
 function CodeShapeComponent({ editor, shape }: CodeShapeComponentProps) {
-  const isReadonly = useValue("isReadonly", () => editor.getIsReadonly(), [editor]);
+  const { isReadonly, isSelected, isEditing, updateProps } = useShapeInteractionState<CodeShape>(
+    editor,
+    shape,
+  );
   const isDarkMode = useValue("isDarkMode", () => editor.user.getIsDarkMode(), [editor]);
-  const isSelected = useValue(
-    "isSelected",
-    () => editor.getSelectedShapeIds().includes(shape.id),
-    [editor, shape.id],
-  );
-  const isEditing = useValue(
-    "isEditing",
-    () => editor.getEditingShapeId() === shape.id,
-    [editor, shape.id],
-  );
 
   const [localCode, setLocalCode] = useState(shape.props.code);
   const [isOutputOpen, setIsOutputOpen] = useState(true);
@@ -371,17 +365,6 @@ function CodeShapeComponent({ editor, shape }: CodeShapeComponentProps) {
     source: string;
     language: CodeLanguage;
   } | null>(null);
-
-  const updateProps = useCallback(
-    (props: Partial<CodeShape["props"]>) => {
-      // A flush can land after the shape is gone — deleted here, or by a
-      // collaborator mid-edit. Writing to a missing id is not an error worth
-      // raising, it is just nothing to do.
-      if (isReadonly || !editor.getShape(shape.id)) return;
-      editor.updateShape<CodeShape>({ id: shape.id, type: shape.type, props });
-    },
-    [editor, isReadonly, shape.id, shape.type],
-  );
 
   const flushCode = useCallback(() => {
     if (debounceRef.current) {

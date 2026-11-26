@@ -36,26 +36,6 @@ export function formatDayLabel(date: Date, now = new Date()): string {
 }
 
 /**
- * "6:58 – 7:00 AM" for a same-day meeting (Intl.formatRange drops the
- * redundant meridiem), "11:13 PM – 1:02 AM (Jul 10)" when the meeting crosses
- * midnight — the date group names the start day, so only the end day needs
- * calling out. A missing or non-positive end falls back to the start time.
- */
-export function formatMeetingTimeRange(startIso: string, endIso: string | null): string {
-  const start = new Date(startIso);
-  const timeFormat = new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit" });
-  if (!endIso) return timeFormat.format(start);
-  const end = new Date(endIso);
-  if (Number.isNaN(end.getTime()) || end.getTime() <= start.getTime()) {
-    return timeFormat.format(start);
-  }
-  if (start.toDateString() !== end.toDateString()) {
-    return `${timeFormat.format(start)} – ${timeFormat.format(end)} (${formatDayLabel(end)})`;
-  }
-  return timeFormat.formatRange(start, end);
-}
-
-/**
  * Rows are assumed newest-first (the query orders by startedAt desc), so day
  * groups fall out in encounter order; "Earlier" collects everything older than
  * seven days plus rows with no start time, and always renders last.

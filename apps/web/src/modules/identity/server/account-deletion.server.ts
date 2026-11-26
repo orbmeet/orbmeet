@@ -2,14 +2,12 @@ import "@tanstack/react-start/server-only";
 import type { Database } from "@orbmeet/db";
 import {
   meetingArtifacts,
-  meetingWhiteboards,
   meetings,
   files,
-  whiteboardAssetReferences,
   whiteboardAssets,
   whiteboards,
 } from "@orbmeet/db/schema";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { boundedStatements, chunkArray } from "@/platform/database/db-batching";
 import {
   internalMeetingPrefix,
@@ -21,10 +19,12 @@ import {
 import { withD1Retry } from "@/platform/database/db-utils";
 import type { JobStep, JobStepConfig } from "@/platform/jobs/jobs";
 import {
+  assertNoForeignWhiteboardUsage,
   consumeR2CleanupOperation,
   createR2CleanupBudget,
+  deleteMeetingR2Namespaces,
   deleteR2Prefix,
-  enqueueR2ObjectCleanup,
+  purgeSpaceWhiteboardR2Objects,
   referencedWhiteboardAssetKeys,
   type R2CleanupBudget,
 } from "@/modules/assets/server/r2-cleanup.server";
@@ -111,24 +111,7 @@ export async function cleanupAccountR2Objects(
 ): Promise<void> {
   const artifactKeys = new Set<string>();
   if (whiteboardIds.length > 0 && personalSpaceId) {
-    const usageLookups = boundedStatements(whiteboardIds, (ids) =>
-      db
-        .select({ id: meetingWhiteboards.id })
-        .from(meetingWhiteboards)
-        .innerJoin(meetings, eq(meetings.id, meetingWhiteboards.meetingId))
-        .where(and(
-          inArray(meetingWhiteboards.whiteboardId, ids),
-          ne(meetings.spaceId, personalSpaceId),
-        ))
-        .limit(1));
-    for (const lookup of usageLookups) {
-      const [foreignUsage] = await lookup;
-      if (foreignUsage) {
-        throw new Error(
-          "Whiteboard ownership invariant violated: refusing to delete R2 data referenced by another Space",
-        );
-      }
-    }
+    await assertNoForeignWhiteboardUsage(db, personalSpaceId, whiteboardIds);
   }
 
   const uploadedFiles = personalSpaceId
@@ -170,31 +153,16 @@ export async function cleanupAccountR2Objects(
   );
   await deleteR2Keys(env.R2_BUCKET, artifactKeys, r2Budget);
   for (const meetingId of meetingIds) {
-    await deleteR2Prefix(db, env.R2_BUCKET, meetingPrefix(meetingId), r2Budget);
-    await deleteR2Prefix(db, env.R2_BUCKET, internalMeetingPrefix(meetingId), r2Budget);
+    await deleteMeetingR2Namespaces(db, env.R2_BUCKET, meetingId, r2Budget);
   }
-  for (const whiteboardId of whiteboardIds) {
-    await deleteR2Prefix(
-      db,
-      env.R2_BUCKET,
-      internalWhiteboardPrefix(whiteboardId),
-      r2Budget,
-    );
-    const retainedAssets = await db
-      .select({ r2Key: whiteboardAssetReferences.r2Key })
-      .from(whiteboardAssetReferences)
-      .innerJoin(whiteboards, eq(whiteboards.id, whiteboardAssetReferences.whiteboardId))
-      .where(and(
-        eq(whiteboardAssetReferences.sourceWhiteboardId, whiteboardId),
-        ne(whiteboards.spaceId, personalSpaceId!),
-      ));
-    await deleteR2Prefix(
-      db,
-      env.R2_BUCKET,
-      whiteboardPrefix(whiteboardId),
-      r2Budget,
-      new Set(retainedAssets.map((asset) => asset.r2Key)),
-    );
+  if (personalSpaceId) {
+    for (const whiteboardId of whiteboardIds) {
+      await purgeSpaceWhiteboardR2Objects(db, env.R2_BUCKET, {
+        spaceId: personalSpaceId,
+        whiteboardId,
+        budget: r2Budget,
+      });
+    }
   }
   for (const deletion of boundedStatements(pendingWhiteboardAssets.map((asset) => asset.id), (ids) =>
     db.delete(whiteboardAssets).where(inArray(whiteboardAssets.id, ids)))) {
@@ -204,16 +172,6 @@ export async function cleanupAccountR2Objects(
   for (const deletion of boundedStatements(meetingIds, (ids) =>
     db.delete(meetingArtifacts).where(inArray(meetingArtifacts.meetingId, ids)))) {
     await withD1Retry(() => deletion, { idempotent: true });
-  }
-  // What the boards borrowed from other boards is queued before their
-  // outgoing references go with them: the source board may be gone already,
-  // leaving these the object's last owners. The queue rechecks every owner.
-  for (const lookup of boundedStatements(whiteboardIds, (ids) =>
-    db
-      .select({ r2Key: whiteboardAssetReferences.r2Key })
-      .from(whiteboardAssetReferences)
-      .where(inArray(whiteboardAssetReferences.whiteboardId, ids)))) {
-    await enqueueR2ObjectCleanup(db, (await lookup).map((row) => row.r2Key));
   }
   // Meeting links are origin lineage, not history owners. Remove the Meetings
   // explicitly after their objects are gone; the caller may delete the now-

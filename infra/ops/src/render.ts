@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
-import { parseNodes, type NodesInput } from "@orbmeet/nodes";
+import { nodeHostnames, parseNodes, type NodesInput } from "@orbmeet/nodes";
 import {
   ASSISTANT_MODEL, AXIOM_DATASET, BRIDGE_SUBNET, BUILD_FILES, DOCKERFILES, EGRESS, EGRESS_SECCOMP_SHA256, GATEWAY,
   MEMORY_LIMITS, NODE_DIR, PRIVATE_DESTINATIONS, PUBLIC_PORTS, REDIS, ROOT, TRANSCRIPTION, WHITEBOARD,
   type Container,
 } from "./catalog.ts";
-import { mebibytes, rtcHost, turnHost, whiteboardHost, type Inventory } from "./inventory.ts";
+import { mebibytes, type Inventory } from "./inventory.ts";
 import { lockfileSlice } from "./lockfile.ts";
 import {
   AI_KEY, DEEPGRAM_KEY, R2_KEYS, signingKey, WHITEBOARD_KEYRINGS, type Secrets,
@@ -83,7 +83,7 @@ function imageBuild(service: keyof typeof DOCKERFILES): string {
 }
 
 /** Python's shlex.quote, which host.env is written for: health.sh and ship-logs.sh source it. */
-function shellQuote(value: string): string {
+export function shellQuote(value: string): string {
   if (value === "") return "''";
   return /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
 }
@@ -170,16 +170,17 @@ export function firewallRules(inv: Inventory, name: string): { v4: string; v6: s
  * name, and the whiteboard sync server on its whiteboard name when it runs one.
  */
 function caddyfile(inv: Inventory, name: string): string {
+  const hosts = nodeHostnames(inv.domain, name);
   const whiteboardSite = [
     "# The whiteboard sync server, for the boards the Worker places on this node.",
-    `${whiteboardHost(inv, name)} {`,
+    `${hosts.whiteboard} {`,
     "    import site",
     `    reverse_proxy ${WHITEBOARD}:8787`,
     "}",
     "",
   ].join("\n");
   const values: Record<string, string> = {
-    RTC_HOST: rtcHost(inv, name), TURN_HOST: turnHost(inv, name),
+    RTC_HOST: hosts.rtc, TURN_HOST: hosts.turn,
     LIVEKIT: `${GATEWAY}:7880`, TURN: `${GATEWAY}:5350`,
     WHITEBOARD_SITE: inv.nodes[name].services.includes("whiteboard") ? `\n${whiteboardSite}` : "",
   };
@@ -223,6 +224,7 @@ export function renderNode(inv: Inventory, c: Secrets, name: string): Map<string
     values.CADDY_CONFIG = fileDigest(["Caddyfile"]);
   }
   if (containers.includes("livekit")) {
+    const hosts = nodeHostnames(inv.domain, name);
     const [apiKey] = signingKey(c, name);
     const redis = { address: `${REDIS}:6379`, password: s.REDIS_PASSWORD };
     files.set("livekit.json", json({
@@ -233,7 +235,7 @@ export function renderNode(inv: Inventory, c: Secrets, name: string): Map<string
         node_ip: node.ipv4, enable_loopback_candidate: false,
         interfaces: { includes: [node.interface] } },
       redis,
-      turn: { enabled: true, domain: turnHost(inv, name), udp_port: 443, tls_port: 5350, external_tls: true },
+      turn: { enabled: true, domain: hosts.turn, udp_port: 443, tls_port: 5350, external_tls: true },
       // No cap of LiveKit's own (0): the meeting's room admits by the plan's
       // limit (seatAvailable in apps/web), and a lower one here would refuse
       // a participant the meeting already admitted.
@@ -255,7 +257,7 @@ export function renderNode(inv: Inventory, c: Secrets, name: string): Map<string
     files.set("egress.json", json({
       api_key: s.LIVEKIT_EGRESS_API_KEY, api_secret: s.LIVEKIT_EGRESS_API_SECRET,
       // Public, because the recorder page Chrome loads connects with it too.
-      ws_url: `wss://${rtcHost(inv, name)}`,
+      ws_url: `wss://${hosts.rtc}`,
       redis,
       health_port: 9090, prometheus_port: 9091,
       logging: { level: "info" }, enable_chrome_sandbox: true,
@@ -328,18 +330,19 @@ export function prepare(inv: Inventory, c: Secrets, dir: string): void {
 export function nodesSecret(inv: Inventory, c: Secrets, drained?: string): string {
   const nodes: NodesInput = {};
   for (const [name, { region, weight, services, mediaCapacity }] of Object.entries(inv.nodes)) {
+    const hosts = nodeHostnames(inv.domain, name);
     const s = c.nodes[name];
     nodes[name] = {
       region,
       // A draining node keeps its Meetings and boards but is given no new ones.
       weight: name === drained ? 0 : weight,
       ...(services.includes("media")
-        ? { media: { url: `wss://${rtcHost(inv, name)}`, capacity: mediaCapacity!, keys: s.LIVEKIT_KEYS } }
+        ? { media: { url: `wss://${hosts.rtc}`, capacity: mediaCapacity!, keys: s.LIVEKIT_KEYS } }
         : {}),
       ...(services.includes("whiteboard")
         ? {
             whiteboard: {
-              url: `https://${whiteboardHost(inv, name)}`,
+              url: `https://${hosts.whiteboard}`,
               jwt: s.WHITEBOARD_JWT_KEYS,
               command: s.WHITEBOARD_COMMAND_KEYS,
               callback: s.WHITEBOARD_CALLBACK_KEYS,

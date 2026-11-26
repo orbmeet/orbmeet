@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { livekitHttpUrl } from "./livekit-url";
+import { livekitHttpUrl } from "./livekit-clients.server";
 
 describe("livekitHttpUrl", () => {
   it.each([

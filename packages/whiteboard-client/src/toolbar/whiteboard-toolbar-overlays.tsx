@@ -19,13 +19,7 @@ import {
   WHITEBOARD_ERROR_EVENT,
   type WhiteboardErrorDetail,
 } from "../chrome/whiteboard-error-event";
-import {
-  useWhiteboardToolbarContext,
-  setImageInputRef,
-  setPasteHandler,
-  setPdfInputRef,
-  setPdfSourceOpener,
-} from "./whiteboard-toolbar-context";
+import { useWhiteboardToolbarContext } from "./whiteboard-toolbar-context";
 import type { PdfLibraryFile } from "../synced-whiteboard";
 import { WhiteboardSelectionActions } from "../shapes/math/mathink-selection-action";
 import { WhiteboardModal } from "../chrome/whiteboard-modal";
@@ -34,7 +28,7 @@ import { glass } from "@orbmeet/ui/tokens/wash.stylex";
 import { Input } from "@orbmeet/ui/react";
 import { PDF_MAX_RENDER_PAGES } from "@orbmeet/whiteboard-core/pdf-geometry";
 import { isAbortError } from "../editor/abort-signals";
-import { PdfImportPartialError } from "../assets/pdf-import-partial-error";
+import { PdfImportPartialError } from "../assets/import-pdf";
 import { countPdfPages } from "../assets/pdf-page-count";
 
 const styles = stylex.create({
@@ -240,6 +234,7 @@ const PenModeIndicator = track(function PenModeIndicator() {
 export function WhiteboardCanvasOverlays() {
   return (
     <>
+      <WhiteboardErrorListener />
       <PenModeIndicator />
       <ScreenshotBrushOverlay />
       <WhiteboardSelectionActions />
@@ -250,15 +245,9 @@ export function WhiteboardCanvasOverlays() {
   );
 }
 
-/**
- * Clipboard paste: reads image from clipboard and imports to current page.
- */
-function WhiteboardClipboardPaste() {
-  const editor = useEditor();
+/** Surfaces global whiteboard error events through the host toaster. */
+function WhiteboardErrorListener() {
   const addToast = useWhiteboardToast();
-  const { pageManager, onPagesChanged, currentPage, uploadFile } =
-    useWhiteboardToolbarContext();
-  const runImport = useAbortableImport();
 
   useEffect(() => {
     const handleWhiteboardError = (event: Event) => {
@@ -282,6 +271,19 @@ function WhiteboardClipboardPaste() {
       window.removeEventListener(WHITEBOARD_ERROR_EVENT, handleWhiteboardError);
     };
   }, [addToast]);
+
+  return null;
+}
+
+/**
+ * Clipboard paste: reads image from clipboard and imports to current page.
+ */
+function WhiteboardClipboardPaste() {
+  const editor = useEditor();
+  const addToast = useWhiteboardToast();
+  const { pageManager, onPagesChanged, currentPage, uploadFile, overlayActionsRef } =
+    useWhiteboardToolbarContext();
+  const runImport = useAbortableImport();
 
   const handlePaste = useCallback(async () => {
     if (!pageManager || !uploadFile) return;
@@ -358,11 +360,18 @@ function WhiteboardClipboardPaste() {
   }, [editor, pageManager, onPagesChanged, runImport, addToast, currentPage, uploadFile]);
 
   useEffect(() => {
-    setPasteHandler(editor, () => {
+    if (!overlayActionsRef) return;
+    const actions = overlayActionsRef.current;
+    const paste = () => {
       void handlePaste();
-    });
-    return () => setPasteHandler(editor, null);
-  }, [editor, handlePaste]);
+    };
+    actions.paste = paste;
+    return () => {
+      if (actions.paste === paste) {
+        actions.paste = undefined;
+      }
+    };
+  }, [overlayActionsRef, handlePaste]);
 
   return null;
 }
@@ -373,7 +382,7 @@ function WhiteboardClipboardPaste() {
 function WhiteboardImageImport() {
   const editor = useEditor();
   const addToast = useWhiteboardToast();
-  const { pageManager, onPagesChanged, currentPage, uploadFile } =
+  const { pageManager, onPagesChanged, currentPage, uploadFile, overlayActionsRef } =
     useWhiteboardToolbarContext();
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -381,9 +390,18 @@ function WhiteboardImageImport() {
   const runImport = useAbortableImport();
 
   useEffect(() => {
-    setImageInputRef(editor, imageInputRef);
-    return () => setImageInputRef(editor, { current: null });
-  }, [editor]);
+    if (!overlayActionsRef) return;
+    const actions = overlayActionsRef.current;
+    const openImagePicker = () => {
+      imageInputRef.current?.click();
+    };
+    actions.openImagePicker = openImagePicker;
+    return () => {
+      if (actions.openImagePicker === openImagePicker) {
+        actions.openImagePicker = undefined;
+      }
+    };
+  }, [overlayActionsRef]);
 
   const handleImageFileSelected = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -465,7 +483,6 @@ type PendingPdfSource =
   | { type: "saving"; file: File; fileId: Promise<string> };
 
 function WhiteboardPdfImport() {
-  const editor = useEditor();
   const addToast = useWhiteboardToast();
   const {
     pageManager,
@@ -477,6 +494,7 @@ function WhiteboardPdfImport() {
     canEditWhiteboard,
     canManagePages,
     pdfLibrary,
+    overlayActionsRef,
   } = useWhiteboardToolbarContext();
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -548,13 +566,15 @@ function WhiteboardPdfImport() {
   }, [canEditWhiteboard, isImporting, pageManager, pdfLibrary]);
 
   useEffect(() => {
-    setPdfInputRef(editor, pdfInputRef);
-    setPdfSourceOpener(editor, openPdfSource);
+    if (!overlayActionsRef) return;
+    const actions = overlayActionsRef.current;
+    actions.openPdfPicker = openPdfSource;
     return () => {
-      setPdfInputRef(editor, { current: null });
-      setPdfSourceOpener(editor, null);
+      if (actions.openPdfPicker === openPdfSource) {
+        actions.openPdfPicker = undefined;
+      }
     };
-  }, [editor, openPdfSource]);
+  }, [overlayActionsRef, openPdfSource]);
 
   const handlePdfFileSelected = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {

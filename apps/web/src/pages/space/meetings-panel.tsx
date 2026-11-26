@@ -17,7 +17,7 @@ import {
 import { queryKeys } from "@/app/query-client/query-keys";
 import { getErrorMessage } from "@/lib/error-inspection";
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
-import { meetingAttendanceQueryOptions, spaceDefaultMeetingLinkQueryOptions } from "@/app/query-client/queries/meetings";
+import { spaceDefaultMeetingLinkQueryOptions } from "@/app/query-client/queries/meetings";
 import {
   spaceMeetingsQueryOptions,
   spaceWhiteboardsQueryOptions,
@@ -26,39 +26,34 @@ import { boardDisplayTitle } from "@/modules/whiteboards/client/board-title";
 import { formatActivityDay } from "@/modules/whiteboards/client/whiteboard-activity";
 import {
   formatMeetingDate,
-  formatMeetingDuration,
   formatMeetingTime,
   peopleInMeeting,
 } from "@/modules/meetings/client/components/meeting-format";
 import { MeetingStatePill, MeetingStateText } from "@/modules/meetings/client/components/meeting-state";
 import { MeetingRow as PastMeetingRow } from "@/modules/meetings/client/components/meeting-row";
-import { MeetingOutputBadges } from "@/modules/meetings/client/components/meeting-output-badges";
 import { UpcomingMeetings } from "@/modules/scheduling/client/upcoming-meetings";
 import { ScheduleMeetingDialog } from "@/modules/scheduling/client/schedule-meeting-dialog";
-import { Button, dialogLayout } from "@orbmeet/ui/react";
 import {
+  Button,
   Dialog,
   DialogBody,
   DialogClose,
   DialogContent,
   DialogDescription,
   DialogTitle,
+  Input,
+  dialogLayout,
 } from "@orbmeet/ui/react";
-import { Input } from "@orbmeet/ui/react";
-import { QueryErrorNotice } from "@/app/query-client/query-error-notice";
 import {
   Check,
-  ChevronDown,
   Copy,
   Pencil,
   RotateCcw,
-  Users,
 } from "lucide-react";
 import { List, ListRow, WideOnly } from "@/app/shell/list";
 import { Section } from "@/app/shell/section";
 import { focus, layout, motion, stack, status, touch } from "@orbmeet/ui/styles/atoms";
 import { accent, ink, neutral, success } from "@orbmeet/ui/tokens/colors.stylex";
-import { bp } from "@orbmeet/ui/tokens/media.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { fonts, leading, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
@@ -132,36 +127,8 @@ const styles = stylex.create({
     fontWeight: weight.medium,
     color: neutral.n700,
   },
-  chevron: { transitionProperty: "transform", transitionDuration: "150ms" },
-  chevronOpen: { transform: "rotate(180deg)" },
   linkActions: { display: "flex", flexShrink: 0, flexWrap: "wrap", gap: space.s2 },
   copied: { color: success.s600 },
-
-  /* ── Attendance ────────────────────────────────────────────────────────── */
-  attendance: {
-    borderTopWidth: 1,
-    borderTopStyle: "solid",
-    borderTopColor: neutral.n100,
-    paddingTop: space.s3,
-  },
-  attendanceGrid: {
-    display: "grid",
-    gap: space.s2,
-    gridTemplateColumns: { default: "1fr", [bp.sm]: "repeat(2, minmax(0, 1fr))" },
-  },
-  attendee: {
-    borderRadius: radii.field,
-    backgroundColor: neutral.n50,
-    paddingInline: space.s3,
-    paddingBlock: space.s2,
-  },
-  attendeeName: {
-    margin: 0,
-    fontSize: text.sm,
-    lineHeight: leading.sm,
-    fontWeight: weight.medium,
-    color: neutral.n800,
-  },
 });
 
 type SpaceMeeting = Awaited<ReturnType<typeof listSpaceMeetings>>["meetings"][number];
@@ -203,7 +170,7 @@ export function MeetingsPanel({
           <Section title="Happening now">
             <List label="Open meetings">
               {open.map((meeting) => (
-                <MeetingRow key={meeting.id} meeting={meeting} spaceId={spaceId} spaceSlug={spaceSlug} />
+                <OpenMeetingRow key={meeting.id} meeting={meeting} spaceId={spaceId} />
               ))}
             </List>
           </Section>
@@ -394,44 +361,14 @@ function DefaultMeetingLinkCard({
   );
 }
 
-/**
- * The secondary line under a past Meeting's title: when it ran, how long for,
- * and who started it.
- *
- * Only a fact that varies between Meetings earns a slot. A retention deadline
- * is one; "no scheduled expiry" is the default every Meeting has, so printing
- * it repeated the same non-news down the whole list. The Meeting history
- * timeline omits it for that reason, and these two views read the same rows.
- *
- * The date and time lead only when a title has displaced them from the heading.
- */
-export function buildMeetingMetaParts(
-  meeting: Pick<SpaceMeeting, "startedAt" | "endedAt" | "retainUntil" | "starterName">,
-  title: string | null,
-): string[] {
-  return [
-    ...(title ? [formatMeetingDate(meeting.startedAt)] : []),
-    ...(title && meeting.startedAt ? [formatMeetingTime(meeting.startedAt)] : []),
-    formatMeetingDuration(meeting.startedAt, meeting.endedAt),
-    ...(meeting.retainUntil
-      ? [`Available until ${new Date(meeting.retainUntil).toLocaleDateString()}`]
-      : []),
-    ...(meeting.starterName ? [`Started by ${meeting.starterName}`] : []),
-  ].filter(Boolean);
-}
-
-function MeetingRow({
+function OpenMeetingRow({
   meeting,
   spaceId,
-  spaceSlug,
 }: {
   meeting: SpaceMeeting;
   spaceId: string;
-  spaceSlug: string;
 }) {
-  const isOpen = meeting.status === "open";
-  const isLive = isOpen && meeting.liveParticipantCount > 0;
-  const [showAttendance, setShowAttendance] = useState(false);
+  const isLive = meeting.liveParticipantCount > 0;
   const [renameOpen, setRenameOpen] = useState(false);
   const [editedTitle, setEditedTitle] = useState(meeting.title ?? "");
   const titleBaselineRef = useRef(meeting.title);
@@ -461,50 +398,28 @@ function MeetingRow({
       await queryClient.invalidateQueries({ queryKey: queryKeys.spaces.meetings(spaceId) });
     },
   });
-  const rawTitle = meeting.title?.trim() ?? "";
-  const title = rawTitle || null;
+  const title = meeting.title?.trim() || null;
   const fallbackTitle = meeting.startedAt
     ? `${formatMeetingDate(meeting.startedAt)} · ${formatMeetingTime(meeting.startedAt)}`
     : "Meeting";
   const primary = title ?? fallbackTitle;
-  const metaParts = isOpen ? [] : buildMeetingMetaParts(meeting, title);
-
-  const statePill = isOpen ? <MeetingStatePill live={isLive} /> : null;
 
   return (
     <>
-    <ListRow
-      link={
-        isOpen
-          ? undefined
-          : { to: "/meetings/$meetingId", params: { meetingId: meeting.id }, search: { fromSpace: spaceSlug } }
-      }
-      title={
-        <>
-          {primary}
-          {statePill}
-        </>
-      }
-      meta={
-        isOpen ? (
+      <ListRow
+        title={
+          <>
+            {primary}
+            <MeetingStatePill live={isLive} />
+          </>
+        }
+        meta={
           <MeetingStateText live={isLive}>
             {isLive ? peopleInMeeting(meeting.liveParticipantCount) : "Waiting for participants"}
             {meeting.starterName ? ` · Started by ${meeting.starterName}` : ""}
           </MeetingStateText>
-        ) : (
-          <>
-            <span>{metaParts.join(" · ")}</span>
-            <MeetingOutputBadges
-              hasSummary={meeting.hasSummary}
-              hasRecording={meeting.hasRecording}
-              hasWhiteboardPdf={meeting.hasWhiteboardPdf}
-              hasWhiteboardState={meeting.hasWhiteboardState}
-            />
-          </>
-        )
-      }
-      trailing={
-        isOpen ? (
+        }
+        trailing={
           <>
             {meeting.canManageMeeting && (
               <Button size="sm" variant="ghost" aria-label="Rename" onClick={() => setRenameOpen(true)}>
@@ -516,23 +431,8 @@ function MeetingRow({
               Join
             </Button>
           </>
-        ) : (
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-expanded={showAttendance}
-            aria-label="Attendance"
-            onClick={() => setShowAttendance((value) => !value)}
-          >
-            <Users size={14} />
-            <WideOnly>Attendance</WideOnly>
-            <ChevronDown size={14} {...stylex.props(styles.chevron, showAttendance && styles.chevronOpen)} />
-          </Button>
-        )
-      }
-    >
-      {showAttendance ? <AttendancePanel meetingId={meeting.id} /> : null}
-    </ListRow>
+        }
+      />
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent>
           <DialogBody sx={[dialogLayout.padded, stack.x4]}>
@@ -565,54 +465,5 @@ function MeetingRow({
         </DialogContent>
       </Dialog>
     </>
-  );
-}
-
-function AttendancePanel({ meetingId }: { meetingId: string }) {
-  const query = useInfiniteQuery(meetingAttendanceQueryOptions(meetingId));
-  const participants = query.data?.pages.flatMap((page) => page.participants) ?? [];
-
-  return (
-    <div {...stylex.props(styles.attendance)}>
-      {query.isLoading ? (
-        <p {...stylex.props(panelStyles.quiet)}>Loading attendance…</p>
-      ) : query.isError ? (
-        <QueryErrorNotice
-          message="Attendance could not be loaded."
-          onRetry={() => { void query.refetch(); }}
-        />
-      ) : participants.length ? (
-        <>
-        <div {...stylex.props(styles.attendanceGrid)}>
-          {participants.map((participant) => (
-            <div key={participant.id} {...stylex.props(styles.attendee)}>
-              <p {...stylex.props(styles.attendeeName, layout.truncate)}>
-                {participant.displayName}
-              </p>
-              <p {...stylex.props(panelStyles.quiet)}>
-                {participant.role}
-                {participant.connectedAt
-                  ? ` · joined ${new Date(participant.connectedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
-                  : ""}
-              </p>
-            </div>
-          ))}
-        </div>
-        {query.hasNextPage ? (
-          <Button
-            sx={panelStyles.spacedTop}
-            size="sm"
-            variant="secondary"
-            loading={query.isFetchingNextPage}
-            onClick={() => void query.fetchNextPage()}
-          >
-            Load more attendance
-          </Button>
-        ) : null}
-        </>
-      ) : (
-        <p {...stylex.props(panelStyles.quiet)}>No attendance records yet.</p>
-      )}
-    </div>
   );
 }

@@ -18,15 +18,10 @@ import {
   Tooltip,
   dialogLayout,
 } from "@orbmeet/ui/react";
-import type { MeetingRole } from "@/modules/meetings/contract/constants";
+import type { ParticipantConnection } from "@/modules/meetings/client/use-livekit-connections";
 
 /** Someone in the room, as far as what may be done to them is concerned. */
-export interface ManagedParticipant {
-  id: string;
-  name: string;
-  role: MeetingRole;
-  isGuest?: boolean;
-}
+export type ManagedParticipant = Pick<ParticipantConnection, "identity" | "userName" | "role" | "isGuest">;
 
 /** What the viewer may do to other people, and the actions that do it. */
 export interface ParticipantManagement {
@@ -44,7 +39,7 @@ export interface ParticipantManagement {
 }
 
 export function canMessagePrivately(participant: ManagedParticipant, management: ParticipantManagement): boolean {
-  return Boolean(management.onMessagePrivately) && participant.id !== management.currentIdentity;
+  return Boolean(management.onMessagePrivately) && participant.identity !== management.currentIdentity;
 }
 
 /** The room enforces the same rules: nobody removes a host, and only a host removes a moderator. */
@@ -52,7 +47,7 @@ export function canRemoveParticipant(participant: ManagedParticipant, management
   return (
     Boolean(management.canRemoveParticipants) &&
     Boolean(management.onRemoveParticipant) &&
-    participant.id !== management.currentIdentity &&
+    participant.identity !== management.currentIdentity &&
     participant.role !== "host" &&
     (participant.role !== "moderator" || Boolean(management.canManageModerators))
   );
@@ -62,7 +57,7 @@ export function canChangeModerator(participant: ManagedParticipant, management: 
   return (
     Boolean(management.canManageModerators) &&
     Boolean(management.onSetModerator) &&
-    participant.id !== management.currentIdentity &&
+    participant.identity !== management.currentIdentity &&
     participant.role !== "host"
   );
 }
@@ -84,7 +79,7 @@ function RemoveParticipantDialog({
     <Dialog open={participant !== null} onOpenChange={(open) => !open && onCancel()}>
       <DialogContent size="sm">
         <DialogBody sx={dialogLayout.padded}>
-          <DialogTitle>Remove {participant?.name || "this participant"}?</DialogTitle>
+          <DialogTitle>Remove {participant?.userName || "this participant"}?</DialogTitle>
           <DialogDescription>
             {participant?.isGuest
               ? "They'll be taken out of the meeting, and guests on their network can't rejoin it. People who sign in still can."
@@ -157,7 +152,7 @@ function ParticipantTileActions({
   management: ParticipantManagement;
   onRequestRemoval: (participant: ManagedParticipant) => void;
 }) {
-  const name = participant.name || "participant";
+  const name = participant.userName || "participant";
   const showMessage = canMessagePrivately(participant, management);
   const showModerator = canChangeModerator(participant, management);
   const showRemove = canRemoveParticipant(participant, management);
@@ -171,7 +166,7 @@ function ParticipantTileActions({
           <button
             type="button"
             aria-label={`Message ${name} privately`}
-            onClick={() => management.onMessagePrivately?.({ id: participant.id, name: participant.name || "Participant" })}
+            onClick={() => management.onMessagePrivately?.({ id: participant.identity, name: participant.userName || "Participant" })}
             {...stylex.props(pressable.base, motion.tint, focus.ring, styles.action)}
           >
             <MessageSquareLock size={14} />
@@ -184,8 +179,8 @@ function ParticipantTileActions({
             type="button"
             aria-label={moderatorLabel}
             aria-pressed={isModerator}
-            disabled={management.moderatorUpdatePending?.has(participant.id) ?? false}
-            onClick={() => management.onSetModerator?.(participant.id, !isModerator)}
+            disabled={management.moderatorUpdatePending?.has(participant.identity) ?? false}
+            onClick={() => management.onSetModerator?.(participant.identity, !isModerator)}
             {...stylex.props(pressable.base, motion.tint, focus.ring, styles.action)}
           >
             {isModerator ? <ShieldCheck size={14} /> : <ShieldPlus size={14} />}
@@ -197,7 +192,7 @@ function ParticipantTileActions({
           <button
             type="button"
             aria-label={`Remove ${name} from meeting`}
-            disabled={management.removalPending?.has(participant.id) ?? false}
+            disabled={management.removalPending?.has(participant.identity) ?? false}
             onClick={() => onRequestRemoval(participant)}
             {...stylex.props(pressable.base, motion.tint, focus.ring, styles.action, styles.remove)}
           >
@@ -217,7 +212,7 @@ export function useRemovalConfirmation(onRemoveParticipant?: (participantIdentit
       participant={confirming}
       onCancel={() => setConfirming(null)}
       onConfirm={(participant) => {
-        onRemoveParticipant?.(participant.id);
+        onRemoveParticipant?.(participant.identity);
         setConfirming(null);
       }}
     />
@@ -236,7 +231,7 @@ export function useParticipantTileActions(
 ) {
   const { requestRemoval, dialog } = useRemovalConfirmation(management.onRemoveParticipant);
   const byId = React.useMemo(
-    () => new Map(participants.map((participant) => [participant.id, participant])),
+    () => new Map(participants.map((participant) => [participant.identity, participant])),
     [participants],
   );
   const renderTileActions = React.useCallback(

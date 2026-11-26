@@ -1,5 +1,3 @@
-import { AmbientBackground } from "@orbmeet/ui/react";
-import type { AmbientVariant } from "@orbmeet/ui/react";
 import { measure, space } from "@orbmeet/ui/tokens/space.stylex";
 import * as stylex from "@stylexjs/stylex";
 import type { StyleXStyles } from "@stylexjs/stylex";
@@ -30,8 +28,6 @@ const pads = { default: styles.padDefault, tight: styles.padTight, none: styles.
 interface PageProps {
   /** Max content width. `narrow` for focused single-column pages; `wide` fits the dashboard. */
   width?: keyof typeof widths;
-  /** Which ambient palette to render. Omit to render none. */
-  ambient?: AmbientVariant;
   /** Vertical padding — the dashboard wants more breathing room than a detail view. */
   py?: keyof typeof pads;
   sx?: StyleXStyles;
@@ -39,14 +35,12 @@ interface PageProps {
 }
 
 /**
- * App-shell page container. Encapsulates the centred-column + ambient
- * background contract every authenticated route shares, so max-width, padding
- * and the ambient layer cannot drift per route again.
+ * App-shell page container. Encapsulates the centred-column contract every
+ * authenticated route shares, so max-width and padding cannot drift per route.
  */
-export function Page({ width = "default", ambient, py = "default", sx, children }: PageProps) {
+export function Page({ width = "default", py = "default", sx, children }: PageProps) {
   return (
     <div {...stylex.props(styles.root, widths[width], pads[py], sx)}>
-      {ambient ? <AmbientBackground variant={ambient} /> : null}
       {children}
     </div>
   );

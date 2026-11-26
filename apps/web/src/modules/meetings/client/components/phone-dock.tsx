@@ -36,18 +36,15 @@ import type { StreamingPlatform } from "@/modules/meetings/contract/schemas";
 import { BottomSheet } from "@orbmeet/ui/react";
 import { BackgroundEffectPicker } from "@/modules/meetings/client/components/background-effect-picker";
 import { CountdownTimerPanel } from "@/modules/meetings/client/components/countdown-timer-button";
+import { GoLiveForm } from "@/modules/meetings/client/components/go-live-button";
 import { MeetingAudioDevicePanel } from "@/modules/meetings/client/components/meeting-audio-device-panel";
+import { formatClock } from "@/modules/meetings/client/format-duration";
 import { countBadge } from "@/modules/meetings/client/meeting-styles";
 import {
   selectDockGroups,
   type DockAction,
   type DockActionId,
 } from "@/modules/meetings/client/dock-actions";
-import {
-  STREAMING_DESTINATIONS,
-  readStreamingPreference,
-  writeStreamingPreference,
-} from "@/modules/meetings/client/streaming-preferences";
 import type { SharedCountdownState } from "@/modules/meetings/client/use-shared-countdown";
 import type { BackgroundMode } from "@/modules/meetings/client/use-background-effect";
 import { scrim } from "@orbmeet/ui/tokens/wash.stylex";
@@ -60,7 +57,6 @@ import type {
 } from "@/modules/meetings/client/components/dock-controls";
 
 const ACTION_ICONS: Record<DockActionId, LucideIcon> = {
-  hand: Hand,
   "surface-existing": SquarePen,
   share: MonitorUp,
   audio: AudioWaveform,
@@ -269,64 +265,6 @@ const styles = stylex.create({
   },
   actionDetail: { marginTop: space.s0_5, display: "block", fontSize: text.xs, color: neutral.n500 },
   actionChevron: { flexShrink: 0, color: neutral.n300 },
-
-  /** The picker's own label style, at the sheet's larger size. */
-  fieldLabel: {
-    display: "block",
-    marginBottom: space.s1_5,
-    fontSize: text.xs,
-    fontWeight: weight.medium,
-    letterSpacing: tracking.wide,
-    textTransform: "uppercase",
-    color: neutral.n500,
-  },
-  destinations: {
-    marginBottom: space.s4,
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: space.s2,
-  },
-  destination: {
-    borderRadius: radii.control,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: { default: neutral.n200 },
-    backgroundColor: { default: surface.raised },
-    paddingInline: space.s3,
-    paddingBlock: space.s2_5,
-    fontSize: text.sm,
-    fontWeight: weight.semibold,
-    color: { default: neutral.n700 },
-  },
-  destinationSelected: { borderColor: accent.a500, backgroundColor: accent.a50, color: accent.a800 },
-  streamKeyInput: {
-    marginBottom: space.s4,
-    height: 48,
-    width: "100%",
-    borderRadius: radii.control,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: { default: neutral.n200, ":focus": accent.a500 },
-    backgroundColor: surface.raised,
-    paddingInline: space.s3,
-    fontFamily: "inherit",
-    fontSize: text.base,
-    color: neutral.n900,
-    outlineStyle: "none",
-    boxShadow: { default: null, ":focus": `0 0 0 2px color-mix(in oklab, ${accent.a500} 20%, transparent)` },
-    "::placeholder": { color: neutral.n400 },
-  },
-  /** Going live is the destructive-shaped action of the sheet: it is public. */
-  goLive: {
-    height: 48,
-    width: "100%",
-    borderRadius: radii.control,
-    backgroundColor: { default: danger.d500, ":active": danger.d600 },
-    fontSize: text.sm,
-    fontWeight: weight.semibold,
-    color: ink.onDark,
-    opacity: { default: 1, ":disabled": 0.4 },
-  },
 });
 
 /**
@@ -430,7 +368,6 @@ export function PhoneDock({
   const { panel: openPanel, timelineUnreadCount: unreadCount, togglePanel, closePanel } = panels;
   // Chat and People are two tabs of one sheet, and its button opens or closes it whichever shows.
   const sheetOpen = openPanel === "timeline" || openPanel === "people";
-  const onToggleHandRaise = handRaise?.onToggle;
   const {
     active: surfaceActive,
     onChooseExisting: onChooseExistingSurface,
@@ -476,8 +413,6 @@ export function PhoneDock({
 
   const groups = selectDockGroups({
     isHost: isHost,
-    // The hand has its own button on the dock.
-    handRaise: null,
     surfaceActive: surfaceActive,
     canChooseExistingSurface: Boolean(onChooseExistingSurface),
     chooseExistingSurfaceLabel: chooseExistingSurfaceLabel,
@@ -504,13 +439,10 @@ export function PhoneDock({
     isStreaming: Boolean(isStreaming),
     streamingDisabled: Boolean(streamingDisabled),
     countdownActive: countdown.active,
-    countdownLabel: formatCountdown(countdown.remainingSeconds),
+    countdownLabel: `${formatClock(countdown.remainingSeconds)} left`,
   });
   const handleSelect = (action: DockAction) => {
     switch (action.id) {
-      case "hand":
-        onToggleHandRaise?.();
-        return closeSheet();
       case "surface-existing":
         onChooseExistingSurface?.();
         return closeSheet();
@@ -698,7 +630,7 @@ export function PhoneDock({
                 <CountdownTimerPanel countdown={countdown} onClose={closeSheet} />
               )}
               {panel === "stream" && onGoLive && (
-                <StreamSetupPanel onGoLive={onGoLive} onDone={closeSheet} />
+                <GoLiveForm variant="sheet" onGoLive={onGoLive} onDone={closeSheet} />
               )}
             </div>
           </div>
@@ -721,12 +653,6 @@ function panelTitle(panel: NestedPanel): string {
     default:
       return "Meeting options";
   }
-}
-
-function formatCountdown(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${String(secs).padStart(2, "0")} left`;
 }
 
 /**
@@ -860,88 +786,5 @@ function ActionRow({
         <ChevronRight size={16} {...stylex.props(styles.actionChevron)} />
       )}
     </button>
-  );
-}
-
-function StreamSetupPanel({
-  onGoLive,
-  onDone,
-}: {
-  onGoLive: (platform: StreamingPlatform, streamKey: string) => Promise<void>;
-  onDone: () => void;
-}) {
-  const [platform, setPlatform] = React.useState<StreamingPlatform>(
-    () => readStreamingPreference()?.platform ?? "twitch",
-  );
-  const [streamKey, setStreamKey] = React.useState("");
-  const [submitting, setSubmitting] = React.useState(false);
-  const destination =
-    STREAMING_DESTINATIONS.find((entry) => entry.id === platform) ??
-    STREAMING_DESTINATIONS[0];
-
-  const start = async () => {
-    if (!streamKey.trim() || submitting) return;
-    setSubmitting(true);
-    try {
-      writeStreamingPreference({ platform });
-      await onGoLive(platform, streamKey.trim());
-      onDone();
-    } catch {
-      // Preserve the entered stream key for a retry. The meeting hook already
-      // owns the user-facing error toast.
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div>
-      <p {...stylex.props(styles.fieldLabel)}>
-        Destination
-      </p>
-      <div {...stylex.props(styles.destinations)}>
-        {STREAMING_DESTINATIONS.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            onClick={() => setPlatform(entry.id)}
-            {...stylex.props(
-              pressable.base,
-              motion.tint,
-              styles.destination,
-              platform === entry.id && styles.destinationSelected,
-            )}
-          >
-            {entry.label}
-          </button>
-        ))}
-      </div>
-
-      <label
-        htmlFor="dock-stream-key"
-        {...stylex.props(styles.fieldLabel)}
-      >
-        {destination.keyLabel}
-      </label>
-      <input
-        id="dock-stream-key"
-        type="text"
-        inputMode="text"
-        placeholder={destination.placeholder}
-        value={streamKey}
-        onChange={(event) => setStreamKey(event.target.value)}
-        {...stylex.props(styles.streamKeyInput, motion.tint)}
-        autoComplete="off"
-        spellCheck={false}
-      />
-      <button
-        type="button"
-        onClick={() => void start()}
-        disabled={!streamKey.trim() || submitting}
-        {...stylex.props(pressable.base, motion.tint, styles.goLive)}
-      >
-        {submitting ? "Starting…" : "Go live"}
-      </button>
-    </div>
   );
 }

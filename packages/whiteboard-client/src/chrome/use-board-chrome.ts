@@ -1,6 +1,29 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { WhiteboardChromeConfig } from "./whiteboard-chrome";
-import { useWhiteboardResponsive } from "./use-whiteboard-responsive";
+
+/** Whether the board's window is wider than tall and under 500px tall. */
+function useSidewaysViewport(): boolean {
+  const [sideways, setSideways] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const check = () => {
+      setSideways(window.innerWidth > window.innerHeight && window.innerHeight < 500);
+    };
+
+    check();
+    window.addEventListener("resize", check);
+    window.addEventListener("orientationchange", check);
+
+    return () => {
+      window.removeEventListener("resize", check);
+      window.removeEventListener("orientationchange", check);
+    };
+  }, []);
+
+  return sideways;
+}
 
 const PAGE_RAIL_STORAGE_KEY = "orbmeet.whiteboard.pageRail";
 
@@ -51,7 +74,7 @@ export function useBoardChrome({ chrome, readOnlySurface, hasTools }: BoardChrom
   }, []);
   // Held on its side, or a window too short for the top band: one reading of
   // the window, which the controls, the toolbar and the camera all lay out by.
-  const { sideways } = useWhiteboardResponsive();
+  const sideways = useSidewaysViewport();
   const [controlsHeightPx, setControlsHeightPx] = useState<number | null>(null);
   const canvasChrome = useMemo(
     () => ({

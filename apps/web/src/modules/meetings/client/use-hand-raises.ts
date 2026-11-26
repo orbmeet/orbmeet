@@ -1,17 +1,19 @@
 import * as React from "react";
-import type { Room } from "livekit-client";
+import type { Participant, Room } from "livekit-client";
 import { logError } from "@/lib/logger";
 import { PARTICIPANT_ATTRIBUTE, parseRaisedHand } from "@/modules/meetings/contract/live-state";
-import { lowerHand as lowerHandRpc, raiseHand as raiseHandRpc, resolveHandRaise } from "@/modules/meetings/server/runtime/live.functions";
+import {
+  lowerHand as lowerHandRpc,
+  raiseHand as raiseHandRpc,
+  resolveHandRaise as resolveHandRaiseRpc,
+} from "@/modules/meetings/server/runtime/live.functions";
 import { useRoomParticipants } from "./use-meeting-live-state";
 
 export interface HandRaise {
-  identity: string;
   /** The participant's identity; what the queue's actions take. */
   userId: string;
   userName: string;
   raisedAt: number;
-  status: "pending";
   nonce: string;
   /** Already raised when this client started watching, rather than raised now. */
   replayed: boolean;
@@ -24,19 +26,21 @@ export interface HandRaise {
  */
 export function useHandRaises({
   room,
+  participants: providedParticipants,
   meetingId,
   connectionId,
   canModerate,
   serverClockOffsetMs,
 }: {
   room: Room | undefined;
+  participants?: Participant[];
   meetingId: string;
   connectionId: string;
   canModerate: boolean;
   /** Hands are stamped by the server, so they are compared in its time. */
   serverClockOffsetMs: number;
 }) {
-  const participants = useRoomParticipants(room);
+  const participants = useRoomParticipants(room, providedParticipants);
   // When this participant began watching hands, in the server's time: hands
   // raised before then are already waiting, not news. It starts over when a
   // participant is promoted, so a promotion does not replay every hand.
@@ -61,11 +65,9 @@ export function useHandRaises({
       const hand = parseRaisedHand(participant.attributes[PARTICIPANT_ATTRIBUTE.hand]);
       if (!hand) return [];
       return [{
-        identity: participant.identity,
         userId: participant.identity,
         userName: participant.name?.trim() || "Participant",
         raisedAt: hand.raisedAt,
-        status: "pending" as const,
         nonce: hand.raiseId,
         replayed: watchingSince === null || hand.raisedAt < watchingSince,
       }];
@@ -86,7 +88,7 @@ export function useHandRaises({
     const admissionId = room?.remoteParticipants.get(identity)?.attributes[PARTICIPANT_ATTRIBUTE.participant];
     if (!admissionId) return;
     try {
-      await resolveHandRaise({ data: { meetingId, connectionId, admissionId } });
+      await resolveHandRaiseRpc({ data: { meetingId, connectionId, admissionId } });
     } catch (error) {
       logError("[Meeting] Resolving a raised hand failed:", error);
     }
@@ -97,7 +99,6 @@ export function useHandRaises({
     isHandRaised,
     raiseHand: React.useCallback(() => void setHand(true), [setHand]),
     lowerHand: React.useCallback(() => void setHand(false), [setHand]),
-    approveHandRaise: React.useCallback((identity: string) => void resolve(identity), [resolve]),
-    dismissHandRaise: React.useCallback((identity: string) => void resolve(identity), [resolve]),
+    resolveHandRaise: React.useCallback((identity: string) => void resolve(identity), [resolve]),
   };
 }

@@ -366,9 +366,6 @@ describe("StyleX migration", () => {
       // top inset. Dropping the unused edges would reintroduce exactly the
       // mispairing the namespace exists to prevent.
       "safe.padLeft", "safe.padY", "safe.padAll", "safe.inset", "safe.top", "safe.bottom",
-      // The three drifting orbs are one ordered set; the meeting mounts orb1
-      // today and the trio is what the scene is composed from.
-      "ambient.orb2", "ambient.orb3", "ambient.blob",
     ]);
 
     const sources = STYLE_SOURCE_ROOTS.flatMap(styleSourceFiles);

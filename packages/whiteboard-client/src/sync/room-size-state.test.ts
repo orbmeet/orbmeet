@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { WHITEBOARD_EVENTS } from "@orbmeet/whiteboard-core/protocol";
-import { reduceRoomSizeLimited } from "./room-size-state";
+import { reduceRoomSizeLimited } from "./use-whiteboard-room-state";
 
 describe("reduceRoomSizeLimited", () => {
   it("tracks both the limit and authoritative recovery transitions", () => {

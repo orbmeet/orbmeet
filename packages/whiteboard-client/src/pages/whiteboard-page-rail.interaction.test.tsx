@@ -380,7 +380,7 @@ describe("WhiteboardPageRail page menu", () => {
     expect(screen.queryByRole("menuitem", { name: "Delete page" })).toBeNull();
   });
 
-  it("closes on the scrim without acting on the page", () => {
+  it("closes on outside dismiss without acting on the page", () => {
     const onDeletePage = vi.fn();
     const onInsertPageAfter = vi.fn();
     render(
@@ -392,7 +392,9 @@ describe("WhiteboardPageRail page menu", () => {
       />,
     );
     fireEvent.click(screen.getByLabelText(CURRENT_CARD_LABEL));
-    fireEvent.click(screen.getByLabelText("Close page menu"));
+    const menu = screen.getByRole("menu");
+    expect(menu.getAttribute("data-page-menu")).toBe("2");
+    fireEvent.keyDown(menu, { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();
     expect(onDeletePage).not.toHaveBeenCalled();
     expect(onInsertPageAfter).not.toHaveBeenCalled();

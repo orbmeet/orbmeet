@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { type TLStore, type TLUserStore } from "tldraw";
 import { atom, computed, type Atom } from "@tldraw/state";
 import { createCachedUserResolve, createUserId, UserRecordType } from "@tldraw/tlschema";
-import { base64urlDecode } from "@orbmeet/whiteboard-core/crypto-utils";
+import { decodeUnverifiedWhiteboardJwtPayload } from "@orbmeet/whiteboard-core/whiteboard-jwt";
 import {
   isWhiteboardGrantPrincipal,
   whiteboardGrantPrincipalKey,
@@ -24,30 +24,20 @@ export interface WhiteboardIdentity {
 
 /** Exported for tests; the hook is the only production caller. */
 export function decodeWhiteboardJwt(token: string): WhiteboardIdentity {
-  try {
-    const parts = token.split(".");
-    if (parts.length === 3) {
-      // JWT payloads are UTF-8. atob() yields one char per *byte*, so decoding
-      // through it alone mangles every non-ASCII display name into mojibake —
-      // and this name is what labels the user's cursor for everyone else.
-      const payload = JSON.parse(
-        new TextDecoder().decode(base64urlDecode(parts[1])),
-      );
-      const capabilities = payload.capabilities && typeof payload.capabilities === "object"
-        ? payload.capabilities as { canManageWhiteboard?: unknown }
-        : null;
-      return {
-        userId: typeof payload.sub === "string" ? payload.sub : null,
-        participant: isWhiteboardGrantPrincipal(payload.grantPrincipal)
-          ? whiteboardGrantPrincipalKey(payload.grantPrincipal)
-          : null,
-        userName: typeof payload.name === "string" ? payload.name : "",
-        isHost: capabilities?.canManageWhiteboard === true,
-        error: null,
-      };
-    }
-  } catch (err) {
-    console.error("[WB] Failed to decode JWT:", err);
+  const payload = decodeUnverifiedWhiteboardJwtPayload(token);
+  if (payload) {
+    const capabilities = payload.capabilities && typeof payload.capabilities === "object"
+      ? payload.capabilities as { canManageWhiteboard?: unknown }
+      : null;
+    return {
+      userId: typeof payload.sub === "string" ? payload.sub : null,
+      participant: isWhiteboardGrantPrincipal(payload.grantPrincipal)
+        ? whiteboardGrantPrincipalKey(payload.grantPrincipal)
+        : null,
+      userName: typeof payload.name === "string" ? payload.name : "",
+      isHost: capabilities?.canManageWhiteboard === true,
+      error: null,
+    };
   }
   return {
     userId: null,

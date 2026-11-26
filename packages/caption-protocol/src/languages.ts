@@ -102,66 +102,20 @@ const SUPPORTED_BY_LOWER_CASE = new Map<string, SpeechLanguageTag>(
 );
 
 /** Canonical tag for a bare ISO language code (`en` → `en-US`, `yue` → `zh-HK`). */
-const BASE_LANGUAGE_DEFAULTS: Readonly<Record<string, SpeechLanguageTag>> = {
-  ar: "ar",
-  be: "be",
-  bg: "bg",
-  bn: "bn",
-  bs: "bs",
-  ca: "ca",
-  cs: "cs",
-  da: "da-DK",
-  de: "de",
-  el: "el",
-  en: "en-US",
-  es: "es",
-  et: "et",
-  fa: "fa",
-  fi: "fi",
-  fil: "tl",
-  fr: "fr",
-  gu: "gu-IN",
-  he: "he",
-  hi: "hi",
-  hr: "hr",
-  hu: "hu",
-  id: "id",
-  it: "it",
-  ja: "ja",
-  kn: "kn",
-  ko: "ko-KR",
-  lt: "lt",
-  lv: "lv",
-  mk: "mk",
-  mr: "mr",
-  ms: "ms",
-  nl: "nl",
-  no: "no",
-  pl: "pl",
-  pt: "pt-BR",
-  ro: "ro",
-  ru: "ru",
-  sk: "sk",
-  sl: "sl",
-  sr: "sr",
-  sv: "sv-SE",
-  ta: "ta",
-  te: "te",
-  th: "th-TH",
-  tl: "tl",
-  tr: "tr",
-  uk: "uk",
-  ur: "ur",
-  vi: "vi",
-  yue: "zh-HK",
-  zh: "zh-CN",
-};
+const BASE_LANGUAGE_DEFAULTS = new Map<string, SpeechLanguageTag>([
+  ["fil", "tl"],
+  ["yue", "zh-HK"],
+]);
+for (const tag of SUPPORTED_SPEECH_LANGUAGE_TAGS) {
+  if (tag === "multi") continue;
+  const base = tag.split("-")[0].toLowerCase();
+  if (!BASE_LANGUAGE_DEFAULTS.has(base)) {
+    BASE_LANGUAGE_DEFAULTS.set(base, tag);
+  }
+}
 
 export function isSupportedSpeechLanguageTag(value: string): value is SpeechLanguageTag {
-  return (
-    (SUPPORTED_SPEECH_LANGUAGE_TAGS as readonly string[]).includes(value) ||
-    SUPPORTED_BY_LOWER_CASE.has(value.toLowerCase())
-  );
+  return SUPPORTED_BY_LOWER_CASE.has(value.toLowerCase());
 }
 
 /**
@@ -190,7 +144,7 @@ export function normalizeSpeechLanguageTag(
   }
   const region = rest.find(isRegionSubtag);
   const regional = region === undefined ? undefined : SUPPORTED_BY_LOWER_CASE.get(`${language}-${region}`);
-  return regional ?? BASE_LANGUAGE_DEFAULTS[language] ?? null;
+  return regional ?? BASE_LANGUAGE_DEFAULTS.get(language) ?? null;
 }
 
 /** A BCP 47 region subtag: two letters (`gb`) or three digits (`419`). */

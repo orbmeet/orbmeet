@@ -81,8 +81,13 @@ export function isPageRecord(record: TLRecord): record is TLPage {
   return record.typeName === "page";
 }
 
-export function isPageFrameRecord(record: TLRecord): record is PageFrameShape {
-  return record.typeName === "shape" && isPageFrameShape(record);
+export function isPageFrameRecord(record: unknown): record is PageFrameShape {
+  return (
+    typeof record === "object" &&
+    record !== null &&
+    (record as { typeName?: unknown }).typeName === "shape" &&
+    isPageFrameShape(record)
+  );
 }
 
 /** A store change, as tldraw's listeners and history entries carry it. */

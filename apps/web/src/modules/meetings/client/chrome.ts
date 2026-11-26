@@ -94,32 +94,6 @@ export const PHONE_HEADER_CLEARANCE_PX =
  */
 export const DESKTOP_TOP_BAR_CLEARANCE_PX = DESKTOP_TOP_BAR_HEIGHT_PX;
 
-/**
- * Participant tile in the inline rail above a content surface.
- *
- * Portrait phones used an 84px rail holding an 80px tile plus 8px of padding
- * on each side — 96px of content in an 84px band, so the tiles were clipped
- * top and bottom. Deriving the band from the tile is what stops that
- * arithmetic from being wrong again.
- *
- * The tile is deliberately small: on a phone whiteboard the board is the
- * subject and the rail is peripheral, so it gives back the height rather than
- * competing for it.
- */
-export const CONTENT_RAIL_TILE_PX = 52;
-
-/** Padding around the tiles inside the inline rail. */
-export const CONTENT_RAIL_PADDING_PX = 6;
-
-/**
- * The strip of faces above a board or a shared screen on a tablet or a
- * desktop, where the page has height to spare: 16:9 tiles with their names,
- * big enough to read a face across a lesson. A board page runs out of width
- * before height there, so the strip costs the page little or nothing.
- */
-export const STAGE_STRIP_TILE_PX = 72;
-export const STAGE_STRIP_PADDING_PX = 8;
-
 export interface MeetingChromeInput {
   /** True when the phone chrome (slim header, bottom dock) is in use. */
   isPhone: boolean;

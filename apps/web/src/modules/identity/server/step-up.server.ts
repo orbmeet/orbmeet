@@ -6,7 +6,7 @@
  */
 import type { Database } from "@orbmeet/db";
 import { verifications } from "@orbmeet/db/schema";
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte } from "drizzle-orm";
 import type * as v from "valibot";
 
 import { OTP_EXPIRY_MS } from "@/modules/identity/contract/auth/constants";
@@ -28,7 +28,10 @@ import { getRunChanges, withD1Retry } from "@/platform/database/db-utils";
 import type { AuthFnContext } from "@/app/bootstrap/middleware";
 import { enforceIpRateLimit, enforceRateLimit } from "@/platform/http/rate-limit.server";
 import {
+  claimOtpDeliveryLease,
   hasVerificationAttemptsRemaining,
+  parseScopedFlowToken,
+  releaseOtpDeliveryLease,
   reserveVerificationAttempt,
   verificationAttemptBudgetRemainingSql,
   type VerificationAttemptData,
@@ -56,20 +59,6 @@ function stepUpIdentifier(flowId: string): string {
   return `step-up:${flowId}`;
 }
 
-export function parseStepUpFlowToken(flowToken: string): { id: string; secret: string } | null {
-  const separator = flowToken.indexOf(".");
-  if (separator < 1 || separator !== flowToken.lastIndexOf(".")) return null;
-  const id = flowToken.slice(0, separator);
-  const secret = flowToken.slice(separator + 1);
-  if (
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) ||
-    !/^[a-f0-9]{64}$/i.test(secret)
-  ) {
-    return null;
-  }
-  return { id, secret };
-}
-
 function parseStepUpData(raw: string | null): StepUpFlowData | null {
   if (!raw) return null;
   try {
@@ -93,57 +82,6 @@ function parseStepUpData(raw: string | null): StepUpFlowData | null {
   }
 }
 
-async function claimStepUpDelivery(
-  db: Database,
-  userId: string,
-): Promise<{ identifier: string; claimId: string } | null> {
-  const now = new Date();
-  const identifier = `step-up:${userId}`;
-  const claimId = crypto.randomUUID();
-  const result = await db
-      .insert(verifications)
-      .values({
-        id: crypto.randomUUID(),
-        type: "otp_delivery",
-        identifier,
-        value: claimId,
-        data: null,
-        expiresAt: new Date(now.getTime() + STEP_UP_DELIVERY_COOLDOWN_MS),
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [verifications.type, verifications.identifier],
-        set: {
-          value: claimId,
-          expiresAt: new Date(now.getTime() + STEP_UP_DELIVERY_COOLDOWN_MS),
-          updatedAt: now,
-        },
-        setWhere: lte(verifications.expiresAt, now),
-      })
-    .run();
-  return getRunChanges(result) === 1 ? { identifier, claimId } : null;
-}
-
-async function releaseStepUpDelivery(
-  db: Database,
-  lease: { identifier: string; claimId: string },
-): Promise<void> {
-  await withD1Retry(
-    () =>
-      db
-        .delete(verifications)
-        .where(
-          and(
-            eq(verifications.type, "otp_delivery"),
-            eq(verifications.identifier, lease.identifier),
-            eq(verifications.value, lease.claimId),
-          ),
-        ),
-    { idempotent: true },
-  ).catch(() => undefined);
-}
-
 export async function requestStepUpImpl({
   data,
   context: { user, authSessionId, env, db },
@@ -161,7 +99,7 @@ export async function requestStepUpImpl({
     throw createValidationError("Email authentication is not configured.");
   }
 
-  const lease = await claimStepUpDelivery(db, user.id);
+  const lease = await claimOtpDeliveryLease(db, `step-up:${user.id}`, STEP_UP_DELIVERY_COOLDOWN_MS);
   if (!lease) {
     throw createValidationError("Please wait a minute before requesting another code.");
   }
@@ -210,7 +148,7 @@ export async function requestStepUpImpl({
     await withD1Retry(() => db.delete(verifications).where(eq(verifications.id, flowId)), {
       idempotent: true,
     }).catch(() => undefined);
-    await releaseStepUpDelivery(db, lease);
+    await releaseOtpDeliveryLease(db, lease);
     throw error;
   }
 
@@ -265,7 +203,7 @@ export async function prepareStepUpCredentialConsumption(
   verificationId: string;
   verificationValue: string;
 }> {
-  const token = parseStepUpFlowToken(input.credential.flowToken);
+  const token = parseScopedFlowToken(input.credential.flowToken);
   if (!token) throw createValidationError("Security verification expired.");
 
   const row = await db.query.verifications.findFirst({

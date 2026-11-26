@@ -23,9 +23,8 @@ import {
 } from "@/modules/meetings/server/access/resource-access";
 import { summaryMatchesTranscriptSnapshot, type TranscriptSnapshot } from "@/modules/transcripts/server/generate-summary.server";
 import { listTranscriptRowsPage } from "@/modules/transcripts/server/query";
-import { buildAttachmentContentDisposition } from "@/modules/assets/server/content-disposition";
+import { signDownloadUrl } from "@/modules/assets/server/signed-urls.server";
 import { utcBoundsForLocalDate } from "@/lib/local-date-bounds";
-import { buildR2Client } from "@/modules/assets/server/r2-client.server";
 
 const MAX_SELECTOR_CANDIDATES = 51;
 
@@ -140,15 +139,8 @@ type DownloadableArtifact = {
 
 async function signArtifactDownload(env: Env, artifact: DownloadableArtifact): Promise<string> {
   if (!env.R2_BUCKET_NAME) throw Errors.CONFIG_ERROR("Storage not configured");
-  const { r2, endpoint } = buildR2Client(env);
-  const url = new URL(`/${env.R2_BUCKET_NAME}/${artifact.r2Key}`, endpoint);
-  url.searchParams.set("X-Amz-Expires", "300");
-  url.searchParams.set(
-    "response-content-disposition",
-    buildAttachmentContentDisposition(artifact.filename),
-  );
-  const signed = await r2.sign(new Request(url.toString()), { aws: { signQuery: true } });
-  return signed.url;
+  const { url } = await signDownloadUrl(env, artifact);
+  return url;
 }
 
 function included(content: AutomationMeetingContent[], value: AutomationMeetingContent): boolean {

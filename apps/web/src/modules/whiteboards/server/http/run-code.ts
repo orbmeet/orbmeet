@@ -13,11 +13,6 @@ import { MAX_CODE_CHARS } from "@orbmeet/whiteboard-core/code-shape-schema";
 
 import { logWarn } from "@/lib/logger";
 import {
-  RequestBodyTimeoutError,
-  RequestBodyTooLargeError,
-  readRequestBodyText,
-} from "@/platform/http/request-body";
-import {
   ResponseBodyTimeoutError,
   ResponseBodyTooLargeError,
   readResponseBodyBytes,
@@ -27,6 +22,11 @@ import {
   verifyActiveWhiteboardBearer,
   type ActiveWhiteboardAuth,
 } from "@/modules/whiteboards/server/http/active-whiteboard-auth";
+import {
+  enforceBindingRateLimit,
+  noStoreJsonResponse,
+  readBoundedJsonRequestBody,
+} from "@/modules/whiteboards/server/http/json-proxy-helpers";
 import { whiteboardMeteringPrincipal } from "@/modules/whiteboards/server/http/whiteboard-principal";
 import { isLoopbackHostname } from "@/platform/http/loopback";
 import { deploymentOf, isLocalDevelopment } from "@/platform/http/deployment";
@@ -39,16 +39,6 @@ import { deploymentOf, isLocalDevelopment } from "@/platform/http/deployment";
 const MAX_BODY_BYTES = 256 * 1024;
 
 const CANCEL_FORWARD_TIMEOUT_MS = 5_000;
-
-function jsonResponse(body: unknown, status: number): Response {
-  return Response.json(body, {
-    status,
-    headers: {
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
-}
 
 /**
  * Whether a configured runner URL keeps the shared secret off the network.
@@ -142,31 +132,6 @@ async function forwardRunnerCancellation(
   }
 }
 
-/**
- * A run costs container seconds, so this gets a limiter of its own rather than
- * the general 100/min budget — and it is keyed on the participant, not the IP.
- * Everyone in a meeting room can share one NAT, and an IP key would have them
- * throttling each other.
- */
-async function enforceCodeRunRateLimit(
-  env: Env,
-  principal: string,
-): Promise<Response | null> {
-  if (!env.CODE_RUN_RATE_LIMITER) {
-    if (isLocalDevelopment(deploymentOf(env))) return null;
-    logWarn("[run-code] rate limiter binding unavailable");
-    return jsonResponse({ error: "Service unavailable" }, 503);
-  }
-
-  try {
-    const { success } = await env.CODE_RUN_RATE_LIMITER.limit({ key: `run-code:${principal}` });
-    return success ? null : jsonResponse({ error: "Too many requests" }, 429);
-  } catch (error) {
-    logWarn("[run-code] rate limiter failed", error);
-    return jsonResponse({ error: "Service unavailable" }, 503);
-  }
-}
-
 export async function handleRunCode(request: Request, env: Env): Promise<Response> {
   const db = createDb(env.DB);
   const auth = await verifyActiveWhiteboardBearer(request, env, db);
@@ -180,33 +145,12 @@ export async function handleRunCode(request: Request, env: Env): Promise<Respons
     return new Response("Whiteboard edit access is required", { status: 403 });
   }
 
-  if (!request.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) {
-    return jsonResponse({ error: "Content-Type must be application/json" }, 415);
-  }
+  const read = await readBoundedJsonRequestBody(request, MAX_BODY_BYTES);
+  if (!read.ok) return read.response;
 
-  let bodyText: string;
-  try {
-    bodyText = await readRequestBodyText(request, MAX_BODY_BYTES);
-  } catch (error) {
-    if (error instanceof RequestBodyTooLargeError) {
-      return jsonResponse({ error: "Payload too large" }, 413);
-    }
-    if (error instanceof RequestBodyTimeoutError) {
-      return jsonResponse({ error: "Request body timed out" }, 408);
-    }
-    throw error;
-  }
-
-  let body: unknown;
-  try {
-    body = JSON.parse(bodyText);
-  } catch {
-    return jsonResponse({ error: "Invalid JSON" }, 400);
-  }
-
-  const parsed = v.safeParse(codeRunRequestSchema, body);
+  const parsed = v.safeParse(codeRunRequestSchema, read.body);
   if (!parsed.success) {
-    return jsonResponse({ error: `Invalid run request (max ${MAX_CODE_CHARS} characters)` }, 422);
+    return noStoreJsonResponse({ error: `Invalid run request (max ${MAX_CODE_CHARS} characters)` }, 422);
   }
 
   const hasRunner = Boolean(
@@ -216,12 +160,19 @@ export async function handleRunCode(request: Request, env: Env): Promise<Respons
     // The ordinary state of a local `pnpm dev` without the runner Worker up.
     // Said plainly, because the alternative is a 500 that looks like a bug.
     logWarn("[run-code] runner binding unavailable");
-    return jsonResponse({ error: "Code execution is not available in this environment" }, 503);
+    return noStoreJsonResponse({ error: "Code execution is not available in this environment" }, 503);
   }
 
   // Charged only for a run that will actually start: a refused, malformed or
   // undeliverable request costs no container time, so it costs no quota.
-  const limited = await enforceCodeRunRateLimit(env, whiteboardMeteringPrincipal(auth.access));
+  // Keyed on the participant rather than IP so a shared meeting NAT does not
+  // throttle everyone together.
+  const limited = await enforceBindingRateLimit(
+    env,
+    env.CODE_RUN_RATE_LIMITER,
+    `run-code:${whiteboardMeteringPrincipal(auth.access)}`,
+    "[run-code]",
+  );
   if (limited) return limited;
 
   // The sandbox id is derived here, from the verified token's room — never
@@ -256,17 +207,17 @@ export async function handleRunCode(request: Request, env: Env): Promise<Respons
     // per-participant limiter gives, so it reaches the browser as itself rather
     // than as a gateway failure the client would tell someone to retry blindly.
     if (response.status === 429) {
-      return jsonResponse({ error: "Too many runs" }, 429);
+      return noStoreJsonResponse({ error: "Too many runs" }, 429);
     }
 
     // The run was stopped by a cancel. Said as itself: it is not a runner fault.
     if (response.status === 409) {
-      return jsonResponse({ error: "Run cancelled" }, 409);
+      return noStoreJsonResponse({ error: "Run cancelled" }, 409);
     }
 
     if (!response.ok) {
       logWarn("[run-code] runner returned an error", { status: response.status });
-      return jsonResponse({ error: "Code runner unavailable" }, 502);
+      return noStoreJsonResponse({ error: "Code runner unavailable" }, 502);
     }
 
     const payload = await readResponseBodyBytes(
@@ -285,7 +236,7 @@ export async function handleRunCode(request: Request, env: Env): Promise<Respons
   } catch (error) {
     logWarn("[run-code] runner request failed", error);
     if (error instanceof ResponseBodyTooLargeError) {
-      return jsonResponse({ error: "Code runner returned too much data" }, 502);
+      return noStoreJsonResponse({ error: "Code runner returned too much data" }, 502);
     }
     if (error instanceof ResponseBodyTimeoutError || (error as Error)?.name === "TimeoutError") {
       // The app's deadline is not permission for the container to keep working.
@@ -295,9 +246,9 @@ export async function handleRunCode(request: Request, env: Env): Promise<Respons
       } catch (cancelError) {
         logWarn("[run-code] timed-out run could not be cancelled", cancelError);
       }
-      return jsonResponse({ error: "Code runner timed out" }, 504);
+      return noStoreJsonResponse({ error: "Code runner timed out" }, 504);
     }
-    return jsonResponse({ error: "Code runner unavailable" }, 502);
+    return noStoreJsonResponse({ error: "Code runner unavailable" }, 502);
   }
 }
 
@@ -328,47 +279,27 @@ export async function handleCancelCodeRun(request: Request, env: Env): Promise<R
     return new Response("Whiteboard edit access is required", { status: 403 });
   }
 
-  if (!request.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) {
-    return jsonResponse({ error: "Content-Type must be application/json" }, 415);
-  }
+  const read = await readBoundedJsonRequestBody(request, 4 * 1024);
+  if (!read.ok) return read.response;
 
-  let bodyText: string;
-  try {
-    bodyText = await readRequestBodyText(request, 4 * 1024);
-  } catch (error) {
-    if (error instanceof RequestBodyTooLargeError) {
-      return jsonResponse({ error: "Payload too large" }, 413);
-    }
-    if (error instanceof RequestBodyTimeoutError) {
-      return jsonResponse({ error: "Request body timed out" }, 408);
-    }
-    throw error;
-  }
-
-  let body: unknown;
-  try {
-    body = JSON.parse(bodyText);
-  } catch {
-    return jsonResponse({ error: "Invalid JSON" }, 400);
-  }
-  const parsed = v.safeParse(codeRunCancelRequestSchema, body);
-  if (!parsed.success) return jsonResponse({ error: "Invalid cancel request" }, 422);
+  const parsed = v.safeParse(codeRunCancelRequestSchema, read.body);
+  if (!parsed.success) return noStoreJsonResponse({ error: "Invalid cancel request" }, 422);
 
   const hasRunner = Boolean(
     env.CODE_RUNNER || env.CODE_RUNNER_URL || isLocalDevelopment(deploymentOf(env)),
   );
   if (!hasRunner || !env.CODE_RUNNER_SECRET) {
-    return jsonResponse({ error: "Code execution is not available in this environment" }, 503);
+    return noStoreJsonResponse({ error: "Code execution is not available in this environment" }, 503);
   }
 
   try {
     const cancelled = await forwardRunnerCancellation(env, await runnerTarget(auth, parsed.output.runId));
     if (!cancelled) {
-      return jsonResponse({ error: "Could not cancel code run" }, 502);
+      return noStoreJsonResponse({ error: "Could not cancel code run" }, 502);
     }
     return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     logWarn("[cancel-code-run] runner request failed", error);
-    return jsonResponse({ error: "Could not cancel code run" }, 502);
+    return noStoreJsonResponse({ error: "Could not cancel code run" }, 502);
   }
 }

@@ -1,3 +1,18 @@
+import { Link } from "@tanstack/react-router";
+import { type QueryClient, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Badge,
+  Button,
+  Dialog,
+  DialogBody,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  Input,
+  Select,
+  Spinner,
+} from "@orbmeet/ui/react";
 import { layout, row, stack } from "@orbmeet/ui/styles/atoms";
 import { accent, danger, ink, neutral, warning } from "@orbmeet/ui/tokens/colors.stylex";
 import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
@@ -8,7 +23,31 @@ import * as stylex from "@stylexjs/stylex";
 import { ArrowRightLeft, Check, ExternalLink, Trash2, UserPlus, X } from "lucide-react";
 import * as React from "react";
 
+import {
+  myOrganizationsQueryOptions,
+  organizationMembersInfiniteQueryOptions,
+  organizationSpacesQueryOptions,
+} from "@/app/query-client/queries/organizations";
+import { planPricesQueryOptions } from "@/app/query-client/queries/plan-prices";
+import { QueryErrorNotice } from "@/app/query-client/query-error-notice";
+import { queryKeys } from "@/app/query-client/query-keys";
+import { openBillingPortal, startSubscriptionCheckout } from "@/modules/billing/client/billing-client";
+import { isPaymentFailing, PaymentFailedNotice } from "@/modules/billing/client/payment-failed-notice";
+import { DEFAULT_PLAN_PRICES, formatPlanPrice } from "@/modules/billing/contract/plan-prices";
+import type { SubscriptionStatus } from "@/modules/billing/contract/types";
+import type { OrganizationRole } from "@/modules/organizations/contract/roles";
+import {
+  acceptOrganizationOwnershipTransfer,
+  addOrganizationMember,
+  createOrganization,
+  declineOrganizationOwnershipTransfer,
+  removeOrganizationMember,
+  transferOrganizationOwnership,
+} from "@/modules/organizations/server/organizations.functions";
+import { evictSpaceQueryCache } from "@/modules/spaces/client/space-query-cache";
+import { deleteSpace } from "@/workflows/space-deletion/delete-space.functions";
 import { settings } from "../settings-styles";
+import { SettingsSection } from "./settings-section";
 
 const styles = stylex.create({
   transfers: { marginBottom: space.s6 },
@@ -90,6 +129,7 @@ const styles = stylex.create({
     color: ink.muted,
   },
   destructive: { color: danger.d600 },
+  loadMore: { paddingTop: space.s2, textAlign: "center" },
 
   /** An empty state that has to sit in the same box the list would. */
   emptyBox: {
@@ -106,38 +146,13 @@ const styles = stylex.create({
   dialogBody: { padding: space.s6 },
   dialogActions: { marginTop: space.s5, justifyContent: "flex-end" },
 });
-import { Link } from "@tanstack/react-router";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { OrganizationRole } from "@/modules/organizations/contract/roles";
-import { openBillingPortal, startSubscriptionCheckout } from "@/modules/billing/client/billing-client";
-import { isPaymentFailing, PaymentFailedNotice } from "@/modules/billing/client/payment-failed-notice";
-import { planPricesQueryOptions } from "@/app/query-client/queries/plan-prices";
-import { DEFAULT_PLAN_PRICES, formatPlanPrice } from "@/modules/billing/contract/plan-prices";
-import type { SubscriptionStatus } from "@/modules/billing/contract/types";
-import { Button } from "@orbmeet/ui/react";
-import { Input } from "@orbmeet/ui/react";
-import { Select } from "@orbmeet/ui/react";
-import { Badge } from "@orbmeet/ui/react";
-import { Spinner } from "@orbmeet/ui/react";
-import { QueryErrorNotice } from "@/app/query-client/query-error-notice";
-import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@orbmeet/ui/react";
-import { SettingsSection } from "./settings-section";
-import {
-  addOrganizationMember,
-  acceptOrganizationOwnershipTransfer,
-  createOrganization,
-  declineOrganizationOwnershipTransfer,
-  removeOrganizationMember,
-  transferOrganizationOwnership,
-} from "@/modules/organizations/server/organizations.functions";
-import { deleteSpace } from "@/workflows/space-deletion/delete-space.functions";
-import { queryKeys } from "@/app/query-client/query-keys";
-import { evictSpaceQueryCache } from "@/modules/spaces/client/space-query-cache";
-import {
-  myOrganizationsQueryOptions,
-  organizationMembersInfiniteQueryOptions,
-  organizationSpacesQueryOptions,
-} from "@/app/query-client/queries/organizations";
+
+function invalidateOrganizationMembership(queryClient: QueryClient, organizationId: string) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.organizations.all() }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.organizations.members(organizationId) }),
+  ]);
+}
 
 function roleLabel(role: OrganizationRole): string {
   if (role === "owner") return "Organization owner";
@@ -529,10 +544,7 @@ function OrganizationMembers({
     onSuccess: async () => {
       setEmail("");
       setNewMemberRole("member");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.organizations.members(organizationId) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.organizations.all() }),
-      ]);
+      await invalidateOrganizationMembership(queryClient, organizationId);
     },
   });
   const transferMutation = useMutation({
@@ -540,20 +552,14 @@ function OrganizationMembers({
       transferOrganizationOwnership({ data: { organizationId, newOwnerUserId } }),
     onSuccess: async () => {
       setTransferTarget(null);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.organizations.all() }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.organizations.members(organizationId) }),
-      ]);
+      await invalidateOrganizationMembership(queryClient, organizationId);
     },
   });
   const removeMemberMutation = useMutation({
     mutationFn: (memberUserId: string) =>
       removeOrganizationMember({ data: { organizationId, memberUserId } }),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.organizations.all() }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.organizations.members(organizationId) }),
-      ]);
+      await invalidateOrganizationMembership(queryClient, organizationId);
     },
   });
 
@@ -654,6 +660,19 @@ function OrganizationMembers({
           <div {...stylex.props(settings.listEmpty)}>No members yet.</div>
         )}
       </div>
+
+      {membersQuery.hasNextPage && (
+        <div {...stylex.props(styles.loadMore)}>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={membersQuery.isFetchingNextPage}
+            onClick={() => { void membersQuery.fetchNextPage(); }}
+          >
+            Load more
+          </Button>
+        </div>
+      )}
 
       {removeMemberMutation.error && (
         <p {...stylex.props(settings.error, settings.errorFlush)}>

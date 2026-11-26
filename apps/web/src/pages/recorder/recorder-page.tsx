@@ -9,7 +9,6 @@ import {
   loadRecorderModule as loadWhiteboardRecorderModule,
   type RecorderStatus,
 } from "@/modules/whiteboards/client/meeting/whiteboard-recorder";
-import { whiteboardServiceEndpoints } from "@/modules/whiteboards/client/whiteboard-service-endpoints";
 import {
   LiveKitRoom,
   useConnectionState,
@@ -17,35 +16,36 @@ import {
   useRoomContext,
   useTracks,
 } from "@livekit/components-react";
-import { ConnectionState, RoomEvent, Track, type Room } from "livekit-client";
+import { ConnectionState, RoomEvent, Track } from "livekit-client";
 import {
-  isRecorderStartupBlockedByWhiteboardContent,
   isRecorderStartupBlockedByWhiteboard,
+  isRecorderStartupBlockedByWhiteboardContent,
+  parseRecorderHashParams,
+  selectRecorderStage,
   shouldMountRecorderWhiteboard,
   shouldWaitForRecorderWhiteboard,
-} from "@/modules/meetings/client/recorder-layout";
-import { parseRecorderHashParams } from "@/modules/meetings/client/recorder-url-params";
-import { selectRecorderStage, type RecorderStage } from "@/modules/meetings/client/recorder-stage";
+  type RecorderEgressMode,
+  type RecorderStage,
+} from "@/modules/meetings/client/recorder-state";
 import { useMeetingRoomState } from "@/modules/meetings/client/use-meeting-live-state";
 import { RecorderAudioMixer } from "@/modules/meetings/client/recorder/recorder-audio";
 import { configureLiveKitLogging } from "@/modules/meetings/client/livekit-logging";
 import {
-  LiveMeetingLayout,
-  type MeetingExtensions,
-} from "@/modules/meetings/client/components/live-meeting-layout";
-import type { LiveMeetingState } from "@/modules/meetings/client/use-live-meeting";
+  MeetingStageLayout,
+  type MeetingStageSurface,
+} from "@/modules/meetings/client/components/meeting-stage-layout";
 import { useLiveKitConnections } from "@/modules/meetings/client/use-livekit-connections";
 import { useResponsive } from "@/lib/hooks/use-responsive";
 import { RECORDER_ROOM_MEDIA_OPTIONS } from "@/modules/meetings/client/media-quality";
 import { getWhiteboardClientCapabilities } from "@/lib/browser-capabilities";
-import { ToastProvider } from "@orbmeet/ui/react";
-import { TooltipProvider } from "@orbmeet/ui/react";
+import { ToastProvider, TooltipProvider } from "@orbmeet/ui/react";
 
 configureLiveKitLogging();
 
 const WB_CONNECT_TIMEOUT_MS = 10_000;
 const WB_CONTENT_TIMEOUT_MS = 3_000;
 const RECORDER_BACKGROUND = "#f2f0ec";
+const RECORDER_WHITEBOARD_AUTH_URL = "/api/whiteboard/recorder-auth";
 
 const styles = stylex.create({
   /** Shown only while the recorder client boots; never appears in a capture. */
@@ -61,7 +61,7 @@ const styles = stylex.create({
   /** The captured surface. Opaque white, because the encoder records it. */
   stage: { height: "100%", width: "100%", backgroundColor: surface.raised },
 });
-type RecorderEgressMode = "recording" | "streaming" | null;
+
 type RecorderStartupSnapshot = {
   elapsedMs: number;
   lkReady: boolean;
@@ -189,8 +189,10 @@ function RecorderMeetingContent({
   const [wbTimedOut, setWbTimedOut] = React.useState(false);
   const [wbHasContent, setWbHasContent] = React.useState(false);
   const [wbContentTimedOut, setWbContentTimedOut] = React.useState(false);
-  // What the meeting shows everyone, from the room's own state.
-  const surface = useMeetingRoomState(room)?.surface ?? null;
+  // Single room-metadata subscription for both surface state and egress mode.
+  const roomState = useMeetingRoomState(room);
+  const surface = roomState?.surface ?? null;
+  const egressMode: RecorderEgressMode = roomState ? roomState.egressMode : initialEgressMode;
   const presentedWhiteboardId = surface?.whiteboardId ?? null;
   const recorderStage: RecorderStage = selectRecorderStage({
     hasScreenShare: screenShareTracks.length > 0,
@@ -201,7 +203,6 @@ function RecorderMeetingContent({
   React.useEffect(() => {
     if (presentedBoard) setWbStatus((status) => (status === "error" ? "loading" : status));
   }, [presentedBoard]);
-  const egressMode = useRecorderEgressMode(room, initialEgressMode);
   const startedRef = React.useRef(false);
   // The recording's own clock: it starts at mount, on this machine's time.
   const [recorderClock] = React.useState<MeetingClockSync>(() => {
@@ -329,259 +330,69 @@ function RecorderMeetingContent({
     whiteboardStartupBlocked,
   ]);
 
-  const noop = React.useCallback(() => {}, []);
-  const noopAsync = React.useCallback(async () => {}, []);
-  const noopToast = React.useCallback<LiveMeetingState["addToast"]>(() => "egress-toast", []);
-  const egressUi = React.useMemo<LiveMeetingState["ui"]>(
-    () => ({
-      panel: null,
-      openPanel: noop,
-      togglePanel: noop,
-      closePanel: noop,
-      timelineUnreadCount: 0,
-      controlsVisible: true,
-      // A recording shows the board at full width; the faces stay a cluster.
-      facesExpanded: false,
-      showFaces: noop,
-      foldFaces: noop,
-      handleHandRaiseAction: noop,
-    }),
-    [noop],
+  const remoteParticipants = React.useMemo(
+    () => connectedParticipants.filter((participant) => participant.identity !== localParticipant.identity),
+    [connectedParticipants, localParticipant.identity],
   );
 
-  const meeting = React.useMemo(
-    () =>
-      ({
-        code: meetingCode || "orbmeet",
-        meetingClock: recorderClock,
-        recordingEnabled: false,
-        meetingTitle: null,
-        spaceName: null,
-        spaceTranscription: null,
-        joinPolicy: "open",
-        admissionPolicyPending: false,
-        isEgress: true,
-        roomInstance: room,
-        mediaScope: noop,
-        currentIdentity: localParticipant.identity,
-        // A recording has no conversation of its own; it reads the room's.
-        participantKey: localParticipant.identity,
-        currentUserName: localParticipant.name || localParticipant.identity,
-        connectionQuality:
-          connectionState === ConnectionState.Connected ? "excellent" : "poor",
-        handleLiveKitRoomUpdate: noop,
-        disconnectMeetingNow: noopAsync,
-        isPhone: responsive.isPhone,
-        isTablet: responsive.isTablet,
-        isLandscape: responsive.isLandscape,
-        isNarrow: responsive.isPhone || (responsive.isTablet && !responsive.isLandscape),
-        controlBarAutoHide: responsive.controlBarAutoHide,
-        useBottomSheet: responsive.useBottomSheet,
-        canModerate: false,
-        canManageMeeting: false,
-        connectedParticipants: connectedParticipants.filter(
-          (participant) => participant.identity !== localParticipant.identity,
-        ),
-        participantsList: connectedParticipants
-          .filter((participant) => participant.identity !== localParticipant.identity)
-          .map((participant) => ({
-            id: participant.identity,
-            key: participant.participantKey,
-            name: participant.userName,
-            role: participant.role,
-            isGuest: participant.isGuest,
-          })),
-        chatMessages: [],
-        chatReadUpTo: {},
-        markChatRead: noop,
-        sendChatMessage: async () => true,
-        handRaiseQueue: [],
-        isHandRaised: false,
-        raiseHand: noop,
-        lowerHand: noop,
-        approveHandRaise: noop,
-        dismissHandRaise: noop,
-        screenShare: {
-          screenShareRequestState: "idle",
-          isPreparingScreenShare: false,
-          hasPreparedScreenShare: false,
-          hasScreenSharePermission: false,
-          handleToggleScreenShare: noopAsync,
-          handleCancelScreenShareRequest: noop,
-          handleDismissScreenShareDenied: noop,
-          handleApproveScreenShare: noopAsync,
-          handleDenyScreenShare: noopAsync,
-          hostPermissionRequests: [],
-        },
-        handleApproveAdmission: noopAsync,
-        handleDenyAdmission: noopAsync,
-        handleToggleMeetingSecurity: noopAsync,
-        hostPermissionRequests: [],
-        recording: {
-          isRecording: egressMode === "recording",
-          recordingPending: false,
-          handleToggleRecording: noopAsync,
-        },
-        streaming: {
-          isStreaming: egressMode === "streaming",
-          streamingPending: false,
-          handleStartStreaming: noopAsync,
-          handleStopStreaming: noopAsync,
-        },
-        captions: {
-          showSpeech: false,
-          showCaptionLanguagePicker: false,
-          setShowCaptionLanguagePicker: noop,
-          captionLanguage: "en-US",
-          setCaptionLanguage: noop,
-          captionLanguageLabel: "English",
-          captionCountry: null,
-          captions: [],
-          toggleSpeech: noop,
-          showCaptions: false,
-          toggleCaptions: noop,
-        },
-        // The recorder neither shows nor changes transcription.
-        transcription: {
-          on: false,
-          pending: false,
-          setOn: noopAsync,
-          asked: false,
-          askToStop: noopAsync,
-          takeBackAsk: noopAsync,
-          requests: [],
-          answerRequest: () => false,
-        },
-        hasScreenShare: screenShareTracks.length > 0,
-        // A recording has no stage switch to name the sharer in.
-        screenSharerName: null,
-        isMicOn: false,
-        isMicPending: false,
-        handleToggleMic: noop,
-        micInterruption: null,
-        resumeMic: noop,
-        isCameraOn: false,
-        isScreenSharing: false,
-        isLiveKitConnecting: connectionState === ConnectionState.Connecting,
-        isLiveKitReconnecting:
-          connectionState === ConnectionState.Reconnecting ||
-          connectionState === ConnectionState.SignalReconnecting,
-        connectionOverlayLabel: "Joining meeting...",
-        ui: egressUi,
-        bgEffect: {
-          mode: "none",
-          imagePath: null,
-          isSupported: false,
-          isProcessing: false,
-          lastError: null,
-          setBlur: noop,
-          setImage: noop,
-          clearEffect: noop,
-        },
-        audioDevice: {
-          audioDevices: [],
-          currentAudioDeviceId: undefined,
-          activeAudioDeviceId: undefined,
-          handleSelectAudioDevice: noopAsync,
-          audioOutputDevices: [],
-          currentAudioOutputDeviceId: undefined,
-          activeAudioOutputDeviceId: undefined,
-          handleSelectAudioOutputDevice: noopAsync,
-          refreshAudioDevices: noopAsync,
-        },
-        camera: {
-          videoDevices: [],
-          currentVideoDeviceId: undefined,
-          handleToggleCamera: noopAsync,
-          handleSelectVideoDevice: noopAsync,
-          refreshVideoDevices: noopAsync,
-        },
-        leaveEnd: {
-          showEndConfirm: false,
-          actionPending: false,
-          setShowEndConfirm: noop,
-          handleLeave: noopAsync,
-          handleEnd: noopAsync,
-          confirmLeave: noopAsync,
-          confirmEnd: noopAsync,
-        },
-        addToast: noopToast,
-      }) satisfies LiveMeetingState,
-    [
-      connectionState,
-      egressUi,
-      egressMode,
-      localParticipant.identity,
-      localParticipant.name,
-      meetingCode,
-      recorderClock,
-      noop,
-      noopAsync,
-      noopToast,
-      connectedParticipants,
-      responsive.controlBarAutoHide,
-      responsive.isLandscape,
-      responsive.isPhone,
-      responsive.isTablet,
-      responsive.useBottomSheet,
-      room,
-      screenShareTracks.length,
-    ],
-  );
-
-  const extensions = React.useMemo<MeetingExtensions>(
+  const stageSurface = React.useMemo<MeetingStageSurface>(
     () => ({
-      surface: {
-        show: showWhiteboard,
-        canMount: hasWhiteboard,
-        loading: showWhiteboard && wbStatus === "loading",
-        error: showWhiteboard && wbStatus === "error",
-        disabledByConfig: !hasWhiteboard,
-        disabledReason: hasWhiteboard ? null : "Whiteboard is unavailable.",
-        content: (
-          <React.Suspense fallback={<div {...stylex.props(styles.stage)} />}>
-            <div {...stylex.props(styles.stage)}>
-              <LazyRecorderWhiteboard
-                capabilities={getWhiteboardClientCapabilities()}
-                licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY || undefined}
-                whiteboardUrl={whiteboardUrl}
-                recorderToken={recorderToken}
-                whiteboardId={presentedWhiteboardId}
-                serviceEndpoints={whiteboardServiceEndpoints}
-                onStatusChange={setWbStatus}
-                onContentStateChange={setWbHasContent}
-              />
-            </div>
-          </React.Suspense>
-        ),
-      },
-      surfaceToolbar: {
-        label: "Whiteboard",
-        active: showWhiteboard,
-        onToggle: noop,
-        disabled: !hasWhiteboard,
-        disabledReason: hasWhiteboard ? null : "Whiteboard is unavailable.",
-      },
+      show: showWhiteboard,
+      canMount: hasWhiteboard,
+      loading: showWhiteboard && wbStatus === "loading",
+      error: showWhiteboard && wbStatus === "error",
+      disabledByConfig: !hasWhiteboard,
+      disabledReason: hasWhiteboard ? null : "Whiteboard is unavailable.",
+      content: (
+        <React.Suspense fallback={<div {...stylex.props(styles.stage)} />}>
+          <div {...stylex.props(styles.stage)}>
+            <LazyRecorderWhiteboard
+              capabilities={getWhiteboardClientCapabilities()}
+              licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY || undefined}
+              whiteboardUrl={whiteboardUrl}
+              recorderToken={recorderToken}
+              whiteboardId={presentedWhiteboardId}
+              recorderAuthUrl={RECORDER_WHITEBOARD_AUTH_URL}
+              onStatusChange={setWbStatus}
+              onContentStateChange={setWbHasContent}
+            />
+          </div>
+        </React.Suspense>
+      ),
     }),
-    [hasWhiteboard, noop, presentedWhiteboardId, recorderToken, showWhiteboard, wbStatus, whiteboardUrl],
+    [hasWhiteboard, presentedWhiteboardId, recorderToken, showWhiteboard, wbStatus, whiteboardUrl],
   );
 
   return (
     <>
       <RecorderAudioMixer />
-      <LiveMeetingLayout meeting={meeting} extensions={extensions} />
+      <MeetingStageLayout
+        code={meetingCode || "orbmeet"}
+        meetingClock={recorderClock}
+        isRecording={egressMode === "recording"}
+        isStreaming={egressMode === "streaming"}
+        readOnly
+        isPhone={responsive.isPhone}
+        isLandscape={responsive.isLandscape}
+        isNarrow={responsive.isPhone || (responsive.isTablet && !responsive.isLandscape)}
+        useBottomSheet={responsive.useBottomSheet}
+        connectedParticipants={remoteParticipants}
+        currentIdentity={localParticipant.identity}
+        isConnecting={connectionState === ConnectionState.Connecting}
+        isReconnecting={
+          connectionState === ConnectionState.Reconnecting ||
+          connectionState === ConnectionState.SignalReconnecting
+        }
+        showScreenShareStage={screenShareTracks.length > 0}
+        surface={stageSurface}
+        surfaceLabel="Whiteboard"
+      />
     </>
   );
 }
 
 function parseRecorderEgressMode(value: string | null): RecorderEgressMode {
   return value === "recording" || value === "streaming" ? value : null;
-}
-
-/** The egress the room reports, or before it reports one, the mode the egress was started for. */
-function useRecorderEgressMode(room: Room, initialEgressMode: RecorderEgressMode): RecorderEgressMode {
-  const roomState = useMeetingRoomState(room);
-  return roomState ? roomState.egressMode : initialEgressMode;
 }
 
 function isWhiteboardSyncUrl(value: string): boolean {
@@ -601,4 +412,3 @@ function isLiveKitSignalUrl(value: string): boolean {
     return false;
   }
 }
-

@@ -37,6 +37,7 @@ import {
   resolveMathLatex,
 } from "./math-input";
 import { getKatexError, renderKatex } from "./katex-renderer";
+import { useShapeInteractionState } from "../use-shape-interaction-state";
 import { env } from "@orbmeet/ui/tokens/media.stylex";
 
 /** The face KaTeX's fallback text and the measured box are set in. */
@@ -216,27 +217,12 @@ function MathShapeComponent({
   util: MathShapeUtil;
 }) {
   const editor = util.editor;
-
-  // These read editor *instance* state, not the shape record. tldraw's
-  // InnerShape only re-renders when the record's props/meta change, and its
-  // useStateTracking scope ends when `component()` returns — it never covers a
-  // child component's render. Without useValue these would be read once and
-  // then go stale, so the editor would not open or close.
-  const isReadonly = useValue(
-    "math shape readonly",
-    () => editor.getIsReadonly(),
-    [editor],
-  );
-  const isEditing = useValue(
-    "math shape editing",
-    () => editor.getEditingShapeId() === shape.id,
-    [editor, shape.id],
-  );
-  const isSelected = useValue(
-    "math shape selected",
-    () => editor.getSelectedShapeIds().includes(shape.id),
-    [editor, shape.id],
-  );
+  const {
+    isReadonly,
+    isEditing,
+    isSelected,
+    updateProps: updateShapeProps,
+  } = useShapeInteractionState<MathShape>(editor, shape);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useState(shape.props.input);
@@ -264,14 +250,6 @@ function MathShapeComponent({
     ? (compiled?.latex ?? storedLatex)
     : storedLatex;
   const previewInput = isEditing ? draft : shape.props.input;
-
-  const updateShapeProps = useCallback(
-    (props: Partial<MathShape["props"]>) => {
-      if (isReadonly) return;
-      editor.updateShape<MathShape>({ id: shape.id, type: shape.type, props });
-    },
-    [editor, isReadonly, shape.id, shape.type],
-  );
 
   const updateInput = (next: string) => {
     setModeError(null);

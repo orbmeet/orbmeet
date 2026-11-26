@@ -4,12 +4,12 @@ import {
   HTMLContainer,
   RecordProps,
   resizeBox,
-  useValue,
   type Editor,
   type SvgExportContext,
   type TLResizeInfo,
 } from "tldraw";
 import { useCallback, useEffect, useRef } from "react";
+import { useShapeInteractionState } from "../use-shape-interaction-state";
 import {
   DEFAULT_TABLE_COLS,
   DEFAULT_TABLE_HEIGHT,
@@ -538,35 +538,13 @@ function TableShapeComponent({
   editor: Editor;
   shape: TableShape;
 }) {
-  const isReadonly = useValue(
-    "table shape readonly",
-    () => editor.getIsReadonly(),
-    [editor]
-  );
-  // Editing and selection live in editor instance state, not the shape record.
-  // tldraw's InnerShape only re-renders when props/meta change and its
-  // useStateTracking scope ends when `component()` returns, so a plain read
-  // here would be captured once and then go stale.
-  const isEditing = useValue(
-    "table shape editing",
-    () => editor.getEditingShapeId() === shape.id,
-    [editor, shape.id]
-  );
-  const isSelected = useValue(
-    "table shape selected",
-    () => editor.getSelectedShapeIds().includes(shape.id),
-    [editor, shape.id]
-  );
+  const {
+    isReadonly,
+    isEditing,
+    isSelected,
+    updateProps: updateTableProps,
+  } = useShapeInteractionState<TableShape>(editor, shape);
   const isInteractive = !isReadonly && (isEditing || isSelected);
-
-  const updateTableProps = (props: Partial<TableShape["props"]>) => {
-    if (isReadonly) return;
-    editor.updateShape<TableShape>({
-      id: shape.id,
-      type: shape.type,
-      props,
-    });
-  };
 
   const handleCellChange = (row: number, col: number, value: string) => {
     const newCells = shape.props.cells.map((r, ri) =>

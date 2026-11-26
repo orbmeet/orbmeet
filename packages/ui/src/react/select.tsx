@@ -4,6 +4,7 @@ import type { StyleXStyles } from "@stylexjs/stylex";
 import { Check, ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
 import type { ComponentProps } from "react";
 
+import { motion } from "../styles/atoms";
 import { control, listbox } from "../styles/controls";
 
 interface SelectOption {
@@ -111,7 +112,7 @@ export function Select({
             the positioner aligns the selected item over the trigger and ignores
             them. */}
         <BaseSelect.Positioner {...stylex.props(listbox.positioner)}>
-          <BaseSelect.Popup {...stylex.props(listbox.popup, listbox.anchorWidth)}>
+          <BaseSelect.Popup {...stylex.props(motion.popup, motion.popupAnchored, listbox.popup, listbox.anchorWidth)}>
             <BaseSelect.ScrollUpArrow {...stylex.props(listbox.scrollArrow)}>
               <ChevronUp size={12} />
             </BaseSelect.ScrollUpArrow>

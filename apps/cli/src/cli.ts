@@ -1,9 +1,5 @@
 import { readFile } from "node:fs/promises";
-
 import {
-  MAX_PAGINATION_PAGES,
-  parseResponse,
-  validate,
   publicApiErrorSchema,
   publicApiMeResponseSchema,
   publicApiTargetsResponseSchema,
@@ -12,6 +8,12 @@ import {
   publicScheduleListResponseSchema,
   publicScheduleResponseSchema,
   publicScheduleUpdateResponseSchema,
+} from "@orbmeet/public-api-contract";
+
+import {
+  MAX_PAGINATION_PAGES,
+  parseResponse,
+  validate,
   type ApiRequest,
   type ApiSchedule,
 } from "./api.ts";

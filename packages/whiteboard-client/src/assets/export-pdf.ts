@@ -61,7 +61,7 @@ async function prefetchImageAssets(
     fetchJobs.push({ assetId, src });
   }
 
-  const results = await Promise.allSettled(
+  await Promise.allSettled(
     fetchJobs.map(async ({ assetId, src }) => {
       // `same-origin`, never `include`: a peer can author an image asset whose
       // src points at any host, and `include` would turn another participant's
@@ -83,13 +83,6 @@ async function prefetchImageAssets(
       cache.set(assetId, await blobToDataUrl(blob));
     }),
   );
-
-  // Log any failures for debugging but don't block export
-  for (const result of results) {
-    if (result.status === "rejected") {
-      // tldraw's pipeline will retry with the URL
-    }
-  }
 
   return cache;
 }

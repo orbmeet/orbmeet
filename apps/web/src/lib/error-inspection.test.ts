@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { AppError, Errors } from "@/lib/app-errors";
+import { Errors } from "@/lib/app-errors";
 import {
   getSafeRouteErrorMessage,
   getServerErrorCode,
-  getServerErrorStringValue,
   getServerErrorStatusCode,
   isServerError,
 } from "./error-inspection";
@@ -55,23 +54,9 @@ describe("server error helpers", () => {
     expect(getServerErrorStatusCode(error)).toBe(404);
   });
 
-  it("reads custom string metadata from wrapped server errors", () => {
-    const error = {
-      cause: {
-        data: {
-          code: "AWAITING_APPROVAL",
-          admissionId: "MEETING_ADMISSION_123",
-        },
-      },
-    };
-
-    expect(getServerErrorStringValue(error, "admissionId")).toBe("MEETING_ADMISSION_123");
-  });
-
   it("returns undefined for non-server errors", () => {
     expect(getServerErrorCode(new Error("network"))).toBeUndefined();
     expect(getServerErrorStatusCode({})).toBeUndefined();
-    expect(getServerErrorStringValue({}, "admissionId")).toBeUndefined();
     expect(isServerError(new Error("network"))).toBe(false);
   });
 });
@@ -112,15 +97,6 @@ describe("AppError survives the server-fn serialization boundary", () => {
       const expected = error.code;
       expect(getServerErrorCode(marshalAcrossRpcBoundary(error))).toBe(expected);
     }
-  });
-
-  it("recovers nested app-error data (admissionId) after marshalling", () => {
-    const wire = marshalAcrossRpcBoundary(
-      new AppError("CONFLICT", "Busy", 409, { admissionId: "MEETING_ADMISSION_123" }),
-    );
-
-    expect(getServerErrorCode(wire)).toBe("CONFLICT");
-    expect(getServerErrorStringValue(wire, "admissionId")).toBe("MEETING_ADMISSION_123");
   });
 
   it("exposes metadata as own enumerable properties (the serialization precondition)", () => {

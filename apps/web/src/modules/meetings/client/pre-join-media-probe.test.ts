@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   acquirePreJoinMedia,
   classifyMediaCaptureFailure,
-  getMicrophoneCaptureFailureMessage,
   isMediaPermissionFailure,
   shouldRetryMediaKindsSeparately,
   withProbeTimeout,
@@ -37,10 +36,6 @@ describe("pre-join media probe policy", () => {
     ["AbortError", "unknown"],
   ] as const)("classifies %s as %s", (name, kind) => {
     expect(classifyMediaCaptureFailure(mediaError(name))).toBe(kind);
-  });
-
-  it("does not claim an unknown capture failure means the microphone is busy", () => {
-    expect(getMicrophoneCaptureFailureMessage(mediaError("AbortError"))).not.toContain("in use");
   });
 
   it("uses one combined request on the healthy path", async () => {

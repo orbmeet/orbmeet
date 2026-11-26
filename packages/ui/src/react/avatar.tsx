@@ -2,7 +2,7 @@ import { Avatar as BaseAvatar } from "@base-ui/react/avatar";
 import * as stylex from "@stylexjs/stylex";
 import type { StyleXStyles } from "@stylexjs/stylex";
 
-import { identity, live, neutral, surface } from "../tokens/colors.stylex";
+import { identity } from "../tokens/colors.stylex";
 import { radii } from "../tokens/radii.stylex";
 import { leading, text, weight } from "../tokens/typography.stylex";
 import { hashStringToIndex } from "./gradient-hash";
@@ -10,7 +10,6 @@ import { hashStringToIndex } from "./gradient-hash";
 const sizes = stylex.create({
   sm: { width: 32, height: 32, fontSize: text.xs },
   md: { width: 40, height: 40, fontSize: text.sm },
-  lg: { width: 48, height: 48, fontSize: text.base },
   xl: { width: 64, height: 64, fontSize: text.lg },
 });
 
@@ -76,20 +75,6 @@ const styles = stylex.create({
     // measured avatar gets proportional initials for free.
     fontSize: "40cqmin",
   },
-  dot: {
-    position: "absolute",
-    right: 0,
-    bottom: 0,
-    display: "block",
-    borderRadius: radii.pill,
-    borderWidth: 2,
-    borderStyle: "solid",
-    borderColor: surface.raised,
-  },
-  dotSm: { width: 8, height: 8 },
-  dotMd: { width: 10, height: 10 },
-  dotOnline: { backgroundColor: live.l500 },
-  dotOffline: { backgroundColor: neutral.n400 },
 });
 
 function getInitials(name: string): string {
@@ -112,11 +97,10 @@ interface AvatarProps {
    * because they are sized in container units off this box.
    */
   sizePx?: number;
-  online?: boolean;
   sx?: StyleXStyles;
 }
 
-export function Avatar({ name, image, size = "md", sizePx, online, sx }: AvatarProps) {
+export function Avatar({ name, image, size = "md", sizePx, sx }: AvatarProps) {
   const colorIndex = hashStringToIndex(name, identityByIndex.length);
 
   return (
@@ -127,8 +111,7 @@ export function Avatar({ name, image, size = "md", sizePx, online, sx }: AvatarP
         // role="img" its children are presentational, which is what we want —
         // the photo or the initials both stand for the same person.
         role="img"
-        // The status dot is colour alone, so its meaning rides on the name.
-        aria-label={online === undefined ? name : `${name}, ${online ? "online" : "offline"}`}
+        aria-label={name}
         {...stylex.props(
           styles.root,
           sizePx === undefined ? sizes[size] : styles.measured(sizePx),
@@ -145,16 +128,6 @@ export function Avatar({ name, image, size = "md", sizePx, online, sx }: AvatarP
           {getInitials(name)}
         </BaseAvatar.Fallback>
       </BaseAvatar.Root>
-      {online !== undefined && (
-        <span
-          aria-hidden
-          {...stylex.props(
-            styles.dot,
-            size === "sm" ? styles.dotSm : styles.dotMd,
-            online ? styles.dotOnline : styles.dotOffline,
-          )}
-        />
-      )}
     </div>
   );
 }

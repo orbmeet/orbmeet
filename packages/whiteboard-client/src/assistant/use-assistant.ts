@@ -11,10 +11,9 @@ import {
   type AssistantRun,
   type AssistantSnapshot,
 } from "@orbmeet/whiteboard-core/assistant";
-import { WHITEBOARD_SYNC_ROUTES } from "@orbmeet/whiteboard-core/protocol";
+import { WHITEBOARD_SYNC_ROUTES, whiteboardSyncUrl } from "@orbmeet/whiteboard-core/protocol";
 import { isRecord } from "@orbmeet/primitives";
 import { useCommittedRef } from "@orbmeet/ui/react";
-import { whiteboardSyncUrl } from "../sync/service-endpoints";
 import type { RoomChannel } from "../sync/room-channel";
 import type { PageManager } from "../pages/page-manager";
 import { capturePageOutline, capturePromptContext, runCanvasTool } from "./canvas-tools";

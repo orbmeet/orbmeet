@@ -5,33 +5,18 @@ import type { StyleXStyles } from "@stylexjs/stylex";
 import type React from "react";
 import type { ComponentProps, ReactNode } from "react";
 
+import { motion } from "../styles/atoms";
 import { zIndex } from "../tokens/layers.stylex";
-import { env } from "../tokens/media.stylex";
-import { duration, easing } from "../tokens/motion.stylex";
-
-const STARTING = ":is([data-starting-style])";
-const ENDING = ":is([data-ending-style])";
 
 const styles = stylex.create({
   positioner: { zIndex: zIndex.popover },
   popup: {
     pointerEvents: "auto",
-    transformOrigin: "var(--transform-origin)",
-    opacity: { default: 1, [STARTING]: 0, [ENDING]: 0 },
-    scale: { default: 1, [STARTING]: 0.95, [ENDING]: 0.95 },
-    transitionProperty: "opacity, scale",
-    transitionDuration: {
-      default: duration.fast,
-      ":is([data-instant])": "0s",
-      [env.reducedMotion]: "0s",
-    },
-    transitionTimingFunction: easing.gentle,
   },
 });
 
 export const PopoverRoot = BasePopover.Root;
 export const PopoverTrigger = BasePopover.Trigger;
-export const PopoverTitle = BasePopover.Title;
 
 type PopupProps = Omit<
   ComponentProps<typeof BasePopover.Popup>,
@@ -58,11 +43,9 @@ export function PopoverContent({
   collisionPadding?: number;
   anchor?: React.RefObject<Element | null>;
   /**
-   * Required. `Popover.Popup` is a `role="dialog"`, and Base UI names it from a
-   * `Popover.Title` that no call site renders — without this every popover
-   * announces as an unnamed dialog. Rendering `PopoverTitle` inside the content
-   * still wins, since `aria-labelledby` outranks `aria-label`. A caller's own
-   * `aria-label` also wins: it is merged over this default, not under it.
+   * Required. `Popover.Popup` is a `role="dialog"`, so every popover needs an
+   * accessible name rather than announcing as an unnamed dialog. A caller's
+   * own `aria-label` wins over this default.
    */
   title: string;
 }) {
@@ -96,7 +79,7 @@ export function PopoverContent({
           {...popupProps}
           {...interactionProps}
           aria-label={ariaLabel ?? title}
-          {...stylex.props(styles.popup, sx)}
+          {...stylex.props(motion.popup, motion.popupAnchored, styles.popup, sx)}
         >
           {children}
         </BasePopover.Popup>

@@ -11,7 +11,3 @@ export function extractMeetingCodeFromPathname(pathname: string): string | null 
   const match = MEETING_PATH_RE.exec(pathname);
   return match?.[1] ?? null;
 }
-
-export function isMeetingPathname(pathname: string): boolean {
-  return extractMeetingCodeFromPathname(pathname) !== null;
-}

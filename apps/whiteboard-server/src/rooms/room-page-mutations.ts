@@ -11,7 +11,15 @@ import { getIndexAbove, getIndexBelow, type IndexKey } from "@tldraw/utils";
 import { WHITEBOARD_CONFIG } from "@orbmeet/whiteboard-core/config";
 import { DEFAULT_PAGE_BACKGROUND } from "@orbmeet/whiteboard-core/page-background";
 import {
+  applyPageFrameUpdate,
+  getPageFrameNameForNumber,
+  getPageFrameRecords,
+  getPageFrameRenumberUpdates,
+  getPageFrameShiftUpdates,
+  getRecordIndex,
   INITIAL_PAGE_FRAME_ID,
+  isPageFrameRecord,
+  isPageRecord,
   planPageFrameInsertion,
   type PageFrameShape,
 } from "@orbmeet/whiteboard-core/page-frame-model";
@@ -21,16 +29,6 @@ import { pdfPageAssetName, pdfPageShapeKey } from "@orbmeet/whiteboard-core/pdf-
 import { withShapeAuthor, type ShapeAuthor } from "@orbmeet/whiteboard-core/shape-author";
 import { buildWhiteboardAssetApiPath } from "@orbmeet/whiteboard-core/whiteboard-asset-key";
 import { whiteboardTLSchema } from "@orbmeet/whiteboard-core/room-schema";
-import {
-  applyPageFrameUpdate,
-  getPageFrameNameForNumber,
-  getPageFrameRecords,
-  getPageFrameRenumberUpdates,
-  getPageFrameShiftUpdates,
-  getRecordIndex,
-  isPageFrameRecord,
-  isPageRecord,
-} from "@orbmeet/whiteboard-core/page-frame-model";
 
 const { PAGE_WIDTH, PAGE_HEIGHT, PAGE_SPACING, MAX_PAGES } = WHITEBOARD_CONFIG;
 
@@ -188,8 +186,12 @@ function buildImportedPdfAsset(
   });
 }
 
-function getLowestChildIndex(records: readonly TLRecord[], parentId: TLShapeId): IndexKey | null {
-  let lowest: IndexKey | null = null;
+function getExtremeChildIndex(
+  records: readonly TLRecord[],
+  parentId: TLParentId,
+  direction: "lowest" | "highest",
+): IndexKey | null {
+  let extreme: IndexKey | null = null;
   for (const record of records) {
     if (
       record.typeName !== "shape" ||
@@ -200,9 +202,11 @@ function getLowestChildIndex(records: readonly TLRecord[], parentId: TLShapeId):
     }
     const index = getRecordIndex(record);
     if (!index) continue;
-    if (!lowest || index < lowest) lowest = index;
+    if (!extreme || (direction === "lowest" ? index < extreme : index > extreme)) {
+      extreme = index;
+    }
   }
-  return lowest;
+  return extreme;
 }
 
 /**
@@ -317,19 +321,7 @@ export function addWhiteboardPageInTransaction(
     ? createShapeId()
     : preferredFrameId;
 
-  let highestIndex: IndexKey | null = null;
-  for (const record of records) {
-    if (
-      record.typeName !== "shape" ||
-      !("parentId" in record) ||
-      record.parentId !== nativePage.id
-    ) {
-      continue;
-    }
-    const index = getRecordIndex(record);
-    if (!index) continue;
-    if (!highestIndex || index > highestIndex) highestIndex = index;
-  }
+  const highestIndex = getExtremeChildIndex(records, nativePage.id, "highest");
 
   const updates: TLRecord[] = [];
   const framesById = new Map(frames.map((frame) => [frame.id, frame]));
@@ -470,7 +462,7 @@ export function insertImportedPagesInTransaction(
     if (spec.pages.length === 0) return null;
     const reuseFrame = frames.find((frame) => frame.id === spec.reuse?.frameId);
     if (!reuseFrame) return null;
-    reuseFrameLowestChildIndex = getLowestChildIndex(initialRecords, reuseFrame.id);
+    reuseFrameLowestChildIndex = getExtremeChildIndex(initialRecords, reuseFrame.id, "lowest");
     const oldHeight = reuseFrame.props.h;
     const delta = spec.reuse.height - oldHeight;
     const oldBottom = reuseFrame.y + oldHeight;
@@ -538,19 +530,7 @@ export function insertImportedPagesInTransaction(
       if (frame) transaction.set(frame.id, applyPageFrameUpdate(frame, update));
     }
 
-    let highestIndex: IndexKey | null = null;
-    for (const record of records) {
-      if (
-        record.typeName !== "shape" ||
-        !("parentId" in record) ||
-        record.parentId !== pageParentId
-      ) {
-        continue;
-      }
-      const index = getRecordIndex(record);
-      if (!index) continue;
-      if (!highestIndex || index > highestIndex) highestIndex = index;
-    }
+    const highestIndex = getExtremeChildIndex(records, pageParentId, "highest");
 
     let cursorY = plan.insertionY;
     let prevIndex: IndexKey | undefined = highestIndex ?? undefined;

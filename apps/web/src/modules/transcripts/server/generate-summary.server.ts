@@ -8,11 +8,9 @@ import type { Database } from "@orbmeet/db";
 import { meetingConnections, meetingFollowUps, meetingSummaries, meetings, transcripts, type MeetingMoment } from "@orbmeet/db/schema";
 import { and, countDistinct, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import * as v from "valibot";
-import { toStandardJsonSchema } from "@valibot/to-json-schema";
 import { MEETING_SUMMARY_MAX_LENGTH } from "@/modules/meetings/contract/constants";
 import { generateId } from "@/lib/ids";
-import { chat } from "@tanstack/ai";
-import { createGeminiTextAdapter } from "@/platform/ai/gemini";
+import { generateGeminiJson } from "@/platform/ai/gemini";
 import { logError } from "@/lib/logger";
 import { listTranscriptRowsPage, type TranscriptCursor, type TranscriptListRow } from "./query";
 import { boardOutlineForMeeting } from "./board-outline.server";
@@ -371,23 +369,16 @@ async function generateSummaryObject(
 ): Promise<SummaryObject | null> {
   const modelIds = [ai.model, ai.fallback].filter((id): id is string => Boolean(id));
   for (const modelId of modelIds) {
-    const abortController = new AbortController();
-    const timeout = setTimeout(
-      () => abortController.abort("Summary provider request timed out"),
-      SUMMARY_PROVIDER_TIMEOUT_MS,
-    );
     try {
-      const result = await chat({
-        adapter: createGeminiTextAdapter(modelId, ai.apiKey),
-        outputSchema: toStandardJsonSchema(summarySchema),
-        messages: [{ role: "user", content: prompt }],
-        abortController,
+      return await generateGeminiJson({
+        apiKey: ai.apiKey,
+        model: modelId,
+        prompt,
+        schema: summarySchema,
+        timeoutMs: SUMMARY_PROVIDER_TIMEOUT_MS,
       });
-      return result;
     } catch (err) {
       logError("[generateMeetingSummary] Model failed", { model: modelId }, err);
-    } finally {
-      clearTimeout(timeout);
     }
   }
   return null;

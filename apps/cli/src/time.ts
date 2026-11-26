@@ -1,45 +1,18 @@
-import { currentTimeZoneName, isValidTimeZone } from "@orbmeet/public-api-contract/time-zone";
+import {
+  currentTimeZoneName,
+  formatInTimeZone,
+  isValidTimeZone,
+  resolveWallClockToIso,
+  type WallClock,
+} from "@orbmeet/public-api-contract/time-zone";
+
+export { formatInTimeZone };
 
 const OFFSET_OR_UTC = /Z$|[+-]\d{2}:?\d{2}$/;
 const ISO_INSTANT =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(?:Z|[+-](\d{2}):?(\d{2}))$/i;
 const WALL_CLOCK = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})$/;
 const AT_FORMAT_ERROR = "--at must be an ISO instant or YYYY-MM-DD HH:mm with --timezone";
-
-const WALL_CLOCK_FIELDS = ["year", "month", "day", "hour", "minute"] as const;
-
-export type WallClock = Record<(typeof WALL_CLOCK_FIELDS)[number], number>;
-
-export function formatInTimeZone(date: Date, timeZone: string): WallClock {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
-  const read = (type: Intl.DateTimeFormatPartTypes) =>
-    Number(parts.find((part) => part.type === type)?.value);
-  return {
-    year: read("year"),
-    month: read("month"),
-    day: read("day"),
-    hour: read("hour"),
-    minute: read("minute"),
-  };
-}
-
-function toUtc(wallClock: WallClock): number {
-  return Date.UTC(
-    wallClock.year,
-    wallClock.month - 1,
-    wallClock.day,
-    wallClock.hour,
-    wallClock.minute,
-  );
-}
 
 function isRealInstant([year, month, day, hour, minute, second, offsetHours, offsetMinutes]: number[]): boolean {
   const date = new Date(Date.UTC(year, month - 1, day));
@@ -79,17 +52,11 @@ export function wallClockToIso(value: string, timeZone: string): string {
     hour: +match[4],
     minute: +match[5],
   };
-  const desiredUtc = toUtc(desired);
-  let instant = new Date(desiredUtc);
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const observed = formatInTimeZone(instant, timeZone);
-    instant = new Date(instant.getTime() + desiredUtc - toUtc(observed));
-  }
-  const observed = formatInTimeZone(instant, timeZone);
-  if (WALL_CLOCK_FIELDS.some((field) => desired[field] !== observed[field])) {
+  const iso = resolveWallClockToIso(desired, timeZone);
+  if (iso === null) {
     throw new Error("The requested local time does not exist in that time zone");
   }
-  return instant.toISOString();
+  return iso;
 }
 
 export function parseDurationMinutes(value: string | undefined, fallback: number): number {
@@ -131,10 +98,8 @@ export function requireLocalTimeZone(): string {
 }
 
 export function assertTimeZone(value: string, source: string): string {
-  try {
-    new Intl.DateTimeFormat("en", { timeZone: value }).format();
-    return value;
-  } catch {
+  if (!isValidTimeZone(value)) {
     throw new Error(`${source} is not a valid IANA time zone: ${value}`);
   }
+  return value;
 }

@@ -4,6 +4,8 @@ const SUPPORT_EMAIL = "support@orbmeet.com";
 const SITE_LOGO_URL = `${SITE_URL}/favicon.svg`;
 export const SITE_DESCRIPTION =
   "Open-source visual meeting workspace for recurring groups, with durable Whiteboards, live facilitation, transcripts, and retained Meeting outputs.";
+export const PRODUCT_DESCRIPTION =
+  "A visual meeting workspace where recurring teams meet, write together on lasting Whiteboards, and keep Meetings, Files, and shared context in one Space.";
 export const DEFAULT_ROBOTS =
   "index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1";
 

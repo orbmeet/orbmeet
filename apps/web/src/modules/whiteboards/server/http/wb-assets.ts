@@ -21,6 +21,16 @@ import {
 import { getGuestCookieSecretFromCookie } from "@/platform/http/cookies.server";
 import { enforceWhiteboardAssetRateLimit } from "@/platform/http/rate-limit.server";
 
+function manifestIncludesAssetKey(assetManifest: string | null | undefined, key: string): boolean {
+  if (!assetManifest) return false;
+  try {
+    const manifest: unknown = JSON.parse(assetManifest);
+    return Array.isArray(manifest) && manifest.includes(key);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * A revision's assets are readable by whoever may read the history of a
  * Meeting that shows the revision: the Meeting that captured it, and any later
@@ -40,14 +50,7 @@ async function canUserReadWhiteboardRevisionAsset(
     where: { id: input.revisionId, whiteboardId: input.whiteboardId },
     columns: { assetManifest: true, sourceMeetingId: true },
   });
-  if (!revision?.assetManifest) return false;
-  let manifest: unknown;
-  try {
-    manifest = JSON.parse(revision.assetManifest);
-  } catch {
-    return false;
-  }
-  if (!Array.isArray(manifest) || !manifest.includes(input.key)) return false;
+  if (!revision || !manifestIncludesAssetKey(revision.assetManifest, input.key)) return false;
 
   const capturing = await db
     .select({ meetingId: meetingWhiteboards.meetingId })
@@ -93,13 +96,7 @@ async function canGuestReadWhiteboardRevisionAsset(
       ),
     )
     .limit(1);
-  if (!revision?.assetManifest) return false;
-  try {
-    const manifest: unknown = JSON.parse(revision.assetManifest);
-    return Array.isArray(manifest) && manifest.includes(input.key);
-  } catch {
-    return false;
-  }
+  return manifestIncludesAssetKey(revision?.assetManifest, input.key);
 }
 
 /**
@@ -141,8 +138,7 @@ export function hasBody(object: R2ObjectBody | R2Object): object is R2ObjectBody
 // authorization above it runs every time, which is what puts a bound on
 // revocation.
 const ASSET_PRIVATE_CACHE_SECONDS = 60 * 60;
-const IMMUTABLE_ASSET_CACHE_CONTROL = `private, max-age=${ASSET_PRIVATE_CACHE_SECONDS}, must-revalidate`;
-const PARTIAL_ASSET_CACHE_CONTROL = `private, max-age=${ASSET_PRIVATE_CACHE_SECONDS}, must-revalidate`;
+const ASSET_CACHE_CONTROL = `private, max-age=${ASSET_PRIVATE_CACHE_SECONDS}, must-revalidate`;
 
 // Error responses must never be cached: the registry returns 404 for a PDF
 // import whose page rows land *after* the page shapes reach the canvas, and a
@@ -169,11 +165,11 @@ async function verifyWhiteboardAssetToken(
   env: Env,
   db: ReturnType<typeof createDb>,
   whiteboardId: string,
+  requestedWhiteboardId: string | null,
 ): Promise<"allowed" | "missing" | "invalid" | "forbidden"> {
   const cookieHeader = request.headers.get("Cookie");
   const bearer = request.headers.get("Authorization");
   const bearerToken = bearer?.startsWith("Bearer ") ? bearer.slice("Bearer ".length).trim() : null;
-  const requestedWhiteboardId = new URL(request.url).searchParams.get("whiteboardId");
   const cookieToken = getWhiteboardAssetTokenFromCookie(
     cookieHeader,
     requestedWhiteboardId ?? whiteboardId,
@@ -239,10 +235,10 @@ export async function handleWbAssets(request: Request, env: Env, key: string): P
   }
 
   const db = createDb(env.DB);
-  const revisionId = new URL(request.url).searchParams.get("revisionId");
-
-  const requestedWhiteboardId =
-    new URL(request.url).searchParams.get("whiteboardId") ?? documentAsset.whiteboardId;
+  const requestUrl = new URL(request.url);
+  const revisionId = requestUrl.searchParams.get("revisionId");
+  const queryWhiteboardId = requestUrl.searchParams.get("whiteboardId");
+  const requestedWhiteboardId = queryWhiteboardId ?? documentAsset.whiteboardId;
   if (requestedWhiteboardId === documentAsset.whiteboardId) {
     // The owning board reads through the registry, not the key alone: a key
     // this board never registered is not this board's to serve.
@@ -281,11 +277,16 @@ export async function handleWbAssets(request: Request, env: Env, key: string): P
   }
   // A Whiteboard token proves an active session in this exact document.
   // Authenticated sessions without one fall through to history authorization.
-  const tokenStatus = await verifyWhiteboardAssetToken(request, env, db, requestedWhiteboardId);
+  const tokenStatus = await verifyWhiteboardAssetToken(
+    request,
+    env,
+    db,
+    requestedWhiteboardId,
+    queryWhiteboardId,
+  );
 
   if (tokenStatus !== "allowed") {
     const session = await verifySessionFromRawRequest(request, env);
-    const requestUrl = new URL(request.url);
     const guestMeetingId = requestUrl.searchParams.get("meetingId");
     const guestAdmissionId = requestUrl.searchParams.get("admissionId");
     const guestSecret = guestAdmissionId
@@ -395,7 +396,7 @@ export async function handleWbAssets(request: Request, env: Env, key: string): P
       status: 304,
       headers: {
         ETag: object.httpEtag,
-        "Cache-Control": IMMUTABLE_ASSET_CACHE_CONTROL,
+        "Cache-Control": ASSET_CACHE_CONTROL,
         Vary: "Cookie, Authorization",
       },
     });
@@ -423,10 +424,7 @@ export async function handleWbAssets(request: Request, env: Env, key: string): P
   headers.set("Content-Type", contentType);
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Content-Security-Policy", "default-src 'none'; sandbox");
-  // `immutable` is a promise about the whole representation, so it belongs only
-  // on a full-body response. A partial one describes the bytes a single Range
-  // asked for, and the cache key does not vary on Range.
-  headers.set("Cache-Control", range ? PARTIAL_ASSET_CACHE_CONTROL : IMMUTABLE_ASSET_CACHE_CONTROL);
+  headers.set("Cache-Control", ASSET_CACHE_CONTROL);
   headers.set("Vary", "Cookie, Authorization");
   headers.set("Accept-Ranges", "bytes");
 

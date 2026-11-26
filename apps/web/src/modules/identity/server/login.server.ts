@@ -6,12 +6,6 @@
 import { getRequest } from "@tanstack/react-start/server";
 import { createDb } from "@orbmeet/db";
 import { devices, sessions } from "@orbmeet/db/schema";
-import {
-  SESSION_EXPIRY_MS,
-  SESSION_EXPIRY_SECONDS,
-  SESSION_ABSOLUTE_EXPIRY_MS,
-} from "@/modules/identity/contract/auth/constants";
-import { generateId } from "@/lib/ids";
 import type * as v from "valibot";
 import { Errors, createValidationError } from "@/lib/app-errors";
 import { eq, inArray, or } from "drizzle-orm";
@@ -19,17 +13,13 @@ import {
   otpVerifySchema,
   resendOtpSchema,
 } from "@/modules/identity/contract/auth/schemas";
-import { generateSessionToken, hashSessionToken } from "@/platform/crypto/tokens.server";
-import { getRunChanges } from "@/platform/database/db-utils";
+import { hashSessionToken } from "@/platform/crypto/tokens.server";
 import { appendCookies, createCookieString, getCookieValue, sessionTokensFromCookie } from "@/platform/http/cookies.server";
-import { getClientIP } from "@/platform/http/client-ip.server";
 import { enforceIpRateLimit, enforceRateLimit } from "@/platform/http/rate-limit.server";
 import { getEnv } from "@/platform/runtime/server-runtime.server";
 import {
-  enforceSessionCapStatement,
   getRememberedUserFromRequest,
   getSessionFromRequest,
-  rememberDevice,
   sanitizeUser,
 } from "./session";
 import { loadUserBilling } from "@/modules/billing/server/entitlements.server";
@@ -40,11 +30,7 @@ import {
   resendEmailAuthFlowCode,
   verifyEmailAuthFlowCode,
 } from "./email-flow";
-import {
-  insertActiveAccountSessionStatement,
-  insertDeletionResumeSessionStatement,
-  DELETION_RECOVERY_SESSION_TTL_SECONDS,
-} from "./session-issuance";
+import { issueBrowserSession } from "./session-issuance";
 import { clearOAuthFlowCookies } from "./oauth-cookies";
 
 export async function verifyLoginOtpImpl({ data }: { data: v.InferOutput<typeof otpVerifySchema> }) {
@@ -70,56 +56,16 @@ export async function verifyLoginOtpImpl({ data }: { data: v.InferOutput<typeof 
   // inserts only while the gate is closed, and the resulting session resolves
   // exclusively through the recovery surface and the deletion endpoint.
   const deletionPending = user.deletionStartedAt !== null;
-  const recoveryTtlSeconds = DELETION_RECOVERY_SESSION_TTL_SECONDS;
-
-  const sessionId = generateId("SESSION");
-  const sessionToken = generateSessionToken();
-  const sessionTokenHash = await hashSessionToken(sessionToken);
-  const nowMs = Date.now();
-  const nowSeconds = Math.floor(nowMs / 1000);
-  const expiresAtSeconds = deletionPending
-    ? nowSeconds + recoveryTtlSeconds
-    : Math.floor((nowMs + SESSION_EXPIRY_MS) / 1000);
-  const absoluteExpiresAtSeconds = deletionPending
-    ? nowSeconds + recoveryTtlSeconds
-    : Math.floor((nowMs + SESSION_ABSOLUTE_EXPIRY_MS) / 1000);
-  const ipAddress = getClientIP();
-  const userAgent = request.headers.get("User-Agent")?.slice(0, 500) ?? null;
-  const flowExists = emailAuthFlowLiveSql(flow, new Date(nowMs));
-  const sessionInput = {
-    id: sessionId,
-    tokenHash: sessionTokenHash,
+  const now = new Date();
+  await issueBrowserSession(db, env, request, {
     userId: user.id,
-    expiresAtSeconds,
-    absoluteExpiresAtSeconds,
-    ipAddress,
-    userAgent,
-    createdAtSeconds: nowSeconds,
-    additionalGate: flowExists,
-  };
-  const insertSession = deletionPending
-    ? insertDeletionResumeSessionStatement(db, sessionInput)
-    : insertActiveAccountSessionStatement(db, sessionInput);
-  const [insertResult] = await db.batch([
-    insertSession,
-    consumeEmailAuthFlowStatement(db, flow, new Date(nowMs)),
-    enforceSessionCapStatement(db, user.id),
-  ]);
-  if (getRunChanges(insertResult) !== 1) {
-    throw createValidationError("Invalid or expired code.");
-  }
+    deletionPending,
+    now,
+    additionalGate: emailAuthFlowLiveSql(flow, now),
+    additionalStatements: [consumeEmailAuthFlowStatement(db, flow, now)],
+    onFenceRejected: () => createValidationError("Invalid or expired code."),
+  });
 
-  // A remembered-device cookie cannot resolve a deletion-gated account
-  // anyway (the lookup excludes gated users), so do not mint a dead row.
-  if (!deletionPending) {
-    await rememberDevice(db, env, user.id, sessionId).catch(() => undefined);
-  }
-  appendCookies([
-    createCookieString("session", sessionToken, SESSION_EXPIRY_SECONDS, {
-      appUrl: env.APP_URL,
-      environment: env.ENVIRONMENT,
-    }),
-  ]);
   return {
     user: sanitizeUser(user, await loadUserBilling(db, user.id)),
     deletionPending,

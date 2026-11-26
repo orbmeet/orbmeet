@@ -19,7 +19,7 @@ export type ButtonVariant =
   | "outline"
   | "link";
 
-export type ButtonSize = "sm" | "md" | "lg" | "icon" | "iconSm";
+export type ButtonSize = "sm" | "md" | "lg" | "iconSm";
 
 const styles = stylex.create({
   base: {
@@ -124,7 +124,6 @@ const sizes = stylex.create({
   sm: { height: 32, paddingInline: space.s3, fontSize: text.xs, gap: space.s1_5 },
   md: { height: 40, paddingInline: space.s4, gap: space.s2 },
   lg: { height: 48, paddingInline: space.s6, fontSize: text.base, gap: space.s2 },
-  icon: { height: 40, width: 40, padding: 0 },
   /** A row action: the icon button at the end of a list row. */
   iconSm: { height: 32, width: 32, padding: 0 },
 });

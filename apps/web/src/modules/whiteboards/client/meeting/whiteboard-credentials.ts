@@ -1,9 +1,21 @@
-import { decodeBase64Url } from "@orbmeet/primitives";
+import { buildWhiteboardConnectUrl } from "@orbmeet/whiteboard-core/protocol";
+import { decodeUnverifiedWhiteboardJwtPayload } from "@orbmeet/whiteboard-core/whiteboard-jwt";
 import type { WhiteboardConnectAttempt } from "@orbmeet/whiteboard-client/react";
-import {
-  WHITEBOARD_TOKEN_REFRESH_BUFFER_MS,
-  type WhiteboardAccessState,
-} from "@/modules/whiteboards/client/meeting/whiteboard-access-state";
+
+/** A document credential is replaced this long before it expires. */
+const WHITEBOARD_TOKEN_REFRESH_BUFFER_MS = 60 * 1000;
+
+/** What the client reads from a whiteboard token. The server verifies it; this only reads it. */
+interface WhiteboardAccessState {
+  token: string | null;
+  whiteboardUrl: string | null;
+  /** When it expires, on this browser's clock. */
+  expiresAt: number | null;
+  connectionId: string | null;
+  participantBound: boolean;
+  canEditWhiteboard: boolean;
+  canManageWhiteboard: boolean;
+}
 
 /**
  * A socket that keeps failing without ever coming online reuses its token for
@@ -204,10 +216,7 @@ export class WhiteboardCredentials {
     const credential = stale ? await this.mint(surface.revision) : held;
     const { token, whiteboardUrl } = credential.access;
     if (!token || !whiteboardUrl) throw new Error("Whiteboard connection is unavailable");
-    const url = new URL("/connect", whiteboardUrl);
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    url.hash = new URLSearchParams({ token }).toString();
-    return url.toString();
+    return buildWhiteboardConnectUrl(whiteboardUrl, token);
   }
 
   /** The canvas reports its socket. Returns whether the session should re-render. */
@@ -256,28 +265,19 @@ function readTokenClaims(token: string): {
   canEditWhiteboard: boolean;
   canManageWhiteboard: boolean;
 } | null {
-  try {
-    const payload = token.split(".")[1];
-    if (!payload) return null;
-    const bytes = decodeBase64Url(payload);
-    if (!bytes) return null;
-    const decoded = JSON.parse(new TextDecoder().decode(bytes)) as {
-      exp?: number;
-      iat?: number;
-      connectionId?: string;
-      service?: string;
-      capabilities?: { canEditWhiteboard?: boolean; canManageWhiteboard?: boolean };
-    };
-    return {
-      lifetimeMs: typeof decoded.exp === "number" && typeof decoded.iat === "number"
-        ? (decoded.exp - decoded.iat) * 1000
-        : null,
-      connectionId: typeof decoded.connectionId === "string" ? decoded.connectionId : null,
-      service: typeof decoded.service === "string" ? decoded.service : null,
-      canEditWhiteboard: decoded.capabilities?.canEditWhiteboard === true,
-      canManageWhiteboard: decoded.capabilities?.canManageWhiteboard === true,
-    };
-  } catch {
-    return null;
-  }
+  const decoded = decodeUnverifiedWhiteboardJwtPayload(token);
+  if (!decoded) return null;
+  const capabilities =
+    decoded.capabilities && typeof decoded.capabilities === "object"
+      ? (decoded.capabilities as { canEditWhiteboard?: unknown; canManageWhiteboard?: unknown })
+      : null;
+  return {
+    lifetimeMs: typeof decoded.exp === "number" && typeof decoded.iat === "number"
+      ? (decoded.exp - decoded.iat) * 1000
+      : null,
+    connectionId: typeof decoded.connectionId === "string" ? decoded.connectionId : null,
+    service: typeof decoded.service === "string" ? decoded.service : null,
+    canEditWhiteboard: capabilities?.canEditWhiteboard === true,
+    canManageWhiteboard: capabilities?.canManageWhiteboard === true,
+  };
 }

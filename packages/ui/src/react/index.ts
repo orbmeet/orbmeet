@@ -1,5 +1,4 @@
 export * from "./alert";
-export * from "./ambient-background";
 export * from "./avatar";
 export * from "./badge";
 export * from "./bottom-sheet";
@@ -10,7 +9,6 @@ export * from "./dialog";
 export * from "./dot-list";
 export * from "./empty-state";
 export * from "./filter-input";
-export * from "./orb-sphere";
 export * from "./input";
 export * from "./menu";
 export * from "./popover";

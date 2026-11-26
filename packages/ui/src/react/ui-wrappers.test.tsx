@@ -174,12 +174,6 @@ describe("Avatar", () => {
     expect(html).toContain('role="img"');
     expect(html).toContain('aria-label="Ada Lovelace"');
   });
-
-  it("says whether someone is online, not only with the dot's colour", () => {
-    expect(renderToStaticMarkup(<Avatar name="Ada Lovelace" online />)).toContain(
-      'aria-label="Ada Lovelace, online"',
-    );
-  });
 });
 
 describe("FilterInput", () => {

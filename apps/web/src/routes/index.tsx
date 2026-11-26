@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
+  PRODUCT_DESCRIPTION,
   SITE_NAME,
   createJsonLdScript,
   createPageHead,
   buildWebPageGraph,
 } from "@/lib/seo";
-import { PRODUCT_DESCRIPTION } from "@/lib/product-copy";
 import { LandingPage } from "@/pages/landing/landing-page";
 
 export const Route = createFileRoute("/")({

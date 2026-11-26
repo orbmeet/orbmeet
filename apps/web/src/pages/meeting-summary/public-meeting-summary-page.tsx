@@ -25,7 +25,7 @@ import type { HandoffUnavailableReason } from "@/modules/transcripts/server/part
 import { useNow } from "@/lib/hooks/use-now";
 import { formatDuration, formatTimeAgo } from "@/pages/meeting-summary/lib/format";
 import { glass } from "@orbmeet/ui/tokens/wash.stylex";
-import { buildWhiteboardAssetViewerUrl } from "@orbmeet/whiteboard-core/whiteboard-asset-key";
+import { revisionAssetUrl } from "@/pages/meeting-summary/components/revision-asset-url";
 
 const routeApi = getRouteApi("/handoff/$meetingId");
 
@@ -326,32 +326,24 @@ export function PublicMeetingSummaryPage() {
   });
   const selectedWhiteboardIdForAssets = selectedWhiteboard?.whiteboardId;
   const selectedRevisionIdForAssets = selectedWhiteboard?.revisionId;
-  const whiteboardAssets = useMemo<TLAssetStore>(() => ({
-    async upload() {
-      return { src: "" };
-    },
-    resolve(asset) {
-      // A snapshot predating the sync-side source policy can carry an absolute
-      // or protocol-relative URL. Returning it unchanged would make opening an
-      // old handoff fetch another origin; the live canvas helper refuses those,
-      // and so does this.
-      const src = asset.props.src ? buildWhiteboardAssetViewerUrl(asset.props.src) : null;
-      if (!src) return null;
-      if (
-        !src.includes("/api/wb-assets/") ||
-        !selectedWhiteboardIdForAssets ||
-        !selectedRevisionIdForAssets
-      ) return src;
-      const separator = src.includes("?") ? "&" : "?";
-      const params = new URLSearchParams({
-        revisionId: selectedRevisionIdForAssets,
-        whiteboardId: selectedWhiteboardIdForAssets,
-        meetingId,
-        admissionId: admissionId ?? "",
-      });
-      return `${src}${separator}${params.toString()}`;
-    },
-  }), [
+  const whiteboardAssets = useMemo<TLAssetStore>(() => {
+    const scope = selectedWhiteboardIdForAssets && selectedRevisionIdForAssets
+      ? {
+          whiteboardId: selectedWhiteboardIdForAssets,
+          revisionId: selectedRevisionIdForAssets,
+          meetingId,
+          admissionId: admissionId ?? "",
+        }
+      : null;
+    return {
+      async upload() {
+        return { src: "" };
+      },
+      resolve(asset) {
+        return revisionAssetUrl(asset.props.src ?? null, scope);
+      },
+    };
+  }, [
     admissionId,
     meetingId,
     selectedRevisionIdForAssets,

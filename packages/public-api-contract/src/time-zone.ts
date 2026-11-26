@@ -45,3 +45,61 @@ const CURRENT_TIME_ZONE_NAMES: Readonly<Record<string, string>> = {
 export function currentTimeZoneName(zone: string): string {
   return Object.hasOwn(CURRENT_TIME_ZONE_NAMES, zone) ? CURRENT_TIME_ZONE_NAMES[zone] : zone;
 }
+
+const WALL_CLOCK_FIELDS = ["year", "month", "day", "hour", "minute"] as const;
+
+export type WallClock = Record<(typeof WALL_CLOCK_FIELDS)[number], number>;
+
+/** Format `date` into its calendar/clock components in `timeZone`. */
+export function formatInTimeZone(date: Date, timeZone: string): WallClock {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const read = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value);
+  return {
+    year: read("year"),
+    month: read("month"),
+    day: read("day"),
+    hour: read("hour"),
+    minute: read("minute"),
+  };
+}
+
+function toUtc(wallClock: WallClock): number {
+  return Date.UTC(
+    wallClock.year,
+    wallClock.month - 1,
+    wallClock.day,
+    wallClock.hour,
+    wallClock.minute,
+  );
+}
+
+/**
+ * Resolve a local wall-clock time in `timeZone` to an ISO 8601 UTC string, or
+ * `null` when that local time does not exist (such as during a DST
+ * spring-forward gap or an impossible calendar date).
+ *
+ * Wall-clock times that occur twice (DST fall-back) resolve to whichever
+ * occurrence the 3-iteration fixed-point solver converges on.
+ */
+export function resolveWallClockToIso(desired: WallClock, timeZone: string): string | null {
+  const desiredUtc = toUtc(desired);
+  let instant = new Date(desiredUtc);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const observed = formatInTimeZone(instant, timeZone);
+    instant = new Date(instant.getTime() + desiredUtc - toUtc(observed));
+  }
+  const observed = formatInTimeZone(instant, timeZone);
+  if (WALL_CLOCK_FIELDS.some((field) => desired[field] !== observed[field])) {
+    return null;
+  }
+  return instant.toISOString();
+}

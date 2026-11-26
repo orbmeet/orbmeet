@@ -24,7 +24,6 @@ import {
   loadMeetingWhiteboardPicker,
   preloadMeetingWhiteboardModule,
 } from "@/modules/whiteboards/client/meeting/preload-whiteboard";
-import { isWhiteboardToggleDisabled } from "@/modules/whiteboards/client/meeting/whiteboard-toolbar-state";
 import { spinner } from "@orbmeet/ui/styles/animations";
 import { accent, ink, surface } from "@orbmeet/ui/tokens/colors.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";
@@ -193,12 +192,13 @@ export function useMeetingWhiteboard({
     [handleWhiteboardStatusChange],
   );
 
-  const handleApproveWhiteboard = React.useCallback(
-    async (principalKey: string) => {
+  const handleWhiteboardEditDecision = React.useCallback(
+    async (decision: "approve" | "deny", principalKey: string) => {
+      const action = decision === "approve" ? grantWhiteboardEditAccess : denyWhiteboardEditAccess;
       try {
         // The request came from the board this moderator is looking at.
         if (!whiteboardDocumentId) throw new Error("No whiteboard is open");
-        await grantWhiteboardEditAccess({
+        await action({
           data: {
             meetingId: joinResult.meetingId,
             whiteboardId: whiteboardDocumentId,
@@ -211,39 +211,18 @@ export function useMeetingWhiteboard({
         );
         whiteboardRef.current?.clearPendingRequest(principalKey);
       } catch (err) {
-        logError("[Meeting] Failed to grant whiteboard edit access:", err);
-        addToast({
-          title: "Approval failed",
-          description: "Could not approve whiteboard access. Please try again.",
-          data: { variant: "error" },
-        });
-      }
-    },
-    [addToast, joinResult.meetingId, joinResult.connectionId, whiteboardDocumentId],
-  );
-
-  const handleDenyWhiteboard = React.useCallback(
-    async (principalKey: string) => {
-      try {
-        // The request came from the board this moderator is looking at.
-        if (!whiteboardDocumentId) throw new Error("No whiteboard is open");
-        await denyWhiteboardEditAccess({
-          data: {
-            meetingId: joinResult.meetingId,
-            whiteboardId: whiteboardDocumentId,
-            targetPrincipalKey: principalKey,
-            connectionId: joinResult.connectionId,
-          },
-        });
-        setWhiteboardRequests((prev) =>
-          prev.filter((request) => request.principalKey !== principalKey),
+        logError(
+          decision === "approve"
+            ? "[Meeting] Failed to grant whiteboard edit access:"
+            : "[Meeting] Failed to deny whiteboard edit access:",
+          err,
         );
-        whiteboardRef.current?.clearPendingRequest(principalKey);
-      } catch (err) {
-        logError("[Meeting] Failed to deny whiteboard edit access:", err);
         addToast({
-          title: "Action failed",
-          description: "Could not deny whiteboard access. Please try again.",
+          title: decision === "approve" ? "Approval failed" : "Action failed",
+          description:
+            decision === "approve"
+              ? "Could not approve whiteboard access. Please try again."
+              : "Could not deny whiteboard access. Please try again.",
           data: { variant: "error" },
         });
       }
@@ -490,7 +469,7 @@ export function useMeetingWhiteboard({
               onStopFollowing: whiteboardFollow.stopFollowing,
             }
           : undefined,
-      disabled: isWhiteboardToggleDisabled({ canAttemptOpen: whiteboardCanAttemptOpen }),
+      disabled: !whiteboardCanAttemptOpen,
       disabledReason: whiteboardDisabledReason,
     },
     extraPermissions: [
@@ -516,11 +495,11 @@ export function useMeetingWhiteboard({
     // Opening the board answers every ask at once; drawing access is per person.
     onApproveExtraPermission: (requestId) => {
       if (requestId.startsWith(BOARD_REQUEST_PREFIX)) approveBoardRequest();
-      else if (requestId.startsWith(EDIT_REQUEST_PREFIX)) void handleApproveWhiteboard(requestId.slice(EDIT_REQUEST_PREFIX.length));
+      else if (requestId.startsWith(EDIT_REQUEST_PREFIX)) void handleWhiteboardEditDecision("approve", requestId.slice(EDIT_REQUEST_PREFIX.length));
     },
     onDenyExtraPermission: (requestId) => {
       if (requestId.startsWith(BOARD_REQUEST_PREFIX)) declineBoardRequest(requestId.slice(BOARD_REQUEST_PREFIX.length));
-      else if (requestId.startsWith(EDIT_REQUEST_PREFIX)) void handleDenyWhiteboard(requestId.slice(EDIT_REQUEST_PREFIX.length));
+      else if (requestId.startsWith(EDIT_REQUEST_PREFIX)) void handleWhiteboardEditDecision("deny", requestId.slice(EDIT_REQUEST_PREFIX.length));
     },
     overlay: (
       <React.Suspense fallback={null}>

@@ -214,6 +214,9 @@ export const status = stylex.create({
  * stylesheet used to carry: StyleX has no global selector, and the blanket
  * rule was wrong anyway — it also froze the spinners.
  */
+const STARTING = ":is([data-starting-style])";
+const ENDING = ":is([data-ending-style])";
+
 export const motion = stylex.create({
   /** Colour and border only. The default for a hover state. */
   tint: {
@@ -238,6 +241,25 @@ export const motion = stylex.create({
     transitionProperty: "all",
     transitionDuration: { default: duration.base, [env.reducedMotion]: "0s" },
     transitionTimingFunction: easing.stiff,
+  },
+  /**
+   * Base UI popup enter/exit: fades and scales in from `data-starting-style`
+   * and out to `data-ending-style`. Respects `data-instant` and reduced motion.
+   */
+  popup: {
+    opacity: { default: 1, [STARTING]: 0, [ENDING]: 0 },
+    scale: { default: 1, [STARTING]: 0.95, [ENDING]: 0.95 },
+    transitionProperty: "opacity, scale",
+    transitionDuration: {
+      default: duration.fast,
+      ":is([data-instant])": "0s",
+      [env.reducedMotion]: "0s",
+    },
+    transitionTimingFunction: easing.gentle,
+  },
+  /** Anchored popups grow out of the trigger's `--transform-origin`. */
+  popupAnchored: {
+    transformOrigin: "var(--transform-origin)",
   },
 });
 

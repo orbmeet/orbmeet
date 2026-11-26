@@ -1,4 +1,4 @@
-import { abortable, childController, sleep, withDeadline } from "../abort.js";
+import { abortable, sleep, withDeadline } from "../abort.js";
 import { AudioTimeline } from "./audio-timeline.js";
 import { containsLikelySpeech, type AudioSource } from "./audio-source.js";
 import type { TranscriptEvent } from "./transcript-assembler.js";
@@ -124,11 +124,12 @@ export class DeepgramAttempt {
     // What the send loop waits on: the attempt stopping, or the socket
     // closing. One signal for the whole attempt, so each wait registers one
     // listener and removes it again.
-    const wake = childController(signal);
+    const socketClosed = new AbortController();
+    const wake = AbortSignal.any([signal, socketClosed.signal]);
     socket.onClose(() => {
       closed = true;
       resolveClosed();
-      wake.abort();
+      socketClosed.abort();
     });
     const timeline = new AudioTimeline();
     const liveness: Liveness = { lastInboundAt: now(), unansweredSpeechSince: null };
@@ -164,10 +165,10 @@ export class DeepgramAttempt {
 
     let failed = true;
     try {
-      await this.pump(socket, timeline, liveness, () => closed, wake.signal);
+      await this.pump(socket, timeline, liveness, () => closed, wake);
       failed = false;
     } finally {
-      wake.abort();
+      socketClosed.abort();
       clearInterval(keepAlive);
       this.socket = null;
       if (!closed && !failed) {

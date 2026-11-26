@@ -82,16 +82,6 @@ export function initStageState(): StageState {
   };
 }
 
-/** Speaking set with a small hysteresis band so the glow doesn't flicker. */
-export function speakingSet(state: StageState, params: StageParams): Set<string> {
-  const onThreshold = params.activityFloor;
-  const set = new Set<string>();
-  for (const [identity, score] of Object.entries(state.scores)) {
-    if (score >= onThreshold) set.add(identity);
-  }
-  return set;
-}
-
 function argmaxScore(
   scores: Record<string, number>,
   exclude: string | null,

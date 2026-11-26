@@ -1,4 +1,9 @@
-import { extractWhiteboardDocumentAssetIdentity, whiteboardAssetKeyOfSrc } from "@orbmeet/whiteboard-core/whiteboard-asset-key";
+import {
+  extractWhiteboardDocumentAssetIdentity,
+  WHITEBOARD_ASSET_API_PREFIX,
+  whiteboardAssetKeyOfSrc,
+} from "@orbmeet/whiteboard-core/whiteboard-asset-key";
+import { isPageFrameRecord } from "@orbmeet/whiteboard-core/page-frame-model";
 import { isSafeExternalBrowserUrl } from "@orbmeet/whiteboard-core/public-host";
 import { WHITEBOARD_CONFIG } from "@orbmeet/whiteboard-core/config";
 import { whiteboardTLSchema } from "@orbmeet/whiteboard-core/room-schema";
@@ -14,12 +19,7 @@ import type { TLRecord } from "@tldraw/tlschema";
  * stores the record; these are the rules no schema expresses.
  */
 
-const WHITEBOARD_PAGE_SHAPE_TYPE = "whiteboard-page";
-const WHITEBOARD_ASSET_API_PREFIX = "/api/wb-assets/";
-
-export function isPageFrameRecord(value: unknown): boolean {
-  return isRecord(value) && value.typeName === "shape" && value.type === WHITEBOARD_PAGE_SHAPE_TYPE;
-}
+export { isPageFrameRecord };
 
 /**
  * Whether any `url` in the record, at any depth, is one participants'

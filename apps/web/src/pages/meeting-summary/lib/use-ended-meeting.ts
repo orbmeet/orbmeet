@@ -1,10 +1,9 @@
 import { useEffect } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   endedMeetingQueryOptions,
 } from "@/app/query-client/queries/meeting-summary";
 import { queryKeys } from "@/app/query-client/query-keys";
-import { retryMeetingSummary } from "@/modules/transcripts/server/summary-retry.functions";
 import type { getEndedMeeting } from "@/modules/transcripts/server/meeting-summary.functions";
 
 export type EndedMeeting = NonNullable<
@@ -15,9 +14,7 @@ export type EndedMeeting = NonNullable<
 const SUMMARY_POLL_MS = 3_000;
 
 /**
- * Loads an ended Meeting. The Summary is written by the meeting's summary job
- * on the server; this only watches for it, and asks for another after a
- * failure.
+ * Loads an ended Meeting and watches for its server-written Summary to arrive.
  */
 export function useEndedMeeting({ meetingId }: { meetingId: string }) {
   const queryClient = useQueryClient();
@@ -33,28 +30,17 @@ export function useEndedMeeting({ meetingId }: { meetingId: string }) {
     },
   });
 
-  const summaryState = meetingQuery.data?.summaryState ?? null;
-  const summaryReady = summaryState?.status === "ready";
+  const summaryReady = meetingQuery.data?.summaryState?.status === "ready";
   // Meeting lists show whether a summary exists.
   useEffect(() => {
     if (summaryReady) void queryClient.invalidateQueries({ queryKey: queryKeys.meetings.lists() });
   }, [queryClient, summaryReady]);
 
-  const retryMutation = useMutation({
-    mutationFn: () => retryMeetingSummary({ data: { meetingId } }),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.meetings.summary(meetingId) }),
-  });
-
   const meeting = meetingQuery.data?.meeting ?? null;
   return {
     meetingError: meetingQuery.error,
     meeting,
-    existingSummary: meetingQuery.data?.summary ?? null,
-    existingFollowUps: meetingQuery.data?.followUps ?? [],
     hasTranscript: Boolean(meeting?.hasTranscript),
-    summaryState,
-    isRetryingSummary: retryMutation.isPending,
-    retrySummary: () => retryMutation.mutate(),
     retryMeetingLoad: () =>
       queryClient.invalidateQueries({
         queryKey: queryKeys.meetings.summary(meetingId),

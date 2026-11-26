@@ -3,7 +3,6 @@ import {
   useState,
   useEffect,
   useCallback,
-  createContext,
 } from "react";
 import {
   GeoShapeGeoStyle,
@@ -49,12 +48,14 @@ import {
   DEFAULT_TABLE_ROWS,
   DEFAULT_TABLE_WIDTH,
   TABLE_SHAPE_TYPE,
+  type TableShapeProps,
 } from "@orbmeet/whiteboard-core/table-shape-schema";
 import {
   CODE_SHAPE_TYPE,
   createCodeShapeProps,
   DEFAULT_CODE_HEIGHT,
   DEFAULT_CODE_WIDTH,
+  type CodeShapeProps,
 } from "@orbmeet/whiteboard-core/code-shape-schema";
 import { createShapeId, type TLParentId } from "tldraw";
 import {
@@ -63,10 +64,7 @@ import {
   TOOL_ICON_SIZE,
   TOOL_ICON_STROKE,
 } from "./whiteboard-toolbar-icons";
-import {
-  getEditorActions,
-  useWhiteboardToolbarContext,
-} from "./whiteboard-toolbar-context";
+import { useWhiteboardToolbarContext } from "./whiteboard-toolbar-context";
 import { PropertiesPanelToggle } from "./whiteboard-toolbar-properties";
 import { BackgroundPanelToggle } from "./whiteboard-toolbar-background";
 import { isPageFrameShape } from "@orbmeet/whiteboard-core/page-frame-model";
@@ -363,14 +361,6 @@ function getNextShapeColor(editor: ReturnType<typeof useEditor>) {
   ] as TLDefaultColorStyle | undefined;
 }
 
-interface ToolColorContextValue {
-  currentToolId: string;
-  highlightColor: TLDefaultColorStyle | null;
-  setToolColor: (value: TLDefaultColorStyle) => void;
-}
-
-const ToolColorContext = createContext<ToolColorContextValue | null>(null);
-
 // ─── Unified compact toolbar ─────────────────────────────────────────────────
 
 /** Stable top-edge toolbar. Narrow viewports can scroll it horizontally. */
@@ -452,20 +442,6 @@ export const WhiteboardToolbar = track(function WhiteboardToolbar() {
     }
   }, [currentToolId, nextShapeColor]);
 
-  const setToolColor = useCallback(
-    (value: TLDefaultColorStyle) => {
-      if (currentToolId === "highlight") {
-        setHighlightColor(value);
-      } else {
-        setNonHighlightColor(value);
-      }
-
-      editor.setStyleForNextShapes(DefaultColorStyle, value);
-      editor.setStyleForSelectedShapes(DefaultColorStyle, value);
-    },
-    [currentToolId, editor]
-  );
-
   const handleToolSelect = useCallback(
     (toolId: string) => {
       if (toolId === "eraser") {
@@ -478,13 +454,32 @@ export const WhiteboardToolbar = track(function WhiteboardToolbar() {
 
       if (toolId === "table") {
         setOpenPanel(null);
-        createTableAtViewportCenter(editor, getVisibleViewportCenter);
+        createCenteredEditableShape(editor, {
+          type: TABLE_SHAPE_TYPE,
+          width: DEFAULT_TABLE_WIDTH,
+          height: DEFAULT_TABLE_HEIGHT,
+          props: {
+            w: DEFAULT_TABLE_WIDTH,
+            h: DEFAULT_TABLE_HEIGHT,
+            headerRow: true,
+            cells: Array.from({ length: DEFAULT_TABLE_ROWS }, () =>
+              Array.from({ length: DEFAULT_TABLE_COLS }, () => ""),
+            ),
+          },
+          getVisibleViewportCenter,
+        });
         return;
       }
 
       if (toolId === "code") {
         setOpenPanel(null);
-        createCodeShapeAtViewportCenter(editor, getVisibleViewportCenter);
+        createCenteredEditableShape(editor, {
+          type: CODE_SHAPE_TYPE,
+          width: DEFAULT_CODE_WIDTH,
+          height: DEFAULT_CODE_HEIGHT,
+          props: createCodeShapeProps(),
+          getVisibleViewportCenter,
+        });
         return;
       }
 
@@ -558,100 +553,98 @@ export const WhiteboardToolbar = track(function WhiteboardToolbar() {
 
   if (!compact) {
     return (
-      <ToolColorContext.Provider value={{ currentToolId, highlightColor, setToolColor }}>
-        <WhiteboardToolbarPopoverSide.Provider value="right">
-          {/* The lane spans the board's left edge but takes no pointers, so
-              the canvas beside the palette still takes the pen. */}
-          <div {...stylex.props(styles.paletteLane)}>
-            <div
-              role="toolbar"
-              aria-label="Whiteboard tools"
-              aria-orientation="vertical"
-              ref={paletteRef}
-              {...stylex.props(
-                styles.palette,
-                layoutStyles.hideScrollbar,
-                styles.paletteFade(paletteOverflow.start, paletteOverflow.end),
-              )}
-            >
-              {canEditWhiteboard && (
-                <>
-                  <ToolbarActionButton onClick={() => { void actions["undo"]?.onSelect("toolbar"); }} disabled={!canUndo} label="Undo">
-                    <Undo2 size={TOOL_ICON_SIZE} strokeWidth={TOOL_ICON_STROKE} />
-                  </ToolbarActionButton>
-                  <ToolbarActionButton onClick={() => { void actions["redo"]?.onSelect("toolbar"); }} disabled={!canRedo} label="Redo">
-                    <Redo2 size={TOOL_ICON_SIZE} strokeWidth={TOOL_ICON_STROKE} />
-                  </ToolbarActionButton>
-                  <PaletteRule />
-                </>
-              )}
-              <ToolButton id="select" current={currentToolId} onSelect={handleToolSelect} label="Select" />
-              <ToolButton id="draw" current={currentToolId} onSelect={handleToolSelect} label="Draw" />
-              <ToolButton id="highlight" current={currentToolId} onSelect={handleToolSelect} label="Highlighter" />
-              <ToolButton id="eraser" current={currentToolId} onSelect={handleToolSelect} label="Eraser" />
-              <ToolButton id="text" current={currentToolId} onSelect={handleToolSelect} label="Text" />
-              <ShapesMenu
-                currentToolId={currentToolId}
-                currentGeoType={currentGeoType}
-                isOpen={openPanel === "shapes"}
-                onToggle={() => handlePanelToggle("shapes")}
+      <WhiteboardToolbarPopoverSide.Provider value="right">
+        {/* The lane spans the board's left edge but takes no pointers, so
+            the canvas beside the palette still takes the pen. */}
+        <div {...stylex.props(styles.paletteLane)}>
+          <div
+            role="toolbar"
+            aria-label="Whiteboard tools"
+            aria-orientation="vertical"
+            ref={paletteRef}
+            {...stylex.props(
+              styles.palette,
+              layoutStyles.hideScrollbar,
+              styles.paletteFade(paletteOverflow.start, paletteOverflow.end),
+            )}
+          >
+            {canEditWhiteboard && (
+              <>
+                <ToolbarActionButton onClick={() => { void actions["undo"]?.onSelect("toolbar"); }} disabled={!canUndo} label="Undo">
+                  <Undo2 size={TOOL_ICON_SIZE} strokeWidth={TOOL_ICON_STROKE} />
+                </ToolbarActionButton>
+                <ToolbarActionButton onClick={() => { void actions["redo"]?.onSelect("toolbar"); }} disabled={!canRedo} label="Redo">
+                  <Redo2 size={TOOL_ICON_SIZE} strokeWidth={TOOL_ICON_STROKE} />
+                </ToolbarActionButton>
+                <PaletteRule />
+              </>
+            )}
+            <ToolButton id="select" current={currentToolId} onSelect={handleToolSelect} label="Select" />
+            <ToolButton id="draw" current={currentToolId} onSelect={handleToolSelect} label="Draw" />
+            <ToolButton id="highlight" current={currentToolId} onSelect={handleToolSelect} label="Highlighter" />
+            <ToolButton id="eraser" current={currentToolId} onSelect={handleToolSelect} label="Eraser" />
+            <ToolButton id="text" current={currentToolId} onSelect={handleToolSelect} label="Text" />
+            <ShapesMenu
+              currentToolId={currentToolId}
+              currentGeoType={currentGeoType}
+              isOpen={openPanel === "shapes"}
+              onToggle={() => handlePanelToggle("shapes")}
+              onClose={closePanels}
+              onGeoSelect={handleGeoToolSelect}
+              onToolSelect={handleToolSelect}
+            />
+            {/* Its own button, not a tile in Shapes: nobody looks for a code
+                runner among rectangles and arrows. */}
+            <ToolButton id="code" current={currentToolId} onSelect={handleToolSelect} label="Run code" />
+            <ToolButton id="laser" current={currentToolId} onSelect={handleToolSelect} label="Laser pointer" />
+            {uploadFile && (
+              <ToolButton id="screenshot" current={currentToolId} onSelect={handleToolSelect} label="Snip to image" />
+            )}
+            <PaletteRule />
+            <InsertMenuDropdown
+              isOpen={openPanel === "insert"}
+              onToggle={() => handlePanelToggle("insert")}
+              onClose={closePanels}
+            />
+            <PropertiesPanelToggle
+              isOpen={openPanel === "properties"}
+              onToggle={() => handlePanelToggle("properties")}
+              onClose={closePanels}
+            />
+            {canManagePages && pages.length > 0 && (
+              <BackgroundPanelToggle
+                isOpen={openPanel === "background"}
+                onToggle={() => handlePanelToggle("background")}
                 onClose={closePanels}
-                onGeoSelect={handleGeoToolSelect}
-                onToolSelect={handleToolSelect}
               />
-              {/* Its own button, not a tile in Shapes: nobody looks for a code
-                  runner among rectangles and arrows. */}
-              <ToolButton id="code" current={currentToolId} onSelect={handleToolSelect} label="Run code" />
-              <ToolButton id="laser" current={currentToolId} onSelect={handleToolSelect} label="Laser pointer" />
-              {uploadFile && (
-                <ToolButton id="screenshot" current={currentToolId} onSelect={handleToolSelect} label="Snip to image" />
-              )}
-              <PaletteRule />
-              <InsertMenuDropdown
-                isOpen={openPanel === "insert"}
-                onToggle={() => handlePanelToggle("insert")}
-                onClose={closePanels}
-              />
-              <PropertiesPanelToggle
-                isOpen={openPanel === "properties"}
-                onToggle={() => handlePanelToggle("properties")}
-                onClose={closePanels}
-              />
-              {canManagePages && pages.length > 0 && (
-                <BackgroundPanelToggle
-                  isOpen={openPanel === "background"}
-                  onToggle={() => handlePanelToggle("background")}
-                  onClose={closePanels}
-                />
-              )}
-              {shouldShowInlineWhiteboardAiButton(false, !!aiEnabled, !!onToggleAi) && onToggleAi && (
-                <>
-                  <PaletteRule />
-                  <button
-                    type="button"
-                    aria-label="Ask Orb"
-                    aria-pressed={isAiPanelOpen}
-                    title="Ask Orb"
-                    onClick={() => {
-                      closePanels();
-                      onToggleAi();
-                    }}
-                    {...stylex.props(
-                      boardTrigger.base,
-                      boardTrigger.regular,
-                      styles.aiPalette,
-                      isAiPanelOpen ? styles.aiOpen : styles.aiIdle,
-                    )}
-                  >
-                    <BotMessageSquare size={TOOL_ICON_SIZE} strokeWidth={TOOL_ICON_STROKE} />
-                  </button>
-                </>
-              )}
-              <PenModeToggle />
-            </div>
+            )}
+            {shouldShowInlineWhiteboardAiButton(false, !!aiEnabled, !!onToggleAi) && onToggleAi && (
+              <>
+                <PaletteRule />
+                <button
+                  type="button"
+                  aria-label="Ask Orb"
+                  aria-pressed={isAiPanelOpen}
+                  title="Ask Orb"
+                  onClick={() => {
+                    closePanels();
+                    onToggleAi();
+                  }}
+                  {...stylex.props(
+                    boardTrigger.base,
+                    boardTrigger.regular,
+                    styles.aiPalette,
+                    isAiPanelOpen ? styles.aiOpen : styles.aiIdle,
+                  )}
+                >
+                  <BotMessageSquare size={TOOL_ICON_SIZE} strokeWidth={TOOL_ICON_STROKE} />
+                </button>
+              </>
+            )}
+            <PenModeToggle />
           </div>
-        </WhiteboardToolbarPopoverSide.Provider>
-      </ToolColorContext.Provider>
+        </div>
+      </WhiteboardToolbarPopoverSide.Provider>
     );
   }
 
@@ -660,75 +653,81 @@ export const WhiteboardToolbar = track(function WhiteboardToolbar() {
   // for after nearly every stroke. The strip scrolls, with a fade at the edge
   // it continues past, when a narrow phone cannot hold it all.
   return (
-    <ToolColorContext.Provider value={{ currentToolId, highlightColor, setToolColor }}>
-      <div
-        ref={overflowRef}
-        {...stylex.props(
-          styles.toolbar,
-          styles.toolbarFade(toolbarOverflow.start, toolbarOverflow.end),
+    <div
+      ref={overflowRef}
+      {...stylex.props(
+        styles.toolbar,
+        styles.toolbarFade(toolbarOverflow.start, toolbarOverflow.end),
+      )}
+      role="toolbar"
+      aria-label="Whiteboard tools"
+    >
+      <div {...stylex.props(styles.content, styles.contentCompact)}>
+        {canEditWhiteboard && (
+          <div {...stylex.props(styles.group)}>
+            <ToolbarActionButton onClick={() => { void actions["undo"]?.onSelect("toolbar"); }} disabled={!canUndo} label="Undo" compact>
+              <Undo2 size={TOOL_ICON_SIZE} strokeWidth={TOOL_ICON_STROKE} />
+            </ToolbarActionButton>
+            <ToolbarActionButton onClick={() => { void actions["redo"]?.onSelect("toolbar"); }} disabled={!canRedo} label="Redo" compact>
+              <Redo2 size={TOOL_ICON_SIZE} strokeWidth={TOOL_ICON_STROKE} />
+            </ToolbarActionButton>
+          </div>
         )}
-        role="toolbar"
-        aria-label="Whiteboard tools"
-      >
-        <div {...stylex.props(styles.content, styles.contentCompact)}>
-          {canEditWhiteboard && (
-            <div {...stylex.props(styles.group)}>
-              <ToolbarActionButton onClick={() => { void actions["undo"]?.onSelect("toolbar"); }} disabled={!canUndo} label="Undo" compact>
-                <Undo2 size={TOOL_ICON_SIZE} strokeWidth={TOOL_ICON_STROKE} />
-              </ToolbarActionButton>
-              <ToolbarActionButton onClick={() => { void actions["redo"]?.onSelect("toolbar"); }} disabled={!canRedo} label="Redo" compact>
-                <Redo2 size={TOOL_ICON_SIZE} strokeWidth={TOOL_ICON_STROKE} />
-              </ToolbarActionButton>
-            </div>
-          )}
 
-          <div {...stylex.props(styles.group, styles.coreGroup)}>
-            <ToolButton id="select" current={currentToolId} onSelect={handleToolSelect} label="Select" compact />
-            <ToolButton id="draw" current={currentToolId} onSelect={handleToolSelect} label="Draw" compact />
-            <ToolButton id="highlight" current={currentToolId} onSelect={handleToolSelect} label="Highlighter" compact />
-            <ToolButton id="eraser" current={currentToolId} onSelect={handleToolSelect} label="Eraser" compact />
-            {!minimal && <ToolButton id="text" current={currentToolId} onSelect={handleToolSelect} label="Text" compact />}
-          </div>
+        <div {...stylex.props(styles.group, styles.coreGroup)}>
+          <ToolButton id="select" current={currentToolId} onSelect={handleToolSelect} label="Select" compact />
+          <ToolButton id="draw" current={currentToolId} onSelect={handleToolSelect} label="Draw" compact />
+          <ToolButton id="highlight" current={currentToolId} onSelect={handleToolSelect} label="Highlighter" compact />
+          <ToolButton id="eraser" current={currentToolId} onSelect={handleToolSelect} label="Eraser" compact />
+          {!minimal && <ToolButton id="text" current={currentToolId} onSelect={handleToolSelect} label="Text" compact />}
+        </div>
 
-          <div {...stylex.props(styles.group, styles.coreGroup)}>
-            {!minimal && (
-              <CompactMoreMenu
-                canEditWhiteboard={canEditWhiteboard}
-                canManagePages={!!canManagePages}
-                currentGeoType={currentGeoType}
-                currentToolId={currentToolId}
-                isOpen={openPanel === "insert"}
-                onClose={closePanels}
-                onGeoSelect={handleGeoToolSelect}
-                onToggle={() => handlePanelToggle("insert")}
-                onToolSelect={handleToolSelect}
-                pages={pages}
-              />
-            )}
-            <PropertiesPanelToggle
-              isOpen={openPanel === "properties"}
-              onToggle={() => handlePanelToggle("properties")}
+        <div {...stylex.props(styles.group, styles.coreGroup)}>
+          {!minimal && (
+            <CompactMoreMenu
+              canEditWhiteboard={canEditWhiteboard}
+              canManagePages={!!canManagePages}
+              currentGeoType={currentGeoType}
+              currentToolId={currentToolId}
+              isOpen={openPanel === "insert"}
               onClose={closePanels}
+              onGeoSelect={handleGeoToolSelect}
+              onToggle={() => handlePanelToggle("insert")}
+              onToolSelect={handleToolSelect}
+              pages={pages}
             />
-          </div>
+          )}
+          <PropertiesPanelToggle
+            isOpen={openPanel === "properties"}
+            onToggle={() => handlePanelToggle("properties")}
+            onClose={closePanels}
+          />
         </div>
       </div>
-    </ToolColorContext.Provider>
+    </div>
   );
 });
 
-// ─── Table creation helper ───────────────────────────────────────────────────
+// ─── Centered editable shape creation helper ─────────────────────────────────
 
-function createTableAtViewportCenter(
+/** The shapes the toolbar creates and opens for editing straight away. */
+type EditableShapeSpec =
+  | { type: typeof TABLE_SHAPE_TYPE; props: TableShapeProps }
+  | { type: typeof CODE_SHAPE_TYPE; props: CodeShapeProps };
+
+function createCenteredEditableShape(
   editor: ReturnType<typeof useEditor>,
-  getVisibleViewportCenter?: () => { x: number; y: number } | null,
+  options: EditableShapeSpec & {
+    width: number;
+    height: number;
+    getVisibleViewportCenter?: () => { x: number; y: number } | null;
+  },
 ) {
-  const w = DEFAULT_TABLE_WIDTH;
-  const h = DEFAULT_TABLE_HEIGHT;
+  const { type, width, height, props, getVisibleViewportCenter } = options;
   const center =
     getVisibleViewportCenter?.() ?? editor.getViewportPageBounds().center;
 
-  // Parent the table to whichever page frame contains the viewport center.
+  // Parent the shape to whichever page frame contains the viewport center.
   let parentId: TLParentId = editor.getCurrentPageId();
   for (const shape of editor.getCurrentPageShapes()) {
     if (!isPageFrameShape(shape)) continue;
@@ -739,8 +738,8 @@ function createTableAtViewportCenter(
     }
   }
 
-  let x = center.x - w / 2;
-  let y = center.y - h / 2;
+  let x = center.x - width / 2;
+  let y = center.y - height / 2;
   if (parentId !== editor.getCurrentPageId()) {
     const parentShape = editor.getShape(parentId);
     if (parentShape) {
@@ -752,70 +751,17 @@ function createTableAtViewportCenter(
   const id = createShapeId();
   editor.createShape({
     id,
-    type: TABLE_SHAPE_TYPE,
+    type,
     parentId,
     x,
     y,
-    props: {
-      w,
-      h,
-      headerRow: true,
-      cells: Array.from({ length: DEFAULT_TABLE_ROWS }, () =>
-        Array.from({ length: DEFAULT_TABLE_COLS }, () => "")
-      ),
-    },
+    props,
   });
 
   editor.setCurrentTool("select");
   editor.setSelectedShapes([id]);
-  // Defer entering edit mode until after the shape mounts so the cell
-  // input can receive focus reliably.
-  queueMicrotask(() => {
-    if (editor.getShape(id)) editor.setEditingShape(id);
-  });
-}
-
-function createCodeShapeAtViewportCenter(
-  editor: ReturnType<typeof useEditor>,
-  getVisibleViewportCenter?: () => { x: number; y: number } | null,
-) {
-  const w = DEFAULT_CODE_WIDTH;
-  const h = DEFAULT_CODE_HEIGHT;
-  const center =
-    getVisibleViewportCenter?.() ?? editor.getViewportPageBounds().center;
-
-  let parentId: TLParentId = editor.getCurrentPageId();
-  for (const shape of editor.getCurrentPageShapes()) {
-    if (!isPageFrameShape(shape)) continue;
-    const frameBounds = editor.getShapePageBounds(shape);
-    if (frameBounds?.containsPoint(center)) {
-      parentId = shape.id;
-      break;
-    }
-  }
-
-  let x = center.x - w / 2;
-  let y = center.y - h / 2;
-  if (parentId !== editor.getCurrentPageId()) {
-    const parentShape = editor.getShape(parentId);
-    if (parentShape) {
-      x -= parentShape.x;
-      y -= parentShape.y;
-    }
-  }
-
-  const id = createShapeId();
-  editor.createShape({
-    id,
-    type: CODE_SHAPE_TYPE,
-    parentId,
-    x,
-    y,
-    props: createCodeShapeProps(),
-  });
-
-  editor.setCurrentTool("select");
-  editor.setSelectedShapes([id]);
+  // Defer entering edit mode until after the shape mounts so the inner
+  // editor can receive focus reliably.
   queueMicrotask(() => {
     if (editor.getShape(id)) editor.setEditingShape(id);
   });
@@ -1032,16 +978,51 @@ interface ToolbarPopoverProps {
   onClose: () => void;
 }
 
+function InsertMediaItems({
+  canEditWhiteboard,
+  onRun,
+}: {
+  canEditWhiteboard: boolean;
+  onRun: (action: () => void) => void;
+}) {
+  const { uploadFile, overlayActionsRef } = useWhiteboardToolbarContext();
+  if (!uploadFile) return null;
+
+  return (
+    <>
+      <DropdownItem
+        icon={<ClipboardPaste size={16} />}
+        label="Paste from clipboard"
+        onClick={() => onRun(() => overlayActionsRef?.current.paste?.())}
+      />
+      <DropdownItem
+        icon={<Image size={16} />}
+        label="Insert image"
+        onClick={() => onRun(() => overlayActionsRef?.current.openImagePicker?.())}
+      />
+      {canEditWhiteboard && (
+        <DropdownItem
+          icon={<FileText size={16} />}
+          label="Insert PDF"
+          onClick={() => onRun(() => overlayActionsRef?.current.openPdfPicker?.())}
+        />
+      )}
+    </>
+  );
+}
+
 function InsertMenuDropdown({ isOpen, onToggle, onClose }: ToolbarPopoverProps) {
-  const { pageManager, uploadFile, isCompactChrome, canEditWhiteboard } =
+  const { pageManager, isCompactChrome, canEditWhiteboard } =
     useWhiteboardToolbarContext();
   const compact = !!isCompactChrome;
-  const editor = useEditor();
   const actions = useActions();
-  // use per-editor registry instead of module-level globals
-  const editorActions = getEditorActions(editor);
 
   if (!pageManager) return null;
+
+  const run = (action: () => void) => {
+    action();
+    onClose();
+  };
 
   return (
     <WhiteboardToolbarPopover
@@ -1071,20 +1052,12 @@ function InsertMenuDropdown({ isOpen, onToggle, onClose }: ToolbarPopoverProps) 
         </button>
       }
     >
-      {uploadFile && (
-        <>
-          <DropdownItem icon={<ClipboardPaste size={16} />} label="Paste from clipboard" onClick={() => { editorActions.pasteHandler?.(); onClose(); }} />
-          <DropdownItem icon={<Image size={16} />} label="Insert Image" onClick={() => { editorActions.imageInputRef.current?.click(); onClose(); }} />
-          {canEditWhiteboard && (
-            <DropdownItem icon={<FileText size={16} />} label="Insert PDF" onClick={() => { (editorActions.pdfSourceOpener ?? (() => editorActions.pdfInputRef.current?.click()))(); onClose(); }} />
-          )}
-        </>
-      )}
+      <InsertMediaItems canEditWhiteboard={canEditWhiteboard} onRun={run} />
       {/* Its result — an article or a picture — lands on the page, so it is
           looked up from here rather than from a search box of its own. */}
       <div {...stylex.props(boardDivider.horizontal, styles.insertRule)} />
-      <DropdownItem icon={<Copy size={16} />} label="Duplicate Selection" onClick={() => { void actions["duplicate"]?.onSelect("toolbar"); onClose(); }} />
-      <DropdownItem icon={<Trash2 size={16} />} label="Delete Selection" onClick={() => { void actions["delete"]?.onSelect("toolbar"); onClose(); }} variant="danger" />
+      <DropdownItem icon={<Copy size={16} />} label="Duplicate Selection" onClick={() => run(() => { void actions["duplicate"]?.onSelect("toolbar"); })} />
+      <DropdownItem icon={<Trash2 size={16} />} label="Delete Selection" onClick={() => run(() => { void actions["delete"]?.onSelect("toolbar"); })} variant="danger" />
     </WhiteboardToolbarPopover>
   );
 }
@@ -1112,14 +1085,11 @@ function CompactMoreMenu({
   onToolSelect: (toolId: string) => void;
   pages: Array<unknown>;
 }) {
-  const editor = useEditor();
   const {
     aiEnabled,
     isAiPanelOpen,
     onToggleAi,
-    uploadFile,
   } = useWhiteboardToolbarContext();
-  const editorActions = getEditorActions(editor);
   const [backgroundOpen, setBackgroundOpen] = useState(false);
 
   const run = (action: () => void) => {
@@ -1156,7 +1126,6 @@ function CompactMoreMenu({
     >
       <div {...stylex.props(styles.tileGrid)}>
         <CompactMenuItem
-          active={currentToolId === "code"}
           icon={<ToolIcon toolId="code" />}
           label="Run code"
           onClick={() => run(() => onToolSelect("code"))}
@@ -1176,7 +1145,6 @@ function CompactMoreMenu({
           onClick={() => run(() => onGeoSelect("rectangle"))}
         />
         <CompactMenuItem
-          active={currentToolId === "table"}
           icon={<ToolIcon toolId="table" />}
           label="Table"
           onClick={() => run(() => onToolSelect("table"))}
@@ -1192,40 +1160,7 @@ function CompactMoreMenu({
       <div {...stylex.props(boardDivider.horizontal, styles.moreRule)} />
 
       <div {...stylex.props(styles.menuList)}>
-        {uploadFile && (
-          <>
-            <DropdownItem
-              icon={<ClipboardPaste size={16} />}
-              label="Paste from clipboard"
-              onClick={() =>
-                run(() => {
-                  editorActions.pasteHandler?.();
-                })
-              }
-            />
-            <DropdownItem
-              icon={<Image size={16} />}
-              label="Insert image"
-              onClick={() =>
-                run(() => {
-                  editorActions.imageInputRef.current?.click();
-                })
-              }
-            />
-          </>
-        )}
-        {uploadFile && canEditWhiteboard && (
-          <DropdownItem
-            icon={<FileText size={16} />}
-            label="Insert PDF"
-            onClick={() =>
-              run(() => {
-                (editorActions.pdfSourceOpener
-                  ?? (() => editorActions.pdfInputRef.current?.click()))();
-              })
-            }
-          />
-        )}
+        <InsertMediaItems canEditWhiteboard={canEditWhiteboard} onRun={run} />
       </div>
 
       {(canManagePages && pages.length > 0) ||

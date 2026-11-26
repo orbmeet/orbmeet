@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useMaybeRoomContext } from "@livekit/components-react";
 import type { Room } from "livekit-client";
 import { stopAllLocalTracks, stopMediaElementsInScope } from "@/lib/media-cleanup";
 
@@ -6,7 +7,6 @@ interface MeetingLifecycleReturn {
   roomInstance: Room | undefined;
   /** Callback ref for the element that scopes the meeting's media elements. */
   mediaScope: (element: HTMLDivElement | null) => void;
-  handleLiveKitRoomUpdate: (room: Room | undefined) => void;
   disconnectMeetingNow: () => Promise<void>;
 }
 
@@ -20,24 +20,23 @@ interface MeetingLifecycleReturn {
  * must go on through that.
  */
 export function useMeetingLifecycle(): MeetingLifecycleReturn {
-  const roomRef = React.useRef<Room | undefined>(undefined);
-  const [roomInstance, setRoomInstance] = React.useState<Room | undefined>(undefined);
+  const room = useMaybeRoomContext();
+  const [disconnected, setDisconnected] = React.useState(false);
+  const roomRef = React.useRef<Room | undefined>(room);
   const mediaScopeRef = React.useRef<HTMLDivElement | null>(null);
 
-  // Sync room context from LiveKitRoom to parent refs
-  const handleLiveKitRoomUpdate = React.useCallback((room: Room | undefined) => {
-    roomRef.current = room;
-    setRoomInstance(room);
-  }, []);
+  React.useLayoutEffect(() => {
+    roomRef.current = disconnected ? undefined : room;
+  }, [disconnected, room]);
 
   const disconnectMeetingNow = React.useCallback(async () => {
-    const room = roomRef.current;
+    const activeRoom = roomRef.current;
     roomRef.current = undefined;
-    setRoomInstance(undefined);
+    setDisconnected(true);
 
-    if (room) {
-      await stopAllLocalTracks(room).catch(() => undefined);
-      await room.disconnect(true).catch(() => undefined);
+    if (activeRoom) {
+      await stopAllLocalTracks(activeRoom).catch(() => undefined);
+      await activeRoom.disconnect(true).catch(() => undefined);
     }
 
     stopMediaElementsInScope(mediaScopeRef.current);
@@ -48,9 +47,8 @@ export function useMeetingLifecycle(): MeetingLifecycleReturn {
   }, []);
 
   return {
-    roomInstance,
+    roomInstance: disconnected ? undefined : room,
     mediaScope,
-    handleLiveKitRoomUpdate,
     disconnectMeetingNow,
   };
 }

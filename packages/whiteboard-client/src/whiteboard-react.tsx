@@ -34,10 +34,6 @@ export type { WhiteboardConnectAttempt } from "./sync/whiteboard-socket-adapter"
 
 export { RecorderWhiteboard } from "./recorder-whiteboard";
 export type { RecorderWhiteboardProps } from "./recorder-whiteboard";
-export {
-  defineWhiteboardServiceEndpoints,
-  type WhiteboardServiceEndpoints,
-} from "./sync/service-endpoints";
 export type { PendingEditorAccessRequest } from "./synced-whiteboard";
 export { WB_ASSET_URLS } from "./assets/engine-asset-urls";
 export {

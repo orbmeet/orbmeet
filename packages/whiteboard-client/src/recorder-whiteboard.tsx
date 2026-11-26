@@ -2,9 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { SyncedWhiteboard } from "./synced-whiteboard";
 import { WB_ASSET_URLS } from "./assets/engine-asset-urls";
 import { useCommittedRef } from "@orbmeet/ui/react";
-import { base64urlDecode } from "@orbmeet/whiteboard-core/crypto-utils";
-import { buildWhiteboardConnectUrl } from "./sync/service-endpoints";
-import type { WhiteboardServiceEndpoints } from "./sync/service-endpoints";
+import { buildWhiteboardConnectUrl } from "@orbmeet/whiteboard-core/protocol";
+import { decodeUnverifiedWhiteboardJwtPayload } from "@orbmeet/whiteboard-core/whiteboard-jwt";
 import type { WhiteboardConnectAttempt } from "./sync/whiteboard-socket-adapter";
 import type { WhiteboardClientCapabilities } from "./editor/client-capabilities";
 import { isAbortError } from "./editor/abort-signals";
@@ -24,8 +23,8 @@ export interface RecorderWhiteboardProps {
    * a switch by asking for access to the board the meeting presents now.
    */
   whiteboardId: string | null;
-  /** Host-supplied application endpoints (recorder auth exchange). */
-  serviceEndpoints: WhiteboardServiceEndpoints;
+  /** Host-supplied recorder auth exchange endpoint (POST). */
+  recorderAuthUrl: string;
   onStatusChange?: (status: "loading" | "ready" | "error") => void;
   onContentStateChange?: (hasContent: boolean) => void;
 }
@@ -43,16 +42,8 @@ interface RecorderWhiteboardAuth {
 const MAX_FOLLOW_ATTEMPTS = 3;
 
 function getTokenExpiresAt(token: string): number | null {
-  try {
-    const payload = token.split(".")[1];
-    if (!payload) return null;
-    const decoded = JSON.parse(new TextDecoder().decode(base64urlDecode(payload))) as {
-      exp?: unknown;
-    };
-    return typeof decoded.exp === "number" ? decoded.exp * 1000 : null;
-  } catch {
-    return null;
-  }
+  const decoded = decodeUnverifiedWhiteboardJwtPayload(token);
+  return typeof decoded?.exp === "number" ? decoded.exp * 1000 : null;
 }
 
 async function requestRecorderWhiteboardAuth(
@@ -112,7 +103,7 @@ export function RecorderWhiteboard({
   whiteboardUrl,
   recorderToken,
   whiteboardId,
-  serviceEndpoints,
+  recorderAuthUrl,
   onStatusChange,
   onContentStateChange,
 }: RecorderWhiteboardProps) {
@@ -146,7 +137,7 @@ export function RecorderWhiteboard({
     let request: RecorderAuthRequest;
     const promise = requestRecorderWhiteboardAuth(
       recorderToken,
-      serviceEndpoints.recorderAuth,
+      recorderAuthUrl,
       controller.signal,
     )
       .then((next) => {
@@ -165,7 +156,7 @@ export function RecorderWhiteboard({
     request = { generation, recorderToken, controller, promise };
     refreshInFlightRef.current = request;
     return promise;
-  }, [recorderToken, serviceEndpoints]);
+  }, [recorderAuthUrl, recorderToken]);
 
   /**
    * The access to connect with: the one held while it is not near expiry,

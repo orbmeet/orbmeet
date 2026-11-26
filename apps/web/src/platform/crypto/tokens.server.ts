@@ -5,42 +5,13 @@
 // that need through `modules/identity` is what made identity a dependency
 // magnet in the first place.
 
-import { timingSafeEqual } from "@orbmeet/primitives";
+import { bytesToHex, sha256Hex, timingSafeEqual } from "@orbmeet/primitives";
 
-const enc = new TextEncoder();
-
-// Precomputed hex nibbles. `Array.from(bytes).map((b) => b.toString(16).padStart(2,"0")).join("")`
-// allocates an intermediate string array AND a per-byte string before joining;
-// on the hottest authenticated path (hashSessionToken runs once per request)
-// that overhead adds up. This builds the hex string in one pass with no
-// intermediate array allocation.
-const HEX_DIGITS = "0123456789abcdef";
-function bytesToHex(bytes: Uint8Array): string {
-  let out = "";
-  for (let i = 0; i < bytes.length; i++) {
-    const b = bytes[i];
-    out += HEX_DIGITS[b >> 4] + HEX_DIGITS[b & 0x0f];
-  }
-  return out;
-}
-
-/** HMAC-SHA256 of `message` under `secret`, hex encoded. */
-export async function hmacSha256Hex(secret: string, message: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(message));
-  return bytesToHex(new Uint8Array(sig));
-}
+export { hmacSha256Hex } from "@orbmeet/primitives";
 
 /** Hash session token (SHA-256) */
-export async function hashSessionToken(token: string): Promise<string> {
-  const hash = await crypto.subtle.digest("SHA-256", enc.encode(token));
-  return bytesToHex(new Uint8Array(hash));
+export function hashSessionToken(token: string): Promise<string> {
+  return sha256Hex(token);
 }
 
 /** Generate 256-bit session token (64-char hex) */

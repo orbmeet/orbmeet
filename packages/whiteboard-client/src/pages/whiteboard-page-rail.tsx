@@ -1,4 +1,4 @@
-import { isKey } from "@orbmeet/ui/keyboard";
+import { PopoverContent, PopoverRoot } from "@orbmeet/ui/react/popover";
 import { accent, danger, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
 import { boardZIndex } from "@orbmeet/ui/tokens/layers.stylex";
 import { env } from "@orbmeet/ui/tokens/media.stylex";
@@ -95,11 +95,6 @@ const ghostBreathe = stylex.keyframes({
   "0%": { opacity: 0.35 },
   "50%": { opacity: 0.8 },
   "100%": { opacity: 0.35 },
-});
-
-const menuIn = stylex.keyframes({
-  from: { opacity: 0, transform: "translateX(-6px) scale(0.97)" },
-  to: { opacity: 1, transform: "translateX(0) scale(1)" },
 });
 
 const styles = stylex.create({
@@ -370,38 +365,10 @@ const styles = stylex.create({
     transitionDuration: { default: duration.base, [env.reducedMotion]: "0s" },
   },
 
-  /**
-   * The page menu. Anchored beside its card rather than over it, because the
-   * card is the thing the menu is about and covering it loses the reference.
-   */
-  menuScrim: {
-    position: "fixed",
-    inset: 0,
-    zIndex: boardZIndex.rail,
-    borderWidth: 0,
-    padding: 0,
-    backgroundColor: "transparent",
-    cursor: "default",
-  },
-  /**
-   * Positioned against the viewport, not against its card.
-   *
-   * The obvious anchor — `absolute; left: 100%` on the row — is clipped: the
-   * page list lives in a scroller with `overflow-x: hidden`, so a panel that
-   * reaches past the rail's right edge is cut off at exactly the width of the
-   * rail. Fixed coordinates read off the card's own rect place it beside the
-   * card, and it is rendered outside the scroller, whose mask would otherwise
-   * clip a fixed descendant all the same.
-   */
+  /** The page menu surface. Positioned via `PopoverContent` beside its card. */
   menu: {
-    position: "fixed",
-    zIndex: boardZIndex.rail,
     minWidth: "11rem",
-    animationName: { default: menuIn, [env.reducedMotion]: "none" },
-    animationDuration: "140ms",
-    animationTimingFunction: "cubic-bezier(0.2, 0.9, 0.25, 1)",
   },
-  menuAt: (top: number, left: number) => ({ top, left }),
   menuItem: {
     display: "flex",
     width: "100%",
@@ -451,27 +418,6 @@ const PAGE_ENTER_MS = 1000;
 
 /** Where a press that has not come back from the room yet is aimed. */
 type PendingAdd = { at: "end" } | { at: "after"; pageNumber: number };
-
-/** Viewport coordinates the page menu opens at, read off its card. */
-interface MenuAnchor {
-  /**
-   * The page by id, not number: pages inserted or deleted before it
-   * renumber it, and the menu must stay with the page it was opened on.
-   */
-  pageId: string;
-  top: number;
-  left: number;
-}
-
-/**
- * Roughly how tall the menu is, for keeping it inside the window.
- *
- * An estimate rather than a measurement: the alternative is opening the menu
- * off-screen, measuring it, and moving it, which is a visible jump. Being a
- * few pixels out only shifts where a menu near the bottom edge sits.
- */
-const MENU_HEIGHT_ESTIMATE_PX = 116;
-const MENU_DELETE_ROW_PX = 46;
 
 /**
  * Which pages appeared since the previous render.
@@ -586,7 +532,7 @@ function InsertPageHere({
  */
 function PageMenu({
   page,
-  anchor,
+  anchorRef,
   canInsert,
   canDelete,
   isBusy,
@@ -595,8 +541,8 @@ function PageMenu({
   onDelete,
   onClose,
 }: {
-  page: WhiteboardPage;
-  anchor: MenuAnchor;
+  page: WhiteboardPage | null;
+  anchorRef: React.RefObject<HTMLElement | null>;
   canInsert: boolean;
   canDelete: boolean;
   isBusy: boolean;
@@ -605,92 +551,65 @@ function PageMenu({
   onDelete: () => void;
   onClose: () => void;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (isKey(event, "Escape")) onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
-  // Focus moves into the menu so a keyboard or switch user is not left behind
-  // on the card, and so Escape has somewhere to return from.
-  useEffect(() => {
-    ref.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
-  }, []);
-
-  // Kept on screen: a card near the foot of a long rail would otherwise open
-  // a menu that runs off the bottom of the window.
-  const height = MENU_HEIGHT_ESTIMATE_PX + (canDelete ? MENU_DELETE_ROW_PX : 0);
-  const viewportHeight = typeof window === "undefined" ? 0 : window.innerHeight;
-  const top = Math.max(8, Math.min(anchor.top, viewportHeight - height - 8));
-
   return (
-    <>
-      <button
-        type="button"
-        {...stylex.props(styles.menuScrim)}
-        aria-label="Close page menu"
-        onClick={onClose}
-      />
-      <div
-        ref={ref}
-        role="menu"
-        aria-label={`Page ${page.number} actions`}
-        data-page-menu={page.number}
-        {...stylex.props(
-          styles.menu,
-          styles.menuAt(top, anchor.left),
-          boardPanel.surface,
-          boardPanel.padSm,
-        )}
-      >
-        <div {...stylex.props(styles.menuHeading)}>Page {page.number}</div>
-        <button
-          type="button"
-          role="menuitem"
-          disabled={!canInsert || isBusy}
-          onClick={onInsertBefore}
-          {...stylex.props(styles.menuItem)}
+    <PopoverRoot
+      open={page !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      {page && (
+        <PopoverContent
+          anchor={anchorRef}
+          side="right"
+          align="start"
+          sideOffset={8}
+          collisionPadding={8}
+          title={`Page ${page.number} actions`}
+          role="menu"
+          aria-label={`Page ${page.number} actions`}
+          data-page-menu={page.number}
+          sx={[styles.menu, boardPanel.surface, boardPanel.padSm]}
         >
-          <ArrowUpToLine size={15} />
-          Insert page above
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          disabled={!canInsert || isBusy}
-          onClick={onInsertAfter}
-          {...stylex.props(styles.menuItem)}
-        >
-          <ArrowDownToLine size={15} />
-          Insert page below
-        </button>
-        {canDelete && (
-          <>
-            <div aria-hidden {...stylex.props(styles.menuRule)} />
-            <button
-              type="button"
-              role="menuitem"
-              onClick={onDelete}
-              {...stylex.props(styles.menuItem, styles.menuItemDanger)}
-            >
-              <Trash2 size={15} />
-              Delete page
-            </button>
-          </>
-        )}
-      </div>
-    </>
+          <div {...stylex.props(styles.menuHeading)}>Page {page.number}</div>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!canInsert || isBusy}
+            onClick={onInsertBefore}
+            {...stylex.props(styles.menuItem)}
+          >
+            <ArrowUpToLine size={15} />
+            Insert page above
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!canInsert || isBusy}
+            onClick={onInsertAfter}
+            {...stylex.props(styles.menuItem)}
+          >
+            <ArrowDownToLine size={15} />
+            Insert page below
+          </button>
+          {canDelete && (
+            <>
+              <div aria-hidden {...stylex.props(styles.menuRule)} />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={onDelete}
+                {...stylex.props(styles.menuItem, styles.menuItemDanger)}
+              >
+                <Trash2 size={15} />
+                Delete page
+              </button>
+            </>
+          )}
+        </PopoverContent>
+      )}
+    </PopoverRoot>
   );
-}
-
-/** Where a card's menu should open: just past its right edge, level with it. */
-function anchorFor(pageId: string, card: HTMLElement): MenuAnchor {
-  const rect = card.getBoundingClientRect();
-  return { pageId, top: rect.top, left: rect.right + 8 };
 }
 
 /** One page: its picture, its number, and whether you are standing on it. */
@@ -711,7 +630,7 @@ function PageCard({
   hasMenu: boolean;
   thumbnails: PageThumbnails | undefined;
   onPageChange: (pageNumber: number) => void;
-  onOpenMenu: (anchor: MenuAnchor) => void;
+  onOpenMenu: (pageId: string, card: HTMLElement) => void;
 }) {
   const pageId = String(page.id);
   const thumbnail = thumbnails?.byPageId.get(pageId);
@@ -721,7 +640,7 @@ function PageCard({
       type="button"
       ref={thumbnails?.observe(pageId)}
       onClick={(event) => {
-        if (opensMenu) onOpenMenu(anchorFor(pageId, event.currentTarget));
+        if (opensMenu) onOpenMenu(pageId, event.currentTarget);
         else onPageChange(page.number);
       }}
       // A long press is the other way in, for anyone who reaches for it — and
@@ -730,7 +649,7 @@ function PageCard({
       onContextMenu={(event) => {
         if (!hasMenu) return;
         event.preventDefault();
-        onOpenMenu(anchorFor(pageId, event.currentTarget));
+        onOpenMenu(pageId, event.currentTarget);
       }}
       aria-label={
         opensMenu
@@ -822,8 +741,14 @@ export function WhiteboardPageRail({
 }) {
   const isEntering = useEnteringPages(pages);
   const [pending, setPending] = useState<PendingAdd | null>(null);
-  const [menu, setMenu] = useState<MenuAnchor | null>(null);
+  const [menuPageId, setMenuPageId] = useState<string | null>(null);
+  const menuAnchorRef = useRef<HTMLElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  const openMenu = (pageId: string, card: HTMLElement) => {
+    menuAnchorRef.current = card;
+    setMenuPageId(pageId);
+  };
 
   useEffect(() => {
     if (!pending || isAddingPage) return;
@@ -834,25 +759,22 @@ export function WhiteboardPageRail({
   // A page that went away — deleted here or by somebody else — must not leave
   // its menu open over the card that took its place.
   useEffect(() => {
-    if (menu !== null && !pages.some((page) => String(page.id) === menu.pageId)) setMenu(null);
-  }, [menu, pages]);
+    if (menuPageId !== null && !pages.some((page) => String(page.id) === menuPageId)) {
+      setMenuPageId(null);
+    }
+  }, [menuPageId, pages]);
 
-  // The menu is placed in viewport coordinates so it can escape the scroller's
-  // horizontal clip, which means it does not travel with its card. Rather than
-  // recompute the anchor on every scroll frame, the menu closes: it is a short
-  // list of actions, and one that has drifted away from the page it is about
-  // is worse than one that is not there.
+  // Close the page menu when the rail scrolls so a short action list never
+  // drifts away from the card it belongs to.
   useEffect(() => {
-    if (!menu) return;
-    const close = () => setMenu(null);
+    if (!menuPageId) return;
+    const close = () => setMenuPageId(null);
     const scroller = scrollerRef.current;
     scroller?.addEventListener("scroll", close, { passive: true });
-    window.addEventListener("resize", close);
     return () => {
       scroller?.removeEventListener("scroll", close);
-      window.removeEventListener("resize", close);
     };
-  }, [menu]);
+  }, [menuPageId]);
 
   if (pages.length === 0) return null;
 
@@ -869,12 +791,12 @@ export function WhiteboardPageRail({
 
   const insertAt = (afterPageNumber: number) => {
     if (!onInsertPageAfter || isAddingPage) return;
-    setMenu(null);
+    setMenuPageId(null);
     setPending({ at: "after", pageNumber: afterPageNumber });
     onInsertPageAfter(afterPageNumber);
   };
 
-  const menuPage = menu ? pages.find((page) => String(page.id) === menu.pageId) ?? null : null;
+  const menuPage = menuPageId ? pages.find((page) => String(page.id) === menuPageId) ?? null : null;
 
   return (
     <nav
@@ -917,7 +839,7 @@ export function WhiteboardPageRail({
                     hasMenu={hasMenu}
                     thumbnails={thumbnails}
                     onPageChange={onPageChange}
-                    onOpenMenu={setMenu}
+                    onOpenMenu={openMenu}
                   />
                 </div>
                 {pendingAfter === page.number && <PendingPageSlot height={ghostHeight} />}
@@ -940,7 +862,7 @@ export function WhiteboardPageRail({
               type="button"
               onClick={() => {
                 if (isAddingPage) return;
-                setMenu(null);
+                setMenuPageId(null);
                 setPending({ at: "end" });
                 onAddPage();
               }}
@@ -955,26 +877,21 @@ export function WhiteboardPageRail({
         </div>
       </div>
 
-      {/* Outside the scroller, which fades its foot with a mask: a mask makes
-          its element the containing block of every fixed descendant and
-          clips them to it, so a menu rendered inside was cut off at the
-          rail's edge — invisible, and with Delete page out of reach. */}
-      {menuPage && menu && (
-        <PageMenu
-          page={menuPage}
-          anchor={menu}
-          canInsert={canInsert}
-          canDelete={canDelete}
-          isBusy={isAddingPage}
-          onInsertBefore={() => insertAt(menuPage.number - 1)}
-          onInsertAfter={() => insertAt(menuPage.number)}
-          onDelete={() => {
-            setMenu(null);
-            onDeletePage?.(menuPage.number);
-          }}
-          onClose={() => setMenu(null)}
-        />
-      )}
+      <PageMenu
+        page={menuPage}
+        anchorRef={menuAnchorRef}
+        canInsert={canInsert}
+        canDelete={canDelete}
+        isBusy={isAddingPage}
+        onInsertBefore={() => menuPage && insertAt(menuPage.number - 1)}
+        onInsertAfter={() => menuPage && insertAt(menuPage.number)}
+        onDelete={() => {
+          if (!menuPage) return;
+          setMenuPageId(null);
+          onDeletePage?.(menuPage.number);
+        }}
+        onClose={() => setMenuPageId(null)}
+      />
     </nav>
   );
 }

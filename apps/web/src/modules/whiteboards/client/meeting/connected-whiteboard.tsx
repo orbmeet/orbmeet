@@ -9,9 +9,8 @@ import { WHITEBOARD_EVENTS } from "@orbmeet/whiteboard-core/protocol";
 import type { RoomMessage } from "@orbmeet/whiteboard-core/room-messages";
 import { requestWhiteboardEditAccess, grantWhiteboardEditAccess, recordWhiteboardPagePresented, addWhiteboardPage, setWhiteboardNavigationController, releaseWhiteboardNavigationController, recordWhiteboardPageEdit } from "@/modules/whiteboards/server/meeting-actions.functions";
 import { useResponsive } from "@/lib/hooks/use-responsive";
-import { useToast } from "@orbmeet/ui/react";
 import { useCommittedRef } from "@orbmeet/ui/react";
-import type { WhiteboardToast } from "@orbmeet/whiteboard-client/react";
+import { useWhiteboardToastAdapter } from "@/modules/whiteboards/client/use-whiteboard-toast-adapter";
 import type { SyncedWhiteboardHandle } from "@orbmeet/whiteboard-client/react";
 import type { PendingEditorAccessRequest } from "@orbmeet/whiteboard-client/react";
 import type { WhiteboardFollowState } from "@orbmeet/whiteboard-client/react";
@@ -91,20 +90,7 @@ export function MeetingWhiteboard({
       }),
     [responsive.isLandscape, responsive.isPhone],
   );
-  // The whiteboard mounts tldraw with `hideUi`, which strips tldraw's own toast
-  // renderer, so notifications raised inside the whiteboard package have to come
-  // out through the meeting's toaster to be seen at all.
-  const { add: addAppToast } = useToast();
-  const handleWhiteboardToast = useCallback(
-    (toast: WhiteboardToast) => {
-      addAppToast({
-        title: toast.title,
-        description: toast.description,
-        data: { variant: toast.variant ?? "info" },
-      });
-    },
-    [addAppToast],
-  );
+  const handleWhiteboardToast = useWhiteboardToastAdapter();
   const [pendingEditorRequests, setPendingEditorRequests] = useState<PendingEditorAccessRequest[]>([]);
   const {
     pdfLibrary,

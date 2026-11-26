@@ -6,51 +6,23 @@ import {
 
 import { logWarn } from "@/lib/logger";
 import {
-  RequestBodyTimeoutError,
-  RequestBodyTooLargeError,
-  readRequestBodyText,
-} from "@/platform/http/request-body";
-import {
   ResponseBodyTimeoutError,
   ResponseBodyTooLargeError,
   readResponseBodyBytes,
 } from "@/platform/http/response-body";
 import { createDb } from "@orbmeet/db";
 import { verifyActiveWhiteboardBearer } from "@/modules/whiteboards/server/http/active-whiteboard-auth";
+import {
+  enforceBindingRateLimit,
+  noStoreJsonResponse,
+  readBoundedJsonRequestBody,
+} from "@/modules/whiteboards/server/http/json-proxy-helpers";
 import { getClientIPFromRequest } from "@/platform/http/client-ip";
 import { deploymentOf, isLocalDevelopment } from "@/platform/http/deployment";
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const ORIGIN_TIMEOUT_MS = 30_000;
 const MAX_ORIGIN_RESPONSE_BYTES = 256 * 1024;
-
-function jsonResponse(body: unknown, status: number): Response {
-  return Response.json(body, {
-    status,
-    headers: {
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
-}
-
-async function enforceMathInkRateLimit(request: Request, env: Env): Promise<Response | null> {
-  if (!env.MATHINK_RATE_LIMITER) {
-    if (isLocalDevelopment(deploymentOf(env))) return null;
-    logWarn("[mathink] rate limiter binding unavailable");
-    return jsonResponse({ error: "Service unavailable" }, 503);
-  }
-
-  try {
-    const { success } = await env.MATHINK_RATE_LIMITER.limit({
-      key: `mathink:${getClientIPFromRequest(request, deploymentOf(env))}`,
-    });
-    return success ? null : jsonResponse({ error: "Too many requests" }, 429);
-  } catch (error) {
-    logWarn("[mathink] rate limiter failed", error);
-    return jsonResponse({ error: "Service unavailable" }, 503);
-  }
-}
 
 function originConfig(env: Env): { url: string; secret: string } | null {
   const rawUrl = env.MATHINK_ORIGIN_URL?.trim();
@@ -77,50 +49,32 @@ export async function handleMathInkRequest(request: Request, env: Env): Promise<
     });
   }
 
-  const limited = await enforceMathInkRateLimit(request, env);
+  const limited = await enforceBindingRateLimit(
+    env,
+    env.MATHINK_RATE_LIMITER,
+    `mathink:${getClientIPFromRequest(request, deploymentOf(env))}`,
+    "[mathink]",
+  );
   if (limited) return limited;
 
-  if (!request.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) {
-    return jsonResponse({ error: "Content-Type must be application/json" }, 415);
-  }
+  const read = await readBoundedJsonRequestBody(request, MAX_BODY_BYTES);
+  if (!read.ok) return read.response;
 
-  let bodyText: string;
-  try {
-    bodyText = await readRequestBodyText(request, MAX_BODY_BYTES);
-  } catch (error) {
-    if (error instanceof RequestBodyTooLargeError) {
-      return jsonResponse({ error: "Payload too large" }, 413);
-    }
-    if (error instanceof RequestBodyTimeoutError) {
-      return jsonResponse({ error: "Request body timed out" }, 408);
-    }
-    throw error;
-  }
-
-  let body: unknown;
-  try {
-    body = JSON.parse(bodyText);
-  } catch {
-    return jsonResponse({ error: "Invalid JSON" }, 400);
-  }
-
-  const parsed = v.safeParse(mathInkRequestSchema, body);
+  const parsed = v.safeParse(mathInkRequestSchema, read.body);
   if (!parsed.success) {
-    return jsonResponse({ error: "Invalid strokes" }, 422);
+    return noStoreJsonResponse({ error: "Invalid strokes" }, 422);
   }
   const rawPointCount = parsed.output.strokes.reduce((total, stroke) => total + stroke.length, 0);
   if (rawPointCount > MATHINK_MAX_RAW_POINTS) {
-    return jsonResponse({ error: `Raw point count exceeds ${MATHINK_MAX_RAW_POINTS}` }, 422);
+    return noStoreJsonResponse({ error: `Raw point count exceeds ${MATHINK_MAX_RAW_POINTS}` }, 422);
   }
 
   const config = originConfig(env);
   if (!config) {
     logWarn("[mathink] origin configuration unavailable");
-    return jsonResponse({ error: "Service unavailable" }, 503);
+    return noStoreJsonResponse({ error: "Service unavailable" }, 503);
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), ORIGIN_TIMEOUT_MS);
   try {
     const response = await fetch(config.url, {
       method: "POST",
@@ -130,12 +84,12 @@ export async function handleMathInkRequest(request: Request, env: Env): Promise<
         "Content-Type": "application/json",
       },
       body: JSON.stringify(parsed.output),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(ORIGIN_TIMEOUT_MS),
     });
 
     if (response.status >= 500) {
       logWarn("[mathink] origin returned an error", { status: response.status });
-      return jsonResponse({ error: "Recognition service unavailable" }, 502);
+      return noStoreJsonResponse({ error: "Recognition service unavailable" }, 502);
     }
 
     const responseBody = await readResponseBodyBytes(
@@ -153,16 +107,15 @@ export async function handleMathInkRequest(request: Request, env: Env): Promise<
     });
   } catch (error) {
     logWarn("[mathink] origin request failed", error);
-    const timedOut = controller.signal.aborted || error instanceof ResponseBodyTimeoutError;
+    const timedOut =
+      error instanceof ResponseBodyTimeoutError || (error as Error)?.name === "TimeoutError";
     if (error instanceof ResponseBodyTooLargeError) {
-      return jsonResponse({ error: "Recognition service returned too much data" }, 502);
+      return noStoreJsonResponse({ error: "Recognition service returned too much data" }, 502);
     }
-    return jsonResponse(
+    return noStoreJsonResponse(
       { error: "Recognition service unavailable" },
       timedOut ? 504 : 502,
     );
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

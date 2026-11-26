@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { removeMember, addMemberByEmail, updateMemberRole, transferOwnership } from "@/modules/spaces/server/membership.functions";
 import { rotateSpaceInvite } from "@/modules/spaces/server/invites.functions";
 import { spaceInviteQueryOptions } from "@/app/query-client/queries/spaces";
@@ -176,6 +176,20 @@ const styles = stylex.create({
   roleTerm: { color: neutral.n800 },
 });
 
+function invalidateSpaceMembership(queryClient: QueryClient, spaceId: string) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.spaces.members(spaceId) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.spaces.detail(spaceId) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.spaces.all() }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.spaces.audit(spaceId) }),
+  ]);
+}
+
+type MemberDialogState = {
+  kind: "role" | "remove" | "transfer";
+  member: SpaceMemberSummary;
+} | null;
+
 interface MembersListProps {
   spaceId: string;
   members: SpaceMemberSummary[];
@@ -202,7 +216,59 @@ export function MembersList({
   isLoadingMore,
   onLoadMore,
 }: MembersListProps) {
+  const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<MemberDialogState>(null);
+
+  const removeMutation = useMutation({
+    mutationFn: (userId: string) => removeMember({ data: { spaceId, userId } }),
+    onSuccess: async () => {
+      setDialog(null);
+      setError(null);
+      await invalidateSpaceMembership(queryClient, spaceId);
+    },
+    onError: () => {
+      setError("Failed to remove member. Please try again.");
+    },
+  });
+
+  const roleMutation = useMutation({
+    mutationFn: ({ userId, role }: { userId: string; role: "admin" | "member" }) =>
+      updateMemberRole({ data: { spaceId, userId, role } }),
+    onSuccess: async () => {
+      setDialog(null);
+      setError(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.spaces.members(spaceId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.spaces.audit(spaceId) }),
+      ]);
+    },
+    onError: () => {
+      setError("Failed to update role. Please try again.");
+    },
+  });
+
+  const transferMutation = useMutation({
+    mutationFn: (userId: string) => transferOwnership({ data: { spaceId, userId } }),
+    onSuccess: async () => {
+      setDialog(null);
+      setError(null);
+      // The caller's own role flips owner→admin, so refresh space metadata too.
+      await invalidateSpaceMembership(queryClient, spaceId);
+    },
+    onError: () => {
+      setError("Failed to transfer ownership. Please try again.");
+    },
+  });
+
+  function openDialog(next: NonNullable<MemberDialogState>) {
+    roleMutation.reset();
+    removeMutation.reset();
+    transferMutation.reset();
+    setDialog(next);
+  }
+
+  const targetName = dialog?.member.user?.name || "this member";
 
   return (
     <div>
@@ -243,12 +309,12 @@ export function MembersList({
             <MemberRow
               key={member.id}
               member={member}
-              spaceId={spaceId}
               isAdmin={isAdmin}
               canGrantAdmins={canGrantAdmins}
               canTransferOwnership={canTransferOwnership}
               currentUserId={currentUserId}
-              onError={setError}
+              isRemoving={removeMutation.isPending && removeMutation.variables === member.userId}
+              onOpenDialog={openDialog}
             />
           ))}
           {hasMore && (
@@ -260,6 +326,114 @@ export function MembersList({
           )}
         </div>
       )}
+
+      {/* Role change dialog */}
+      <Dialog open={dialog?.kind === "role"} onOpenChange={(open) => { if (!open) setDialog(null); }}>
+        <DialogContent size="sm">
+          <DialogBody sx={dialogLayout.padded}>
+            <DialogTitle>Change role</DialogTitle>
+            <DialogDescription>
+              Update the role for <strong>{targetName}</strong>.
+            </DialogDescription>
+            <div {...stylex.props(styles.roleExplainer)}>
+              <p>
+                <strong {...stylex.props(styles.roleTerm)}>Member:</strong> can enter and start
+                Space Meetings, and create, rename, and edit Space Whiteboards.
+              </p>
+              <p>
+                <strong {...stylex.props(styles.roleTerm)}>Admin:</strong> also manages people,
+                Space settings, schedules, and Meeting controls.
+              </p>
+            </div>
+            <div {...stylex.props(dialogLayout.actionsStacked)}>
+              <Button
+                variant={dialog?.member.role === "admin" ? "secondary" : "primary"}
+                onClick={() => {
+                  if (dialog) roleMutation.mutate({ userId: dialog.member.userId, role: "admin" });
+                }}
+                loading={roleMutation.isPending}
+                disabled={dialog?.member.role === "admin"}
+              >
+                Promote to Admin
+              </Button>
+              <Button
+                variant={dialog?.member.role === "member" ? "secondary" : "outline"}
+                onClick={() => {
+                  if (dialog) roleMutation.mutate({ userId: dialog.member.userId, role: "member" });
+                }}
+                loading={roleMutation.isPending}
+                disabled={dialog?.member.role === "member"}
+              >
+                Demote to Member
+              </Button>
+              {/* Dialog.Root is modal, so a Dialog.Close has to render inside
+                  the popup — it is the only exit a touch screen reader has. */}
+              <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
+            </div>
+            {roleMutation.isError && (
+              <p {...stylex.props(status.error)}>
+                Failed to update role. Please try again.
+              </p>
+            )}
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+
+      {/* Remove member confirmation dialog */}
+      <Dialog open={dialog?.kind === "remove"} onOpenChange={(open) => { if (!open) setDialog(null); }}>
+        <DialogContent size="sm">
+          <DialogBody sx={dialogLayout.padded}>
+            <DialogTitle>Remove {targetName}?</DialogTitle>
+            <DialogDescription>
+              They lose access to this Space’s Meetings, Whiteboards and Files. They keep only the past
+              Meetings they joined themselves. The invite link won’t let them back in; only adding them
+              again here will.
+            </DialogDescription>
+            <div {...stylex.props(dialogLayout.actions)}>
+              <DialogClose render={<Button variant="secondary" />}>Cancel</DialogClose>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  if (dialog) removeMutation.mutate(dialog.member.userId);
+                }}
+                loading={removeMutation.isPending}
+              >
+                Remove
+              </Button>
+            </div>
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+
+      {/* Transfer ownership dialog */}
+      <Dialog open={dialog?.kind === "transfer"} onOpenChange={(open) => { if (!open) setDialog(null); }}>
+        <DialogContent size="sm">
+          <DialogBody sx={dialogLayout.padded}>
+            <DialogTitle>Transfer ownership</DialogTitle>
+            <DialogDescription>
+              Transfer ownership to <strong>{targetName}</strong>? You will
+              become an admin. This cannot be undone without their cooperation.
+            </DialogDescription>
+            <div {...stylex.props(dialogLayout.actions)}>
+              <DialogClose render={<Button variant="secondary" />}>Cancel</DialogClose>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  if (dialog) transferMutation.mutate(dialog.member.userId);
+                }}
+                loading={transferMutation.isPending}
+              >
+                Transfer Ownership
+              </Button>
+            </div>
+            {transferMutation.isError && (
+              <p {...stylex.props(status.error)}>
+                Failed to transfer ownership. Please try again.
+              </p>
+            )}
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -384,12 +558,7 @@ function AddMemberForm({ spaceId }: { spaceId: string }) {
       clearTimeout(successTimerRef.current);
       successTimerRef.current = setTimeout(() => setSuccess(null), 3000);
       if (!result.alreadyMember) {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: queryKeys.spaces.members(spaceId) }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.spaces.detail(spaceId) }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.spaces.all() }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.spaces.audit(spaceId) }),
-        ]);
+        await invalidateSpaceMembership(queryClient, spaceId);
       }
     },
   });
@@ -447,78 +616,22 @@ sx={styles.addField}
 
 function MemberRow({
   member,
-  spaceId,
   isAdmin,
   canGrantAdmins,
   canTransferOwnership,
   currentUserId,
-  onError,
+  isRemoving,
+  onOpenDialog,
 }: {
   member: SpaceMemberSummary;
-  spaceId: string;
   isAdmin: boolean;
   canGrantAdmins: boolean;
   canTransferOwnership: boolean;
   currentUserId: string;
-  onError: (msg: string | null) => void;
+  isRemoving: boolean;
+  onOpenDialog: (dialog: NonNullable<MemberDialogState>) => void;
 }) {
-  const queryClient = useQueryClient();
-  const [roleDialogOpen, setRoleDialogOpen] = useState(false);
-  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
-  // Removing someone was one click, with nothing between it and the deed.
-  const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const isSelf = member.userId === currentUserId;
-
-  const removeMutation = useMutation({
-    mutationFn: () => removeMember({ data: { spaceId, userId: member.userId } }),
-    onSuccess: async () => {
-      onError(null);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.spaces.members(spaceId) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.spaces.detail(spaceId) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.spaces.all() }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.spaces.audit(spaceId) }),
-      ]);
-    },
-    onError: () => {
-      onError("Failed to remove member. Please try again.");
-    },
-  });
-
-  const roleMutation = useMutation({
-    mutationFn: (role: "admin" | "member") =>
-      updateMemberRole({ data: { spaceId, userId: member.userId, role } }),
-    onSuccess: async () => {
-      setRoleDialogOpen(false);
-      onError(null);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.spaces.members(spaceId) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.spaces.audit(spaceId) }),
-      ]);
-    },
-    onError: () => {
-      onError("Failed to update role. Please try again.");
-    },
-  });
-
-  const transferMutation = useMutation({
-    mutationFn: () => transferOwnership({ data: { spaceId, userId: member.userId } }),
-    onSuccess: async () => {
-      setTransferDialogOpen(false);
-      onError(null);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.spaces.members(spaceId) }),
-        // The caller's own role flips owner→admin, so refresh space metadata too.
-        queryClient.invalidateQueries({ queryKey: queryKeys.spaces.detail(spaceId) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.spaces.all() }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.spaces.audit(spaceId) }),
-      ]);
-    },
-    onError: () => {
-      onError("Failed to transfer ownership. Please try again.");
-    },
-  });
-
   const memberRole = member.role;
 
   const canRemove =
@@ -546,10 +659,10 @@ function MemberRow({
           {getSpaceAccessLabel({ directRole: member.role })}
         </Badge>
 
-        {/* F2: promote/demote button */}
         {canChangeRole && (
           <button
-            onClick={() => setRoleDialogOpen(true)}
+            type="button"
+            onClick={() => onOpenDialog({ kind: "role", member })}
             {...stylex.props(pressable.base, motion.tint, styles.iconAction, styles.actionNeutral)}
             title="Change role"
             aria-label="Change member role"
@@ -559,10 +672,10 @@ function MemberRow({
           </button>
         )}
 
-        {/* F1: transfer ownership button */}
         {canTransfer && (
           <button
-            onClick={() => setTransferDialogOpen(true)}
+            type="button"
+            onClick={() => onOpenDialog({ kind: "transfer", member })}
             {...stylex.props(pressable.base, motion.tint, styles.iconAction, styles.actionTransfer)}
             title="Transfer ownership"
             aria-label="Transfer ownership to this member"
@@ -572,12 +685,11 @@ function MemberRow({
           </button>
         )}
 
-        {/* H1: Remove button shown only when the caller has permission to remove this specific member */}
         {canRemove && (
           <button
             type="button"
-            onClick={() => setRemoveDialogOpen(true)}
-            disabled={removeMutation.isPending}
+            onClick={() => onOpenDialog({ kind: "remove", member })}
+            disabled={isRemoving}
             {...stylex.props(pressable.base, motion.tint, styles.iconAction, styles.actionRemove)}
             aria-label={`Remove ${member.user?.name || "this member"}`}
           >
@@ -586,107 +698,6 @@ function MemberRow({
           </button>
         )}
       </div>
-
-      {/* F2: Role change dialog */}
-      <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
-        <DialogContent size="sm">
-          <DialogBody sx={dialogLayout.padded}>
-            <DialogTitle>Change role</DialogTitle>
-            <DialogDescription>
-              Update the role for{" "}
-              <strong>{member.user?.name || "this member"}</strong>.
-            </DialogDescription>
-            <div {...stylex.props(styles.roleExplainer)}>
-              <p>
-                <strong {...stylex.props(styles.roleTerm)}>Member:</strong> can enter and start
-                Space Meetings, and create, rename, and edit Space Whiteboards.
-              </p>
-              <p>
-                <strong {...stylex.props(styles.roleTerm)}>Admin:</strong> also manages people,
-                Space settings, schedules, and Meeting controls.
-              </p>
-            </div>
-            <div {...stylex.props(dialogLayout.actionsStacked)}>
-              <Button
-                variant={member.role === "admin" ? "secondary" : "primary"}
-                onClick={() => roleMutation.mutate("admin")}
-                loading={roleMutation.isPending}
-                disabled={member.role === "admin"}
-              >
-                Promote to Admin
-              </Button>
-              <Button
-                variant={member.role === "member" ? "secondary" : "outline"}
-                onClick={() => roleMutation.mutate("member")}
-                loading={roleMutation.isPending}
-                disabled={member.role === "member"}
-              >
-                Demote to Member
-              </Button>
-              {/* Dialog.Root is modal, so a Dialog.Close has to render inside
-                  the popup — it is the only exit a touch screen reader has. */}
-              <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
-            </div>
-            {roleMutation.isError && (
-              <p {...stylex.props(status.error)}>
-                Failed to update role. Please try again.
-              </p>
-            )}
-          </DialogBody>
-        </DialogContent>
-      </Dialog>
-
-      {/* F1: Transfer ownership dialog */}
-      <Dialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}>
-        <DialogContent size="sm">
-          <DialogBody sx={dialogLayout.padded}>
-            <DialogTitle>Remove {member.user?.name || "this member"}?</DialogTitle>
-            <DialogDescription>
-              They lose access to this Space’s Meetings, Whiteboards and Files. They keep only the past
-              Meetings they joined themselves. The invite link won’t let them back in; only adding them
-              again here will.
-            </DialogDescription>
-            <div {...stylex.props(dialogLayout.actions)}>
-              <DialogClose render={<Button variant="secondary" />}>Cancel</DialogClose>
-              <Button
-                variant="danger"
-                onClick={() => removeMutation.mutate(undefined, { onSuccess: () => setRemoveDialogOpen(false) })}
-                loading={removeMutation.isPending}
-              >
-                Remove
-              </Button>
-            </div>
-          </DialogBody>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
-        <DialogContent size="sm">
-          <DialogBody sx={dialogLayout.padded}>
-            <DialogTitle>Transfer ownership</DialogTitle>
-            <DialogDescription>
-              Transfer ownership to{" "}
-              <strong>{member.user?.name || "this member"}</strong>? You will
-              become an admin. This cannot be undone without their cooperation.
-            </DialogDescription>
-            <div {...stylex.props(dialogLayout.actions)}>
-              <DialogClose render={<Button variant="secondary" />}>Cancel</DialogClose>
-              <Button
-                variant="danger"
-                onClick={() => transferMutation.mutate()}
-                loading={transferMutation.isPending}
-              >
-                Transfer Ownership
-              </Button>
-            </div>
-            {transferMutation.isError && (
-              <p {...stylex.props(status.error)}>
-                Failed to transfer ownership. Please try again.
-              </p>
-            )}
-          </DialogBody>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

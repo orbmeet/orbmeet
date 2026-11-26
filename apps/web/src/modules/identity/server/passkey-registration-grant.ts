@@ -9,6 +9,7 @@ import {
   generateSessionToken,
   hashSessionToken,
 } from "@/platform/crypto/tokens.server";
+import { parseScopedFlowToken } from "./verification-attempts";
 
 interface PasskeyRegistrationGrantData {
   version: 1;
@@ -23,20 +24,6 @@ export interface PreparedPasskeyRegistrationGrant {
   identifier: string;
   data: string;
   expiresAt: Date;
-}
-
-function parseGrantToken(token: string): { id: string; secret: string } | null {
-  const separator = token.indexOf(".");
-  if (separator < 1 || separator !== token.lastIndexOf(".")) return null;
-  const id = token.slice(0, separator);
-  const secret = token.slice(separator + 1);
-  if (
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) ||
-    !/^[a-f0-9]{64}$/i.test(secret)
-  ) {
-    return null;
-  }
-  return { id, secret };
 }
 
 function parseGrantData(raw: string | null): PasskeyRegistrationGrantData | null {
@@ -79,7 +66,7 @@ export async function preparePasskeyRegistrationGrantConsumption(
   token: string,
   input: { userId: string; authSessionId: string },
 ): Promise<{ id: string; value: string }> {
-  const parsed = parseGrantToken(token);
+  const parsed = parseScopedFlowToken(token);
   if (!parsed) throw createValidationError("Passkey registration authorization expired.");
 
   const row = await db.query.verifications.findFirst({

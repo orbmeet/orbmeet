@@ -1,78 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { PublicNav } from "@/app/shell/public-nav";
-import { PublicFooter } from "@/app/shell/public-footer";
-import { MAIN_CONTENT_ID } from "@/app/shell/skip-link";
-import { enter } from "@orbmeet/ui/styles/animations";
-import { accent, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
+import { ink, neutral } from "@orbmeet/ui/tokens/colors.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
-import { fonts, leading, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
+import { text } from "@orbmeet/ui/tokens/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
-import { env } from "@orbmeet/ui/tokens/media.stylex";
+import { LegalLayout, legalStyles as styles } from "./legal-layout";
 
-const styles = stylex.create({
-  page: {
-    // A column, so the shared footer sinks to the bottom on a short page
-    // instead of floating under the last paragraph.
-    display: "flex",
-    flexDirection: "column",
-    minHeight: "100vh",
-    // Unified with the app's canvas ground; the old neutral-50 was a one-off.
-    backgroundColor: surface.canvas,
-  },
-
-  main: {
-    marginInline: "auto",
-    maxWidth: "48rem",
-    paddingInline: space.s6,
-    paddingBlock: space.s16,
-  },
-  title: {
-    margin: 0,
-    fontFamily: fonts.heading,
-    fontSize: "2.25rem",
-    lineHeight: 1.05,
-    fontWeight: weight.semibold,
-    letterSpacing: "-0.045em",
-    color: ink.strong,
-  },
-  updated: {
-    marginTop: space.s2,
-    marginBottom: 0,
-    fontSize: text.sm,
-    lineHeight: leading.sm,
-    color: ink.muted,
-  },
-
-  body: {
-    marginTop: space.s10,
-    display: "flex",
-    flexDirection: "column",
-    gap: space.s10,
-    color: neutral.n700,
-    lineHeight: leading.relaxed,
-  },
-  h2: {
-    margin: 0,
-    fontSize: text.lg,
-    fontWeight: weight.semibold,
-    color: ink.strong,
-  },
-  para: { margin: 0, marginTop: space.s3 },
-  list: {
-    margin: 0,
-    marginTop: space.s3,
-    display: "flex",
-    flexDirection: "column",
-    gap: space.s2,
-    listStyleType: "disc",
-    paddingInlineStart: space.s6,
-  },
-  link: {
-    color: { default: accent.a700, [env.hoverable]: { default: accent.a700, ":hover": accent.a800 } },
-    textDecorationLine: "underline",
-    textDecorationColor: accent.a700,
-    textUnderlineOffset: 2,
-  },
+const termsStyles = stylex.create({
+  list: { marginTop: space.s3, gap: space.s2 },
   /** The sign-off line, closed off from the numbered sections above. */
   colophon: {
     marginTop: 0,
@@ -87,13 +21,7 @@ const styles = stylex.create({
 
 export function TermsPage() {
   return (
-    <div {...stylex.props(styles.page)}>
-      <PublicNav />
-      <main id={MAIN_CONTENT_ID} {...stylex.props(styles.main, enter.fade)}>
-        <h1 {...stylex.props(styles.title)}>Terms of Service</h1>
-        <p {...stylex.props(styles.updated)}>Last updated: October 15, 2026</p>
-
-        <div {...stylex.props(styles.body)}>
+    <LegalLayout title="Terms of Service" lastUpdated="October 15, 2026">
           {/* 1. Acceptance of Terms */}
           <section>
             <h2 {...stylex.props(styles.h2)}>1. Acceptance of Terms</h2>
@@ -122,7 +50,7 @@ export function TermsPage() {
           <section>
             <h2 {...stylex.props(styles.h2)}>4. Subscription Plans &amp; Billing</h2>
             <p {...stylex.props(styles.para)}>Orb Meet offers three subscription tiers:</p>
-            <ul {...stylex.props(styles.list)}>
+            <ul {...stylex.props(styles.list, termsStyles.list)}>
               <li>
                 <strong>Free ($0/month)</strong> — One permanent server-assigned personal meeting link, one Space with up to 25 members, up to 100 participants per Meeting, a 90-minute Meeting duration limit, and 1 GB cloud storage.
               </li>
@@ -142,7 +70,7 @@ export function TermsPage() {
           <section>
             <h2 {...stylex.props(styles.h2)}>5. Acceptable Use</h2>
             <p {...stylex.props(styles.para)}>You agree not to use Orb Meet to:</p>
-            <ul {...stylex.props(styles.list)}>
+            <ul {...stylex.props(styles.list, termsStyles.list)}>
               <li>Violate any applicable law, regulation, or third-party rights.</li>
               <li>Transmit content that is unlawful, harmful, threatening, abusive, harassing, defamatory, obscene, or otherwise objectionable.</li>
               <li>Distribute malware, viruses, or any other malicious code.</li>
@@ -251,13 +179,9 @@ export function TermsPage() {
             </p>
           </section>
 
-          <p {...stylex.props(styles.colophon)}>
+          <p {...stylex.props(termsStyles.colophon)}>
             © 2026 Orb Meet Contributors. The Orb Meet source code is available under the MIT license.
           </p>
-        </div>
-      </main>
-
-      <PublicFooter />
-    </div>
+    </LegalLayout>
   );
 }

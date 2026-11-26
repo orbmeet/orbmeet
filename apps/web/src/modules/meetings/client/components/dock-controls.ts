@@ -1,5 +1,4 @@
 import type { BackgroundMode } from "@/modules/meetings/client/use-background-effect";
-import type { HandRaiseState } from "@/modules/meetings/client/dock-actions";
 
 // Control groups shared by the desktop control dock and the phone dock. Each
 // dock renders the subset its layout has room for, but both receive the same
@@ -24,7 +23,14 @@ export interface DockBackgroundControls {
   setImage: (path: string) => void;
 }
 
-export interface DockHandRaiseControls extends HandRaiseState {
+/**
+ * What the hand button acts on. A moderator's opens the timeline, where raised
+ * hands wait at the top (`queue`); anyone else's raises or lowers their own
+ * hand (`queue: null`).
+ */
+export interface DockHandRaiseControls {
+  isHandRaised: boolean;
+  queue: { open: boolean; pendingCount: number } | null;
   onToggle: () => void;
 }
 

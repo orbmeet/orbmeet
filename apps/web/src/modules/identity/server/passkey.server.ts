@@ -21,17 +21,11 @@ import {
 } from "@simplewebauthn/server";
 import { isoBase64URL } from "@simplewebauthn/server/helpers";
 import { Errors, createValidationError } from "@/lib/app-errors";
-import {
-  SESSION_ABSOLUTE_EXPIRY_MS,
-  SESSION_EXPIRY_MS,
-  SESSION_EXPIRY_SECONDS,
-} from "@/modules/identity/contract/auth/constants";
 import { generateId } from "@/lib/ids";
-import { appendCookies, createCookieString } from "@/platform/http/cookies.server";
 import { getClientIP } from "@/platform/http/client-ip.server";
 import { enforceIpRateLimit, enforceRateLimit } from "@/platform/http/rate-limit.server";
 import { getEnv } from "@/platform/runtime/server-runtime.server";
-import { rememberDevice, sanitizeUser, enforceSessionCapStatement } from "./session";
+import { sanitizeUser } from "./session";
 import { loadUserBilling } from "@/modules/billing/server/entitlements.server";
 import {
   generateSessionToken,
@@ -45,15 +39,11 @@ import {
 } from "./passkey-policy";
 import {
   authorizeSensitiveAction,
-  parseStepUpFlowToken,
   prepareStepUpCredentialConsumption,
 } from "./step-up.server";
 import { preparePasskeyRegistrationGrantConsumption } from "./passkey-registration-grant";
-import {
-  insertActiveAccountSessionStatement,
-  insertDeletionResumeSessionStatement,
-  DELETION_RECOVERY_SESSION_TTL_SECONDS,
-} from "./session-issuance";
+import { issueBrowserSession } from "./session-issuance";
+import { parseScopedFlowToken } from "./verification-attempts";
 import type { AuthFnContext } from "@/app/bootstrap/middleware";
 import type {
   DeletePasskeyInput,
@@ -314,7 +304,7 @@ export async function finishPasskeyRegistrationImpl({
   await enforceIpRateLimit(env, "passkey-register-finish");
   await enforceRateLimit(env, `passkey-register-finish:${user.id}`, true);
 
-  const registrationToken = parseStepUpFlowToken(data.registrationToken);
+  const registrationToken = parseScopedFlowToken(data.registrationToken);
   if (!registrationToken) throw Errors.VALIDATION("Passkey registration expired");
   const pending = await db.query.verifications.findFirst({
     where: {
@@ -559,48 +549,10 @@ export async function finishPasskeyAuthenticationImpl({
   // fenced insert below inserts zero rows and the sign-in fails forever
   // even though the person just proved possession of a passkey.
   const deletionPending = user.deletionStartedAt !== null;
-
-  const passkeySessionId = generateId("SESSION");
-  const sessionToken = generateSessionToken();
-  const sessionTokenHash = await hashSessionToken(sessionToken);
-  const nowMs = Date.now();
-  const nowSeconds = Math.floor(nowMs / 1000);
-  const recoveryTtlSeconds = deletionPending ? DELETION_RECOVERY_SESSION_TTL_SECONDS : undefined;
-  const insertSession = deletionPending
-    ? insertDeletionResumeSessionStatement(db, {
-        id: passkeySessionId,
-        tokenHash: sessionTokenHash,
-        userId: user.id,
-        expiresAtSeconds: nowSeconds + recoveryTtlSeconds!,
-        absoluteExpiresAtSeconds: nowSeconds + recoveryTtlSeconds!,
-        ipAddress: getClientIP(),
-        userAgent: request.headers.get("User-Agent")?.slice(0, 500) ?? null,
-        createdAtSeconds: nowSeconds,
-      })
-    : insertActiveAccountSessionStatement(db, {
-        id: passkeySessionId,
-        tokenHash: sessionTokenHash,
-        userId: user.id,
-        expiresAtSeconds: Math.floor((nowMs + SESSION_EXPIRY_MS) / 1000),
-        absoluteExpiresAtSeconds: Math.floor((nowMs + SESSION_ABSOLUTE_EXPIRY_MS) / 1000),
-        ipAddress: getClientIP(),
-        userAgent: request.headers.get("User-Agent")?.slice(0, 500) ?? null,
-        createdAtSeconds: nowSeconds,
-      });
-  const [insertResult] = await db.batch([insertSession, enforceSessionCapStatement(db, user.id)]);
-  if (getRunChanges(insertResult) !== 1) throw Errors.UNAUTHORIZED();
-  if (!deletionPending) {
-    // A remembered-device cookie cannot resolve a deletion-gated account
-    // (the lookup excludes gated users), so do not mint a dead row.
-    await rememberDevice(db, env, user.id, passkeySessionId).catch(() => {});
-  }
-
-  appendCookies([
-    createCookieString("session", sessionToken, SESSION_EXPIRY_SECONDS, {
-      appUrl: env.APP_URL,
-      environment: env.ENVIRONMENT,
-    }),
-  ]);
+  await issueBrowserSession(db, env, request, {
+    userId: user.id,
+    deletionPending,
+  });
 
   return { user: sanitizeUser(user, await loadUserBilling(db, user.id)), deletionPending };
 }

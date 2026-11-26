@@ -53,23 +53,6 @@ export function classifyMediaCaptureFailure(error: unknown): MediaCaptureFailure
   return "unknown";
 }
 
-export function getMicrophoneCaptureFailureMessage(error: unknown): string {
-  switch (classifyMediaCaptureFailure(error)) {
-    case "system-denied":
-      return "Your computer is blocking this browser from the microphone. Allow it in your privacy settings (System Settings on a Mac, Settings on Windows), then retry.";
-    case "permission-denied":
-      return "Microphone permission was denied. Allow microphone access in your browser, then retry.";
-    case "not-found":
-      return "The selected microphone is no longer available. Reconnect it or choose another microphone.";
-    case "device-in-use":
-      return "Your microphone may be in use by another app. Close it and retry, or join with audio off.";
-    case "constraints":
-      return "The selected microphone cannot satisfy the requested settings. Choose another microphone and retry.";
-    case "unknown":
-      return "Your microphone could not be started. Check the selected device and browser settings, then retry.";
-  }
-}
-
 /**
  * A permission rejection must not immediately trigger a second browser prompt.
  * Hardware/constraint failures can be retried per kind to salvage the working

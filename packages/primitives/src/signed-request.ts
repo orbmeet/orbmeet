@@ -12,6 +12,8 @@
  * only verbatim and only inside the skew window.
  */
 
+import { hmacSha256Hex, sha256Hex } from "./crypto.ts";
+
 export const SIGNATURE_HEADER = "X-Orbmeet-Signature";
 
 export type Keyring = ReadonlyMap<string, string>;
@@ -58,28 +60,6 @@ export function signingKey(keyring: Keyring): { keyId: string; secret: string } 
   return { keyId, secret };
 }
 
-const encoder = new TextEncoder();
-
-function toHex(bytes: ArrayBuffer): string {
-  return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-async function sha256Hex(body: string | Uint8Array<ArrayBuffer>): Promise<string> {
-  const bytes = typeof body === "string" ? encoder.encode(body) : body;
-  return toHex(await crypto.subtle.digest("SHA-256", bytes));
-}
-
-async function hmacHex(secret: string, message: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  return toHex(await crypto.subtle.sign("HMAC", key, encoder.encode(message)));
-}
-
 function canonicalString(method: string, target: string, timestamp: number, bodyHash: string) {
   return `v1\n${method.toUpperCase()}\n${target}\n${timestamp}\n${bodyHash}`;
 }
@@ -104,7 +84,7 @@ export async function signRequest(input: SignRequestInput): Promise<string> {
   const { keyId, secret } = signingKey(input.keyring);
   const timestamp = input.nowSeconds ?? Math.floor(Date.now() / 1000);
   const bodyHash = await sha256Hex(input.body);
-  const signature = await hmacHex(
+  const signature = await hmacSha256Hex(
     secret,
     canonicalString(input.method, input.target, timestamp, bodyHash),
   );
@@ -177,7 +157,7 @@ export async function verifySignedRequest(input: VerifyRequestInput): Promise<Si
   if (Math.abs(now - timestamp) > (input.maxSkewSeconds ?? DEFAULT_MAX_SKEW_SECONDS)) {
     return { ok: false, reason: "expired" };
   }
-  const expected = await hmacHex(
+  const expected = await hmacSha256Hex(
     secret,
     canonicalString(input.method, input.target, timestamp, await sha256Hex(input.body)),
   );

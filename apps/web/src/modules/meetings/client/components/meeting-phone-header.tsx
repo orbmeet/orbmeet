@@ -13,8 +13,8 @@ import * as React from "react";
 import type { PhoneStageModes } from "@/modules/meetings/client/components/dock-controls";
 import { CHROME_GAP_PX, PHONE_HEADER_HEIGHT_PX, PHONE_MODE_SWITCH_HEIGHT_PX } from "@/modules/meetings/client/chrome";
 import { formatClock } from "@/modules/meetings/client/format-duration";
-import type { MeetingClockSync } from "@/modules/meetings/client/meeting-clock";
-import { useMeetingElapsedSeconds } from "@/modules/meetings/client/use-meeting-elapsed-seconds";
+import { getMeetingElapsedSeconds, type MeetingClockSync } from "@/modules/meetings/client/meeting-clock";
+import { useNow } from "@/lib/hooks/use-now";
 
 const styles = stylex.create({
   /**
@@ -179,7 +179,7 @@ export function MeetingPhoneHeader({
   onLeave,
   timer,
 }: MeetingPhoneHeaderProps) {
-  const elapsed = useMeetingElapsedSeconds(meetingClock);
+  const elapsed = getMeetingElapsedSeconds(meetingClock, useNow(1_000));
   const tabs = modes
     ? [
         { id: "talk" as const, label: "Talk", onSelect: modes.onTalk },

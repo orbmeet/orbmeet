@@ -21,7 +21,7 @@ describe("workerModuleGuard", () => {
 
   it("allows server dependencies with similar names", () => {
     expect(forbiddenWorkerDependencyReason(
-      "/repo/node_modules/.pnpm/@tanstack+ai@0.31/node_modules/@tanstack/ai/index.js",
+      "/repo/node_modules/.pnpm/livekit-server-sdk@2.13.0/node_modules/livekit-server-sdk/dist/index.js",
     )).toBeUndefined();
     expect(forbiddenWorkerDependencyReason(
       "/repo/node_modules/.pnpm/@simplewebauthn+server@13/node_modules/@simplewebauthn/server/index.js",

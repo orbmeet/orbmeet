@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { DOCKERFILES, REMOTE, REMOTE_NODE_DIR, WORKSPACE_FILES } from "./catalog.ts";
 import type { Inventory } from "./inventory.ts";
-import { imageSources } from "./render.ts";
+import { imageSources, shellQuote } from "./render.ts";
 import { OpsError, type RunOptions, type Shell } from "./shell.ts";
 
 // One connection per node, reused by every ssh and rsync of a run. The socket
@@ -14,12 +14,10 @@ export function ssh(shell: Shell, inv: Inventory, name: string, command: string,
   return shell(["ssh", ...SSH_OPTIONS, inv.nodes[name].ssh, command], options);
 }
 
-const quote = (arg: string) => (/^[\w@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", `'"'"'`)}'`);
-
 /** Run node/deploy.sh on the node, as root. */
 export function deployScript(shell: Shell, inv: Inventory, name: string, args: readonly string[],
   options?: RunOptions): Promise<string> {
-  return ssh(shell, inv, name, `sudo -n bash ${REMOTE_NODE_DIR}/deploy.sh ${args.map(quote).join(" ")}`, options);
+  return ssh(shell, inv, name, `sudo -n bash ${REMOTE_NODE_DIR}/deploy.sh ${args.map(shellQuote).join(" ")}`, options);
 }
 
 /** The Compose services an apply would create, replace or remove. */

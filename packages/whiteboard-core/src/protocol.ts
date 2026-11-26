@@ -13,8 +13,7 @@ export const WHITEBOARD_EVENTS = {
  * constants — the sync server and every client must agree on them — so they
  * live in this shared contract instead of being restated as literals at each
  * callsite. Host-application endpoints (e.g. the web app's recorder auth) are
- * *not* protocol and belong to the host's service-endpoint adapter instead
- * (see `@orbmeet/whiteboard-client` `WhiteboardServiceEndpoints`).
+ * *not* protocol and are passed in by the host application.
  */
 export const WHITEBOARD_SYNC_ROUTES = {
   /** WebSocket upgrade endpoint. */
@@ -30,6 +29,25 @@ export const WHITEBOARD_SYNC_ROUTES = {
 /** Route of one PDF import: GET reads its progress, DELETE cancels it. */
 export function whiteboardPdfImportRoute(importId: string): string {
   return `${WHITEBOARD_SYNC_ROUTES.pdfImport}/${importId}`;
+}
+
+/**
+ * Resolve a sync-server wire route against the server's base URL. Route paths
+ * are root-relative protocol constants, so the base is treated as an origin.
+ */
+export function whiteboardSyncUrl(baseUrl: string, route: string): string {
+  return new URL(route, baseUrl).toString();
+}
+
+/**
+ * Build the sync server's WebSocket connect URL, upgrading the protocol and
+ * carrying the auth token in the fragment (it is never sent to intermediaries).
+ */
+export function buildWhiteboardConnectUrl(baseUrl: string, token: string): string {
+  const url = new URL(WHITEBOARD_SYNC_ROUTES.connect, baseUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.hash = new URLSearchParams({ token }).toString();
+  return url.toString();
 }
 
 /** Authoritative reconciliation for the viewer's local access-request UI. */

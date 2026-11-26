@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  handRaiseControl,
   selectDockGroups,
   type DockActionId,
   type DockActionsInput,
@@ -8,7 +7,6 @@ import {
 
 const BASE: DockActionsInput = {
   isHost: false,
-  handRaise: { isHandRaised: false, queue: null },
   canChooseExistingSurface: false,
   isScreenSharing: false,
   canConfigureAudio: false,
@@ -36,14 +34,14 @@ describe("selectDockGroups", () => {
   });
 
   it("drops a group rather than rendering an empty section", () => {
-    // A participant with no hand-raise and no surface still gets a
-    // collaborate group (share, timer), but never an empty heading.
-    const groups = selectDockGroups({ ...BASE, handRaise: null });
+    // A participant with no surface still gets a collaborate group (share,
+    // timer), and never an empty heading.
+    const groups = selectDockGroups(BASE);
     expect(groups.every((group) => group.actions.length > 0)).toBe(true);
   });
 
   it("orders collaborate actions by how often they are reached for", () => {
-    expect(idsIn(BASE, "collaborate")).toEqual(["hand", "share", "timer"]);
+    expect(idsIn(BASE, "collaborate")).toEqual(["share", "timer"]);
   });
 
   it("leaves out what the dock and the header already carry", () => {
@@ -133,26 +131,6 @@ describe("selectDockGroups", () => {
     });
   });
 
-});
-
-describe("hand raise queue signalling", () => {
-  const moderator: DockActionsInput = {
-    ...BASE,
-    handRaise: { isHandRaised: false, queue: { open: true, pendingCount: 3 } },
-  };
-  const action = (input: DockActionsInput, id: string) =>
-    selectDockGroups(input).flatMap((group) => group.actions).find((candidate) => candidate.id === id);
-
-  it("gives a moderator no hand button of their own: it would only open the timeline again", () => {
-    expect(action(moderator, "hand")).toBeUndefined();
-  });
-
-  it("stays a plain raise-hand toggle for anyone who cannot moderate", () => {
-    expect(action(BASE, "hand")).toMatchObject({ label: "Raise hand", active: false });
-    expect(action({ ...BASE, handRaise: { isHandRaised: true, queue: null } }, "hand"))
-      .toMatchObject({ label: "Lower hand", active: true });
-    expect(action(BASE, "hand")).toMatchObject(handRaiseControl({ isHandRaised: false }));
-  });
 });
 
 describe("shared timer", () => {

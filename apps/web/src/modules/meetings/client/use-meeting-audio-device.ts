@@ -38,12 +38,11 @@ export function useMeetingAudioDevice({
   const [currentAudioDeviceId, setCurrentAudioDeviceId] = React.useState<string | undefined>(
     initialAudioDeviceId,
   );
-  const [activeAudioDeviceId, setActiveAudioDeviceId] = React.useState<string | undefined>(undefined);
   const currentAudioDeviceIdRef = React.useRef(initialAudioDeviceId);
-  const mediaOperationQueueRef = React.useRef(new MediaOperationQueue());
+  const [mediaOperationQueue] = React.useState(() => new MediaOperationQueue());
   const enqueueMediaOperation = React.useCallback(
-    (operation: () => Promise<void>) => mediaOperationQueueRef.current.enqueue(operation),
-    [],
+    (operation: () => Promise<void>) => mediaOperationQueue.enqueue(operation),
+    [mediaOperationQueue],
   );
 
   // ── Output device (speaker) ──
@@ -54,9 +53,6 @@ export function useMeetingAudioDevice({
   // to the remote <audio> elements — gated on the browser supporting setSinkId.
   const [audioOutputDevices, setAudioOutputDevices] = React.useState<MediaDeviceInfo[]>([]);
   const [currentAudioOutputDeviceId, setCurrentAudioOutputDeviceId] = React.useState<
-    string | undefined
-  >(undefined);
-  const [activeAudioOutputDeviceId, setActiveAudioOutputDeviceId] = React.useState<
     string | undefined
   >(undefined);
   const currentAudioOutputDeviceIdRef = React.useRef<string | undefined>(undefined);
@@ -75,14 +71,12 @@ export function useMeetingAudioDevice({
         ? getConcreteMediaDevices(devices, "audiooutput")
         : [];
       setAudioOutputDevices(outputDevices);
-      setActiveAudioOutputDeviceId(roomInstance?.getActiveDevice("audiooutput") ?? undefined);
 
       const refreshedSelection = resolveRefreshedMediaDeviceSelection({
         selectedDeviceId: currentAudioDeviceIdRef.current,
         activeDeviceId: roomInstance?.getActiveDevice("audioinput"),
         devices: uniqueDevices,
       });
-      setActiveAudioDeviceId(roomInstance?.getActiveDevice("audioinput"));
       if (refreshedSelection.selectedDeviceId !== currentAudioDeviceIdRef.current) {
         currentAudioDeviceIdRef.current = refreshedSelection.selectedDeviceId;
         setCurrentAudioDeviceId(refreshedSelection.selectedDeviceId);
@@ -166,7 +160,6 @@ export function useMeetingAudioDevice({
     if (!roomInstance) return;
     const handleActiveDeviceChanged = (kind: MediaDeviceKind, deviceId: string) => {
       if (kind === "audioinput") {
-        setActiveAudioDeviceId(deviceId);
         emitMeetingEntryDiagnostic("active_audio_device_changed", {
           kind,
           hasExplicitSelection: Boolean(currentAudioDeviceIdRef.current),
@@ -179,7 +172,6 @@ export function useMeetingAudioDevice({
         return;
       }
       if (kind === "audiooutput") {
-        setActiveAudioOutputDeviceId(deviceId);
         if (!currentAudioOutputDeviceIdRef.current) return;
         if (deviceId === currentAudioOutputDeviceIdRef.current) return;
         currentAudioOutputDeviceIdRef.current = deviceId;
@@ -257,12 +249,9 @@ export function useMeetingAudioDevice({
   return {
     audioDevices,
     currentAudioDeviceId,
-    activeAudioDeviceId,
     handleSelectAudioDevice,
     audioOutputDevices,
     currentAudioOutputDeviceId,
-    activeAudioOutputDeviceId,
     handleSelectAudioOutputDevice,
-    refreshAudioDevices,
   };
 }

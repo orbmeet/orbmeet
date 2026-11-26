@@ -35,6 +35,7 @@ import {
   type TimelineItem,
   type TimelineThread,
 } from "@/modules/meetings/client/timeline-model";
+import { MESSAGE_LIMITS } from "@/modules/meetings/contract/constants";
 import type { HandRaise } from "@/modules/meetings/client/use-hand-raises";
 import {
   loadOrbTipsOff,
@@ -51,7 +52,7 @@ import { TimelineThreads, type TimelineThreadsProps } from "./timeline-threads";
 import { firstName } from "./meeting-format";
 
 const URL_REGEX = /https?:\/\/[^\s<>)"']*[^\s<>)"'.,;:!?]/g;
-const MAX_MESSAGE_LENGTH = 500;
+const MAX_MESSAGE_LENGTH = MESSAGE_LIMITS.MAX_TEXT_LENGTH;
 /** How tall the message box grows before it scrolls: about five lines. */
 const COMPOSER_MAX_HEIGHT_PX = 120;
 /** How long a question waits for the board, and Orb with it, to come up. */
@@ -601,13 +602,11 @@ function TimelineEntry({ item, inPrivate, withOrb = false }: { item: PersonItem;
 function RaisedHands({
   hands,
   serverClockOffsetMs,
-  onApprove,
-  onDismiss,
+  onResolve,
 }: {
   hands: HandRaise[];
   serverClockOffsetMs: number;
-  onApprove: (userId: string) => void;
-  onDismiss: (userId: string) => void;
+  onResolve: (userId: string) => void;
 }) {
   const now = useNow(1000, hands.length > 0);
   const waited = (raisedAt: number) => {
@@ -629,7 +628,7 @@ function RaisedHands({
             <button
               type="button"
               aria-label={`Let ${hand.userName} speak`}
-              onClick={() => onApprove(hand.userId)}
+              onClick={() => onResolve(hand.userId)}
               {...stylex.props(pressable.base, motion.tint, focus.ring, styles.handAction, styles.handApprove)}
             >
               Call on
@@ -639,7 +638,7 @@ function RaisedHands({
             <button
               type="button"
               aria-label={`Lower ${hand.userName}'s hand`}
-              onClick={() => onDismiss(hand.userId)}
+              onClick={() => onResolve(hand.userId)}
               {...stylex.props(pressable.base, motion.tint, focus.ring, styles.handAction, styles.handDismiss)}
             >
               Lower
@@ -686,8 +685,7 @@ export interface MeetingTimelineProps {
   hands?: {
     queue: HandRaise[];
     serverClockOffsetMs: number;
-    onApprove: (userId: string) => void;
-    onDismiss: (userId: string) => void;
+    onResolve: (userId: string) => void;
   };
   /**
    * Opens the board, for a question asked of Orb while it is closed. Omit
@@ -778,7 +776,7 @@ export function MeetingTimeline({
   const workingOrbItemId = orbRun ? lastOrbWorkId(items) : undefined;
   const speechArriving = speech.shown && speech.entries.some((entry) => !entry.isFinal);
   const pendingHands = React.useMemo(
-    () => (hands?.queue ?? []).filter((hand) => hand.status === "pending").sort((a, b) => a.raisedAt - b.raisedAt),
+    () => [...(hands?.queue ?? [])].sort((a, b) => a.raisedAt - b.raisedAt),
     [hands?.queue],
   );
 
@@ -1035,8 +1033,7 @@ export function MeetingTimeline({
         <RaisedHands
           hands={pendingHands}
           serverClockOffsetMs={hands.serverClockOffsetMs}
-          onApprove={hands.onApprove}
-          onDismiss={hands.onDismiss}
+          onResolve={hands.onResolve}
         />
       )}
 

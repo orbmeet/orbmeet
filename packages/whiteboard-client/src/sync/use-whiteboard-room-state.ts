@@ -12,9 +12,21 @@ import {
   normalizeConnectedWhiteboardUsers,
   type ConnectedWhiteboardUser,
 } from "./connected-users";
-import { reduceRoomSizeLimited } from "./room-size-state";
 import type { RoomChannel } from "./room-channel";
 import { useCommittedRef } from "@orbmeet/ui/react";
+
+export function reduceRoomSizeLimited(
+  current: boolean,
+  eventType: unknown,
+  stateValue?: unknown,
+): boolean {
+  if (eventType === WHITEBOARD_EVENTS.ROOM_SIZE_LIMIT) return true;
+  if (eventType === WHITEBOARD_EVENTS.ROOM_SIZE_RECOVERED) return false;
+  if (eventType === WHITEBOARD_EVENTS.STATE && typeof stateValue === "boolean") {
+    return stateValue;
+  }
+  return current;
+}
 
 interface WhiteboardRoomStateOptions {
   channel: RoomChannel;

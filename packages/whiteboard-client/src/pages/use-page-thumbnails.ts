@@ -170,8 +170,9 @@ async function waitForPageImages(
   editor: Editor,
   shapeIds: readonly TLShapeId[],
   resolveAssetUrl: ((src: string) => string) | undefined,
-  signal: { disposed: boolean },
+  signal: AbortSignal,
 ): Promise<void> {
+  if (signal.aborted) return;
   const sources = new Set<string>();
   for (const id of shapeIds) {
     const shape = editor.getShape(id);
@@ -199,26 +200,22 @@ async function waitForPageImages(
       }),
   );
 
-  // Both timers are cleared on *every* exit, not only the one that fires them.
-  // A race whose losing branch keeps a 250ms interval alive leaks one per
-  // render, and this runs once per page per refresh.
   let timer: number | undefined;
-  let poll: number | undefined;
+  let onAbort: (() => void) | undefined;
   try {
     await Promise.race([
       Promise.all(decodes),
       new Promise<void>((resolve) => {
         timer = window.setTimeout(resolve, ASSET_WAIT_MS);
+        onAbort = () => resolve();
         // A board closed mid-wait should not hold the render open until the
         // ceiling expires.
-        poll = window.setInterval(() => {
-          if (signal.disposed) resolve();
-        }, 250);
+        signal.addEventListener("abort", onAbort, { once: true });
       }),
     ]);
   } finally {
     if (timer !== undefined) window.clearTimeout(timer);
-    if (poll !== undefined) window.clearInterval(poll);
+    if (onAbort) signal.removeEventListener("abort", onAbort);
   }
 }
 
@@ -579,7 +576,8 @@ export function useWhiteboardPageThumbnails({
   useEffect(() => {
     if (!editor || !enabled) return;
 
-    const signal = { disposed: false };
+    const controller = new AbortController();
+    const { signal } = controller;
     let idleHandle: number | null = null;
     let retryTimer: number | null = null;
     // This belongs to this effect generation. Keeping it in a component-wide
@@ -703,7 +701,7 @@ export function useWhiteboardPageThumbnails({
       }
 
       await waitForPageImages(editor, content.shapeIds, resolveAssetUrlRef.current, signal);
-      if (signal.disposed) return;
+      if (signal.aborted) return;
 
       const shapeIds = forceRenderSingleFrameLikeShape([page.id, ...content.shapeIds]);
       let image: { blob: Blob; width: number; height: number } | undefined;
@@ -728,7 +726,7 @@ export function useWhiteboardPageThumbnails({
       } catch {
         image = undefined;
       }
-      if (signal.disposed) return;
+      if (signal.aborted) return;
 
       if (!image || image.width === 0 || image.height === 0) {
         markFailed(key, true);
@@ -771,7 +769,7 @@ export function useWhiteboardPageThumbnails({
 
     const pump = () => {
       idleHandle = null;
-      if (signal.disposed || running) return;
+      if (signal.aborted || running) return;
       const page = nextPage();
       if (!page) {
         armRetry();
@@ -780,12 +778,12 @@ export function useWhiteboardPageThumbnails({
       running = true;
       void render(page).finally(() => {
         running = false;
-        if (!signal.disposed) schedule();
+        if (!signal.aborted) schedule();
       });
     };
 
     const schedule = () => {
-      if (signal.disposed || idleHandle !== null || running) return;
+      if (signal.aborted || idleHandle !== null || running) return;
       // Idle time, so a thumbnail refresh never lands in the same frame as a
       // stroke. `requestIdleCallback` is still missing from Safari's stable
       // release, hence the timeout.
@@ -822,7 +820,7 @@ export function useWhiteboardPageThumbnails({
     schedule();
 
     return () => {
-      signal.disposed = true;
+      controller.abort();
       wakeRef.current = () => {};
       if (retryTimer !== null) window.clearTimeout(retryTimer);
       if (idleHandle !== null) {

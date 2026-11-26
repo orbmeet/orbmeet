@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/platform/ai/gemini", () => ({ createGeminiTextAdapter: vi.fn() }));
-vi.mock("@tanstack/ai", () => ({ chat: vi.fn() }));
+vi.mock("@/platform/ai/gemini", () => ({ generateGeminiJson: vi.fn() }));
 
 const { toMoments } = await import("./generate-summary.server");
 

@@ -6,7 +6,6 @@ import type { OrganizationRole } from "@/modules/organizations/contract/types";
 import type { PlanLimits } from "@/modules/billing/contract/plan-limits";
 import type { SubscriptionTier } from "@/modules/billing/contract/types";
 import type { SpaceMembershipRole, SpaceRole } from "@/modules/spaces/contract/types";
-import { compareCodeUnitStrings } from "@/lib/code-unit-order";
 import type { Database } from "@orbmeet/db";
 import { requireSpaceSlug } from "@/modules/spaces/contract/slug";
 import {
@@ -66,8 +65,8 @@ export async function selectSpacesForUser(db: Database, userId: string) {
   const byId = new Map<
     string,
     ReturnType<typeof buildSpaceAccess>
-      & (typeof directRows)[number]["space"]
-      & { organizationName: string | null }
+      & Omit<(typeof directRows)[number]["space"], "slug">
+      & { slug: string; organizationName: string | null }
   >();
   for (const row of directRows) {
     const organizationRole = effectiveOrganizationRole(
@@ -89,12 +88,9 @@ export async function selectSpacesForUser(db: Database, userId: string) {
     });
   }
 
-  return Array.from(byId.values())
-    .map((space) => ({ ...space, slug: requireSpaceSlug(space.slug) }))
-    .sort((a, b) => {
-      const timeDiff = b.updatedAt.getTime() - a.updatedAt.getTime();
-      return timeDiff !== 0 ? timeDiff : compareCodeUnitStrings(b.id, a.id);
-    });
+  // SQL already orders by `updated_at DESC, id DESC` (BINARY / code-unit order),
+  // and Map preserves insertion order while deduplicating by space id.
+  return Array.from(byId.values());
 }
 
 /**

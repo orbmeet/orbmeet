@@ -1,13 +1,13 @@
 import { useMemo } from "react";
 import type { Participant, Room } from "livekit-client";
 import { ParticipantKind, RoomEvent } from "livekit-client";
-import { useParticipants } from "@livekit/components-react";
 import { isGuestIdentity, type MeetingRole } from "@/modules/meetings/contract/constants";
 import {
   PARTICIPANT_ATTRIBUTE,
   parseParticipantRole,
   participantKeyOfAttributes,
 } from "@/modules/meetings/contract/live-state";
+import { useRoomParticipants } from "./use-meeting-live-state";
 
 /**
  * Connections state for a participant. `role` is the privilege axis
@@ -58,8 +58,11 @@ function toConnection(participant: Participant): ParticipantConnection {
 }
 
 /** The meeting's people, local first; agents and recorders are left out. */
-export function useLiveKitConnections(room: Room | undefined): ParticipantConnection[] {
-  const participants = useParticipants({ room, updateOnlyOn: CONNECTION_EVENTS });
+export function useLiveKitConnections(
+  room: Room | undefined,
+  providedParticipants?: Participant[],
+): ParticipantConnection[] {
+  const participants = useRoomParticipants(room, providedParticipants, CONNECTION_EVENTS);
   return useMemo(
     () => participants.filter((p) => p.kind === ParticipantKind.STANDARD).map(toConnection),
     [participants],

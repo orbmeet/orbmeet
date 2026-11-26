@@ -2,9 +2,27 @@ import type { TLShapeId } from "tldraw";
 import type { PageManager } from "../pages/page-manager";
 import { WHITEBOARD_CONFIG } from "@orbmeet/whiteboard-core/config";
 import { PDF_MAX_IMPORT_SIZE, PDF_MAX_RENDER_PAGES } from "@orbmeet/whiteboard-core/pdf-geometry";
-import { WHITEBOARD_SYNC_ROUTES, whiteboardPdfImportRoute } from "@orbmeet/whiteboard-core/protocol";
-import { whiteboardSyncUrl } from "../sync/service-endpoints";
-import { PdfImportPartialError } from "./pdf-import-partial-error";
+import { WHITEBOARD_SYNC_ROUTES, whiteboardPdfImportRoute, whiteboardSyncUrl } from "@orbmeet/whiteboard-core/protocol";
+
+/**
+ * An import that stopped partway with pages already on the whiteboard.
+ *
+ * Cleanup deliberately keeps pages that were placed — they are live shapes the
+ * board owns now, not staged bytes to roll back — so "Import failed" was a lie
+ * that cost the user real work: they retried, and the retry placed a second
+ * copy of everything the first run had landed. The count travels with the
+ * error so the caller can say what is already there and let the user decide.
+ */
+export class PdfImportPartialError extends Error {
+  constructor(readonly pagesImported: number, cause: Error) {
+    super(
+      `${cause.message} ${pagesImported} page${pagesImported === 1 ? "" : "s"} ` +
+      `already landed on the whiteboard — remove them before importing again.`,
+    );
+    this.name = "PdfImportPartialError";
+    this.cause = cause;
+  }
+}
 
 /**
  * Import a PDF onto the whiteboard.

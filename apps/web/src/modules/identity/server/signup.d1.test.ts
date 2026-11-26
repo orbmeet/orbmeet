@@ -59,7 +59,7 @@ describe("verifyOtpImpl", () => {
 
     const [stored] = await db.select().from(users);
     expect(user).toEqual({
-      id: stored!.id,
+      id: stored.id,
       name: "Ada",
       email: "Ada@example.com",
       image: null,

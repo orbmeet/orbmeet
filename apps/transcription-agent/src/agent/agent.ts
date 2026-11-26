@@ -10,6 +10,7 @@ import {
   type Room,
   type TrackPublication,
 } from "@livekit/rtc-node";
+import { normalizeSpeechLanguage } from "@orbmeet/caption-protocol";
 import { RoomServiceClient, ServerError } from "livekit-server-sdk";
 import { loadAgentConfig, type AgentConfig } from "../config.js";
 import { TranscriptJournal } from "../outbox/transcript-journal.js";
@@ -18,7 +19,6 @@ import { AudioSource } from "./audio-source.js";
 import { CaptionPublisher } from "./caption-publisher.js";
 import { deepgramSocketFactory } from "./deepgram-socket.js";
 import { waitForDeparture, type PublisherPresence } from "./departure.js";
-import { normalizeLanguage } from "./languages.js";
 import { getPublisherJobTarget } from "./publisher-job.js";
 import {
   initialAssemblerState,
@@ -148,7 +148,7 @@ export default defineAgent({
     const supervisor = new TranscriptionSupervisor({
       source,
       open: deepgramSocketFactory(config),
-      language: normalizeLanguage(ctx.job.participant?.attributes[LANGUAGE_ATTRIBUTE]),
+      language: normalizeSpeechLanguage(ctx.job.participant?.attributes[LANGUAGE_ATTRIBUTE]),
       // Until the room says otherwise, nothing is sent (roomAllowsTranscription).
       enabled: roomAllowsTranscription(ctx.room.metadata),
       onEvent: handleEvent,
@@ -202,7 +202,7 @@ export default defineAgent({
     };
     const onAttributesChanged = (changed: Record<string, string>, participant: Participant) => {
       if (participant.identity !== participantIdentity || !(LANGUAGE_ATTRIBUTE in changed)) return;
-      supervisor.setLanguage(normalizeLanguage(participant.attributes[LANGUAGE_ATTRIBUTE]));
+      supervisor.setLanguage(normalizeSpeechLanguage(participant.attributes[LANGUAGE_ATTRIBUTE]));
     };
 
     ctx.room.on(RoomEvent.TrackPublished, onTrackPublished);
@@ -239,7 +239,7 @@ export default defineAgent({
       ctx.shutdown("publisher left before the transcription agent connected");
       return;
     }
-    supervisor.setLanguage(normalizeLanguage(publisher.attributes[LANGUAGE_ATTRIBUTE]));
+    supervisor.setLanguage(normalizeSpeechLanguage(publisher.attributes[LANGUAGE_ATTRIBUTE]));
     // The room's metadata is only known once connected.
     supervisor.setEnabled(roomAllowsTranscription(ctx.room.metadata));
     for (const publication of publisher.trackPublications.values()) {

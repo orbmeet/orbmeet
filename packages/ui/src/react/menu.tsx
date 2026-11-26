@@ -3,19 +3,18 @@ import * as stylex from "@stylexjs/stylex";
 import type { StyleXStyles } from "@stylexjs/stylex";
 import type { ComponentProps } from "react";
 
+import { motion } from "../styles/atoms";
 import { blur } from "../styles/surfaces";
 import { border, neutral, surface } from "../tokens/colors.stylex";
 import { zIndex } from "../tokens/layers.stylex";
 import { env } from "../tokens/media.stylex";
-import { duration, easing } from "../tokens/motion.stylex";
+import { duration } from "../tokens/motion.stylex";
 import { radii } from "../tokens/radii.stylex";
 import { shadows } from "../tokens/shadows.stylex";
 import { space } from "../tokens/space.stylex";
 import { leading, text, weight } from "../tokens/typography.stylex";
 import { glass } from "../tokens/wash.stylex";
 
-const STARTING = ":is([data-starting-style])";
-const ENDING = ":is([data-ending-style])";
 const HIGHLIGHTED = ":is([data-highlighted])";
 const DISABLED = ":is([data-disabled])";
 
@@ -31,12 +30,6 @@ const styles = stylex.create({
     padding: space.s1_5,
     boxShadow: shadows.elevated,
     outlineStyle: "none",
-    transformOrigin: "var(--transform-origin)",
-    opacity: { default: 1, [STARTING]: 0, [ENDING]: 0 },
-    scale: { default: 1, [STARTING]: 0.95, [ENDING]: 0.95 },
-    transitionProperty: "opacity, scale",
-    transitionDuration: { default: duration.fast, [env.reducedMotion]: "0s" },
-    transitionTimingFunction: easing.gentle,
   },
 
   /**
@@ -118,7 +111,7 @@ export function MenuContent({
         collisionAvoidance={{ side: "flip", align: "shift", fallbackAxisSide: "none" }}
         {...stylex.props(styles.positioner)}
       >
-        <BaseMenu.Popup {...props} {...stylex.props(styles.popup, blur.xl, sx)}>
+        <BaseMenu.Popup {...props} {...stylex.props(motion.popup, motion.popupAnchored, styles.popup, blur.xl, sx)}>
           {children}
         </BaseMenu.Popup>
       </BaseMenu.Positioner>

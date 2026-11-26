@@ -47,19 +47,6 @@ export function withDeadline<T>(promise: Promise<T>, ms: number, message: string
   return abortable(promise, deadline.signal).finally(() => clearTimeout(timer));
 }
 
-/** A controller that aborts when `parent` does, and can also abort on its own. */
-export function childController(parent: AbortSignal): AbortController {
-  const child = new AbortController();
-  if (parent.aborted) {
-    child.abort(parent.reason);
-    return child;
-  }
-  const onAbort = () => child.abort(parent.reason);
-  parent.addEventListener("abort", onAbort, { once: true });
-  child.signal.addEventListener("abort", () => parent.removeEventListener("abort", onAbort), { once: true });
-  return child;
-}
-
 function abortReason(signal: AbortSignal): Error {
   return signal.reason instanceof Error ? signal.reason : new Error("aborted");
 }

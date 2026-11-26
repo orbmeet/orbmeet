@@ -33,9 +33,9 @@ import { useMeetingUI } from "@/modules/meetings/client/use-meeting-ui";
 import { useMeetingScreenShare } from "@/modules/meetings/client/use-meeting-screen-share";
 import { useMeetingAdmissions } from "@/modules/meetings/client/use-meeting-admissions";
 import { setMeetingJoinPolicy } from "@/modules/meetings/server/runtime/live.functions";
-import { useMeetingRoomState } from "@/modules/meetings/client/use-meeting-live-state";
-import { useMeetingRecording } from "@/modules/meetings/client/use-meeting-recording";
-import { useMeetingStreaming } from "@/modules/meetings/client/use-meeting-streaming";
+import { useMeetingRoomState, useRoomParticipants } from "@/modules/meetings/client/use-meeting-live-state";
+import { CONNECTION_EVENTS } from "@/modules/meetings/client/use-livekit-connections";
+import { useMeetingRecording, useMeetingStreaming } from "@/modules/meetings/client/use-egress-control";
 import { useMeetingCaptions } from "@/modules/meetings/client/captions/use-meeting-captions";
 import { useMeetingCamera } from "@/modules/meetings/client/use-meeting-camera";
 import { useMeetingAudioDevice } from "@/modules/meetings/client/use-meeting-audio-device";
@@ -96,7 +96,6 @@ export interface LiveMeetingState {
   participantKey: string;
   currentUserName: string;
   connectionQuality: "excellent" | "good" | "poor" | "disconnected";
-  handleLiveKitRoomUpdate: ReturnType<typeof useMeetingLifecycle>["handleLiveKitRoomUpdate"];
   disconnectMeetingNow: () => Promise<void>;
 
   // ── Responsive ──
@@ -114,16 +113,6 @@ export interface LiveMeetingState {
 
   // ── Connections & participants ──
   connectedParticipants: ParticipantConnection[];
-  participantsList: Array<{
-    /** The connection's identity. */
-    id: string;
-    /** Their participant key: what a private thread with them is keyed by. */
-    key: string;
-    name: string;
-    role: ParticipantConnection["role"];
-    isGuest: boolean;
-    isMicOn?: boolean;
-  }>;
   moderators?: ReturnType<typeof useMeetingModerators>;
   removals?: ReturnType<typeof useMeetingRemovals>;
 
@@ -144,8 +133,7 @@ export interface LiveMeetingState {
   isHandRaised: boolean;
   raiseHand: () => void;
   lowerHand: () => void;
-  approveHandRaise: (identity: string) => void;
-  dismissHandRaise: (identity: string) => void;
+  resolveHandRaise: (identity: string) => void;
 
   // ── Screen share (slice from useMeetingScreenShare) ──
   screenShare: ReturnType<typeof useMeetingScreenShare>;
@@ -258,7 +246,6 @@ export function useLiveMeeting(
   const {
     roomInstance,
     mediaScope,
-    handleLiveKitRoomUpdate,
     disconnectMeetingNow,
   } = useMeetingLifecycle();
   const { localParticipant } = useLocalParticipant();
@@ -285,9 +272,9 @@ export function useLiveMeeting(
   );
   const canModerate = liveRole ? isModerationRole(liveRole) : joinResult.canModerate;
   const canManageMeeting = liveRole ? liveRole === "host" : joinResult.canManageMeeting;
-  // The coordinator publishes the join policy in room metadata, so a change by
-  // any manager reaches every moderator at once.
+  // Subscribe once to room metadata and room participants and fan out to sub-hooks.
   const roomState = useMeetingRoomState(roomInstance);
+  const roomParticipants = useRoomParticipants(roomInstance, undefined, CONNECTION_EVENTS);
   const joinPolicy = roomState?.joinPolicy ?? joinResult.joinPolicy;
   // The coordinator says the meeting ended before it removes anyone, so the
   // removal that follows is never taken for a kick to rejoin from.
@@ -298,7 +285,7 @@ export function useLiveMeeting(
   const [admissionPolicyPending, setAdmissionPolicyPending] = React.useState(false);
 
   // ── Connections, chat, hand raises, reactions ──
-  const connectedParticipants = useLiveKitConnections(roomInstance);
+  const connectedParticipants = useLiveKitConnections(roomInstance, roomParticipants);
 
   const handleSendError = React.useCallback(() => {
     logError("[Meeting] Failed to send message");
@@ -306,6 +293,7 @@ export function useLiveMeeting(
 
   const countdown = useSharedCountdown({
     room: roomInstance,
+    roomState,
     meetingId: joinResult.meetingId,
     connectionId: joinResult.connectionId,
     canControl: canModerate,
@@ -325,10 +313,10 @@ export function useLiveMeeting(
     isHandRaised,
     raiseHand,
     lowerHand,
-    approveHandRaise,
-    dismissHandRaise,
+    resolveHandRaise,
   } = useHandRaises({
     room: roomInstance,
+    participants: roomParticipants,
     meetingId: joinResult.meetingId,
     connectionId: joinResult.connectionId,
     canModerate,
@@ -338,6 +326,7 @@ export function useLiveMeeting(
   // ── Screen share ──
   const screenShare = useMeetingScreenShare({
     roomInstance,
+    participants: roomParticipants,
     canModerate,
     meetingId: joinResult.meetingId,
     connectionId: joinResult.connectionId,
@@ -349,6 +338,7 @@ export function useLiveMeeting(
     managerConnectionId: joinResult.connectionId,
     canModerate,
     room: roomInstance,
+    roomState,
     addToast,
   });
   const moderators = useMeetingModerators({
@@ -431,6 +421,7 @@ export function useLiveMeeting(
     recordingActive: joinResult.recordingActive ?? false,
     egressStateRevision: joinResult.egressStateRevision,
     roomInstance,
+    roomState,
     addToast,
   });
 
@@ -440,6 +431,7 @@ export function useLiveMeeting(
     streamingActive: joinResult.streamingActive ?? false,
     egressStateRevision: joinResult.egressStateRevision,
     roomInstance,
+    roomState,
     addToast,
   });
 
@@ -469,10 +461,9 @@ export function useLiveMeeting(
   const announcedRaisesRef = React.useRef<Set<string>>(new Set());
   React.useEffect(() => {
     if (!canModerate) return;
-    const pending = handRaiseQueue.filter((raise) => raise.status === "pending");
     const seen = announcedRaisesRef.current;
 
-    for (const raise of pending) {
+    for (const raise of handRaiseQueue) {
       if (seen.has(raise.nonce)) continue;
       seen.add(raise.nonce);
       // Sync replies reconstruct existing participant-owned state when a
@@ -546,20 +537,10 @@ export function useLiveMeeting(
   });
 
   // ── Derived ──
-  const participantsList = React.useMemo(
-    () =>
-      connectedParticipants.map((p) => ({
-        id: p.identity,
-        key: p.participantKey,
-        name: p.userName,
-        role: p.role,
-        isGuest: p.isGuest,
-        isMicOn: p.isMicrophoneEnabled,
-      })),
-    [connectedParticipants],
-  );
   const transcription = useMeetingTranscription({
     room: roomInstance,
+    roomState,
+    participants: roomParticipants,
     meetingId: joinResult.meetingId,
     connectionId: joinResult.connectionId,
     canModerate,
@@ -596,7 +577,6 @@ export function useLiveMeeting(
     participantKey,
     currentUserName,
     connectionQuality,
-    handleLiveKitRoomUpdate,
     disconnectMeetingNow,
 
     // Responsive
@@ -614,7 +594,6 @@ export function useLiveMeeting(
 
     // Connections & participants
     connectedParticipants,
-    participantsList,
     moderators,
     removals,
 
@@ -629,8 +608,7 @@ export function useLiveMeeting(
     isHandRaised,
     raiseHand,
     lowerHand,
-    approveHandRaise,
-    dismissHandRaise,
+    resolveHandRaise,
 
     // Cohesive sub-hook slices (exposed directly, matching ui/bgEffect)
     screenShare,

@@ -1,8 +1,10 @@
 import { isKey } from "../keyboard";
 import * as stylex from "@stylexjs/stylex";
 import { X } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+
+import { useCommittedRef } from "./use-committed-ref";
 
 import { neutral, surface } from "../tokens/colors.stylex";
 import { zIndex } from "../tokens/layers.stylex";
@@ -217,10 +219,7 @@ function useKeyboardInset(element: HTMLElement | null) {
  * unless it lands in `passThrough`, a dock the sheet stands on and leaves usable.
  */
 function useDismiss(element: HTMLElement | null, open: boolean, onClose: () => void, passThrough?: string) {
-  const onCloseRef = useRef(onClose);
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
+  const onCloseRef = useCommittedRef(onClose);
   useEffect(() => {
     if (!element || !open) return undefined;
     let dismissedAt = -Infinity;
@@ -252,7 +251,7 @@ function useDismiss(element: HTMLElement | null, open: boolean, onClose: () => v
       // The swallow outlives the sheet by the click it is waiting for.
       setTimeout(() => document.removeEventListener("click", onClick, true), SWALLOW_CLICK_MS);
     };
-  }, [element, open, passThrough]);
+  }, [element, onCloseRef, open, passThrough]);
 }
 
 /**
