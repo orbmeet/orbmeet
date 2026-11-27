@@ -248,7 +248,10 @@ export function EndedMeetingPage({
           {/* The board stays mounted: leaving the tab must not throw away a PDF being made. */}
           {hasPdf ? (
             <div role="tabpanel" id="meeting-panel-pdf" aria-labelledby="meeting-tab-pdf" hidden={active !== "pdf"} {...stylex.props(styles.panel, active !== "pdf" && styles.panelHidden)}>
-              <MeetingWhiteboardPanel meeting={meeting} onGenerated={refreshMeetingLists} />
+              {/* Keyed: the route keeps this page mounted from one meeting to the
+                  next, and nothing the panel holds (the selected board, a cached
+                  snapshot's viewer, a PDF in progress) belongs to the next one. */}
+              <MeetingWhiteboardPanel key={meeting.meetingId} meeting={meeting} onGenerated={refreshMeetingLists} />
             </div>
           ) : null}
           {active === "recording" && recording ? (

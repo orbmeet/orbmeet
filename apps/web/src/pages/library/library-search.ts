@@ -20,8 +20,10 @@ const WITHIN_DAYS: Record<LibraryWithin, number> = { week: 7, month: 31, year: 3
 export function sinceFor(within: LibraryWithin | undefined, now = Date.now()): number | undefined {
   if (!within) return undefined;
   const start = new Date(now - WITHIN_DAYS[within] * 86_400_000);
-  // From the start of that day, so the result does not shift as the clock moves.
-  return new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime();
+  // From the start of that day, so the result does not shift as the clock
+  // moves; the UTC day, so the server's prefetch and the viewer's page put the
+  // same `since` in the query key whatever zone each runs in.
+  return Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
 }
 
 /**

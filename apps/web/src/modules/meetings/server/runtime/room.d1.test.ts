@@ -7,6 +7,14 @@ import { seedPersonalSpace } from "@/test/fixtures";
 import { TEST_MEDIA_ENV, TEST_MEDIA_NODE } from "@/test/nodes";
 import { MemoryStorage } from "@/test/meeting-room-storage";
 import type { CoordinatorReply, CoordinatorRequest, JoinReply } from "./api";
+import type { MeetingWhiteboardEffects } from "./effects.server";
+
+/** The meeting runtime without a whiteboard server: every whiteboard effect is a no-op. */
+const noWhiteboardEffects: MeetingWhiteboardEffects = {
+  getRecorderCustomBaseUrl: async () => undefined,
+  pinSharedState: async () => {},
+  refreshAuthority: async () => {},
+};
 
 const livekit = vi.hoisted(() => ({
   updateParticipant: vi.fn(async () => ({})),
@@ -101,7 +109,7 @@ const env = () => ({
 type RoomRequest = CoordinatorRequest extends infer R ? R extends unknown ? Omit<R, "meetingId"> : never : never;
 
 function room(storage = new MemoryStorage()) {
-  const host = new MeetingRoomHost(env(), "meeting_1", storage);
+  const host = new MeetingRoomHost(env(), "meeting_1", storage, { whiteboardEffects: noWhiteboardEffects });
   const send = (request: RoomRequest): Promise<CoordinatorReply> =>
     host.handle({ ...request, meetingId: "meeting_1" });
   return { host, storage, send };
@@ -229,7 +237,7 @@ describe("MeetingRoomHost", () => {
     expect(storage.state!.room.strays).toEqual(["stranger_identity"]);
 
     // Evicted meanwhile: a fresh instance still owes the removal.
-    const reloaded = new MeetingRoomHost(env(), "meeting_1", storage, { now: () => Date.now() + 60_000 });
+    const reloaded = new MeetingRoomHost(env(), "meeting_1", storage, { now: () => Date.now() + 60_000, whiteboardEffects: noWhiteboardEffects });
     await reloaded.alarm();
     await reloaded.idle();
     expect(livekit.removeParticipant).toHaveBeenLastCalledWith("meet-meeting_1", "stranger_identity", expect.anything());
@@ -264,7 +272,7 @@ describe("MeetingRoomHost", () => {
     expect(storage.state!.meta.phase).toBe("ended");
     expect(storage.projectedFrom?.meta.phase).toBe("live");
 
-    const reloaded = new MeetingRoomHost(env(), "meeting_1", storage);
+    const reloaded = new MeetingRoomHost(env(), "meeting_1", storage, { whiteboardEffects: noWhiteboardEffects });
     await reloaded.alarm();
     await reloaded.idle();
     expect(storage.state).toBeNull();
@@ -308,7 +316,7 @@ describe("MeetingRoomHost", () => {
 
     // A presence check is owed.
     storage.state!.room.lastPresenceCheckAt = 0;
-    const reloaded = new MeetingRoomHost(env(), "meeting_1", storage);
+    const reloaded = new MeetingRoomHost(env(), "meeting_1", storage, { whiteboardEffects: noWhiteboardEffects });
     await reloaded.alarm();
     await reloaded.idle();
     expect(livekit.listParticipants).toHaveBeenCalledWith("meet-meeting_1");

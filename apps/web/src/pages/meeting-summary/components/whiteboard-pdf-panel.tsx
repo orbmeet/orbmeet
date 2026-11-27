@@ -278,6 +278,10 @@ function useWhiteboardPdfActions(
   const [activeRender, setActiveRender] = useState<ActivePdfRender | null>(null);
   const nextRenderIdRef = useRef(0);
   const operationInFlightRef = useRef(false);
+  // Rejects the render waiting on the hidden renderer. Once the panel is gone
+  // that renderer is too, and the wait would otherwise run to its timeout.
+  const abandonRenderRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => abandonRenderRef.current?.(), []);
 
   const renderBoardPdf = useCallback(
     async (
@@ -304,8 +308,11 @@ function useWhiteboardPdfActions(
           if (settled) return;
           settled = true;
           clearTimeout(timer);
+          abandonRenderRef.current = null;
           cb();
         };
+        abandonRenderRef.current = () =>
+          finish(() => reject(new Error("The Whiteboard renderer was closed.")));
         const timer = setTimeout(() => {
           finish(() => {
             setActiveRender((current) => (current?.id === renderId ? null : current));
@@ -545,13 +552,15 @@ export function MeetingWhiteboardPanel({
           whiteboardId: selectedDocumentId,
         },
       });
+      // Answers, not failures: a thrown error would be retried as transient.
       if (!result.snapshot) {
-        throw new Error("The Meeting Whiteboard is not available.");
+        return { unavailable: "The Meeting Whiteboard is not available." } as const;
       }
       if (result.pageIds.length === 0) {
-        throw new Error("No pages from this Whiteboard were presented or edited during the Meeting.");
+        return { unavailable: "No pages from this Whiteboard were presented or edited during the Meeting." } as const;
       }
       return {
+        unavailable: null,
         snapshot: roomSnapshotToStoreSnapshot(result.snapshot),
         pageIds: result.pageIds,
       };
@@ -661,7 +670,9 @@ export function MeetingWhiteboardPanel({
               ? { phase: "loading" }
               : snapshotQuery.isError
                 ? { phase: "error", error: errorMessage(snapshotQuery.error, "Could not load the Whiteboard.") }
-                : { phase: "ready", snapshot: snapshotQuery.data.snapshot, pageIds: snapshotQuery.data.pageIds };
+                : snapshotQuery.data.unavailable !== null
+                  ? { phase: "error", error: snapshotQuery.data.unavailable }
+                  : { phase: "ready", snapshot: snapshotQuery.data.snapshot, pageIds: snapshotQuery.data.pageIds };
 
   return (
     <div {...stylex.props(styles.panel)}>

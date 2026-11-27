@@ -422,6 +422,51 @@ describe("archived Space deletion", () => {
       db.query.whiteboardAssetReferences.findFirst({ where: { id: "ref_keep" } }),
     ).resolves.toBeDefined();
   });
+
+  it("yields progress, not a failure, when a board's objects outlast one pass", async () => {
+    const now = await seedSpace();
+    await db.insert(whiteboards).values({
+      id: "board_big", syncRoomId: "room_big", spaceId: "space_1", title: "Big", status: "active", createdAt: now, updatedAt: now,
+    });
+    await requestSpaceDeletion(appDb(), "space_1", "owner", now);
+
+    // More listing pages than one pass's R2 budget covers.
+    const PAGES = 40;
+    let listed = 0;
+    const bucket = {
+      delete: async () => {},
+      list: async ({ prefix, cursor }: { prefix: string; cursor?: string }) => {
+        if (prefix !== "whiteboards/board_big/") return { objects: [], truncated: false };
+        listed += 1;
+        const page = cursor ? Number(cursor) : 0;
+        return {
+          objects: [{ key: `${prefix}objects/${page}.bin` }],
+          truncated: page + 1 < PAGES,
+          cursor: String(page + 1),
+        };
+      },
+    } as unknown as R2Bucket;
+    installFakeSyncServer(emulatedSyncServer(new Map(), new Map([["board_big", "{}"]])));
+    const env = { ...TEST_WHITEBOARD_D1_ENV, R2_BUCKET: bucket } as unknown as Env;
+
+    // The board's serial scope answers over RPC, where the budget error is not
+    // an AppError; the pass must still end as progress, keeping the board row.
+    await expect(cleanupArchivedSpace(appDb(), env, "space_1")).resolves.toBe("progress");
+    await expect(db.query.whiteboards.findFirst({ where: { id: "board_big" } })).resolves.toBeDefined();
+    expect(listed).toBeGreaterThan(0);
+
+    // Later passes resume from the saved cursor and finish the board.
+    let pass: string;
+    let passes = 1;
+    do {
+      pass = await cleanupArchivedSpace(appDb(), env, "space_1");
+      passes += 1;
+    } while (pass === "progress" && passes < 20);
+    expect(pass).toBe("done");
+    // A page the budget ran out on is listed again by the pass that resumes it.
+    expect(listed).toBeGreaterThanOrEqual(PAGES);
+    await expect(db.query.whiteboards.findFirst({ where: { id: "board_big" } })).resolves.toBeUndefined();
+  });
 });
 
 describe("stranded Space purge sweep", () => {

@@ -255,14 +255,15 @@ export class CameraDirector {
     editor.on("event", onEvent);
 
     // The board's size: the container, the window, the visual viewport
-    // (mobile browser bars), and the end of any transition or animation on
-    // the container or one of its ancestors that moves the board without
-    // resizing it. Ignore unrelated transitions elsewhere in the document
-    // (button hovers, tooltips, dock animations).
+    // (mobile browser bars), and the end of any transition or animation that
+    // can move the board without resizing it: on the container, an ancestor,
+    // or a sibling of either (a side panel sliding in), which is to say an
+    // element whose parent holds the board. Transitions nested further away
+    // (button hovers, tooltips, dock items) cannot move it and are ignored.
     const syncGeometry = () => this.syncGeometry();
     const syncAncestorGeometry = (event: Event) => {
       const target = event.target;
-      if (target instanceof Node && target.contains(container)) {
+      if (target instanceof Node && (target.parentNode ?? target).contains(container)) {
         this.syncGeometry();
       }
     };

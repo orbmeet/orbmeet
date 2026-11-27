@@ -74,7 +74,8 @@ export async function joinMeetingImpl({
 }: {
   data: v.InferOutput<typeof joinMeetingSchema>;
   context: RequestFnContext;
-  resolveJoinSurface?: MeetingJoinSurfaceResolver;
+  /** Required: without it a join would come back with no whiteboard access at all. */
+  resolveJoinSurface: MeetingJoinSurfaceResolver;
 }) {
   try {
     const initialRow = await db
@@ -230,7 +231,7 @@ export async function joinMeetingImpl({
     // These do not depend on one another, and each is a round trip to D1.
     const [, surface, spaceTranscription] = await Promise.all([
       renewPermanentLink(db, meetingLink),
-      resolveJoinSurface ? resolveJoinSurface({ db, env, meetingId: meeting.id, participant }) : {},
+      resolveJoinSurface({ db, env, meetingId: meeting.id, participant }),
       // A Space admin's switch in the meeting can also set the Space's default.
       user ? manageableSpaceTranscription(db, meetingLink.spaceId, user.id) : null,
     ]);

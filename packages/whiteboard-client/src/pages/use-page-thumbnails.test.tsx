@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { StrictMode } from "react";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Editor, TLShapeId } from "tldraw";
@@ -513,5 +514,51 @@ describe("useWhiteboardPageThumbnails", () => {
 
     expect(URL.createObjectURL).not.toHaveBeenCalled();
     expect(thumbnailCache.write).not.toHaveBeenCalled();
+  });
+
+  it("keeps the board's cache, and restores from it, across a momentarily empty page list", async () => {
+    // The navigator is replaced along with the editor, and until the new one
+    // reads the document the page list is empty: that is not a deletion.
+    const pages = makePages(3);
+    const { editor } = createFakeEditor(pages);
+    thumbnailCache.read.mockResolvedValue(new Map(pages.map((page) => [
+      String(page.id),
+      { blob: new Blob(["cached"]), width: 88, height: 117, hash: "cached-hash" },
+    ])));
+    const board = { whiteboardUrl: "https://board.test/one", documentId: "doc-one" };
+    const { rerender } = render(<Probe editor={editor} pages={pages} currentPage={1} {...board} />);
+    await settle(2);
+    rerender(<Probe editor={editor} pages={[]} currentPage={1} {...board} />);
+    await settle(2);
+    rerender(<Probe editor={editor} pages={[...pages]} currentPage={1} {...board} />);
+    await settle(2);
+
+    expect(thumbnailCache.remove).not.toHaveBeenCalled();
+    expect(thumbnailCache.read).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps observing every card when effects re-run without a re-render", () => {
+    // StrictMode (and <Activity>) clean up and re-run effects, then re-attach
+    // the ref callbacks React already holds.
+    const live = new Set<Element>();
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        private readonly observed = new Set<Element>();
+        observe(node: Element) { this.observed.add(node); live.add(node); }
+        unobserve(node: Element) { this.observed.delete(node); live.delete(node); }
+        disconnect() { for (const node of this.observed) live.delete(node); this.observed.clear(); }
+      },
+    );
+    const pages = makePages(12);
+    const { editor } = createFakeEditor(pages);
+    const { container } = render(
+      <StrictMode>
+        <Probe editor={editor} pages={pages} currentPage={1} />
+      </StrictMode>,
+    );
+
+    expect(live.size).toBe(container.firstElementChild!.children.length);
+    expect(live.size).toBe(12);
   });
 });

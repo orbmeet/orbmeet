@@ -11,10 +11,8 @@ import {
 } from "./output-downloads.server";
 
 const getRecordingPlaybackUrlValidator = v.object({ artifactId: idSchema });
-const getWhiteboardPdfDownloadUrlValidator = v.object({
-  meetingId: idSchema,
-  whiteboardId: v.optional(idSchema),
-});
+// One PDF per meeting, every board it used merged into it.
+const getWhiteboardPdfDownloadUrlValidator = v.object({ meetingId: idSchema });
 
 export const getMeetingArtifactDownloadUrl = createServerFn({ method: "GET" })
   .middleware([authMiddleware])

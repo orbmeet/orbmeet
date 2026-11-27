@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Editor } from "tldraw";
 import type { WhiteboardPage } from "./page-manager";
 import { boardCacheKey } from "./page-thumbnail-signature";
@@ -42,16 +42,15 @@ export function useWhiteboardPageThumbnails({
     () => new Map(),
   );
 
-  const schedulerRef = useRef<PageThumbnailScheduler | null>(null);
-  const getScheduler = () => {
-    schedulerRef.current ??= new PageThumbnailScheduler(setByPageId);
-    return schedulerRef.current;
-  };
+  // One scheduler for the component's life. Its ref callbacks are handed to
+  // React, which can re-attach them after an effect cleanup without
+  // re-rendering, so cleanup stops the scheduler rather than replacing it.
+  const [scheduler] = useState(() => new PageThumbnailScheduler(setByPageId));
 
   const boardKey = boardCacheKey(whiteboardUrl, documentId);
 
   useEffect(() => {
-    getScheduler().sync({
+    scheduler.sync({
       editor,
       pages,
       currentPage,
@@ -59,16 +58,9 @@ export function useWhiteboardPageThumbnails({
       boardKey,
       resolveAssetUrl,
     });
-  }, [boardKey, currentPage, editor, enabled, pages, resolveAssetUrl]);
+  }, [boardKey, currentPage, editor, enabled, pages, resolveAssetUrl, scheduler]);
 
-  useEffect(() => {
-    return () => {
-      schedulerRef.current?.dispose();
-      schedulerRef.current = null;
-    };
-  }, []);
+  useEffect(() => () => scheduler.dispose(), [scheduler]);
 
-  const observe = useCallback((pageId: string) => getScheduler().observe(pageId), []);
-
-  return { byPageId, observe };
+  return { byPageId, observe: scheduler.observe };
 }

@@ -66,6 +66,7 @@ export async function getWhiteboardPdfDownloadUrlImpl({
   data: GetWhiteboardPdfDownloadUrlInput;
   context: AuthFnContext;
 }) {
+  await enforceRateLimit(env, `meeting-artifact:download:${user.id}`);
   await assertMeetingHistoryAccess(db, data.meetingId, user.id);
 
   const artifact = await db.query.meetingArtifacts.findFirst({

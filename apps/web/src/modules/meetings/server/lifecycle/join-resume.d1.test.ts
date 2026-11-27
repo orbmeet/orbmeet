@@ -84,6 +84,7 @@ describe("joining back into a meeting that ended", () => {
         resumeMeetingId: "meet_ended",
       },
       context: context(),
+      resolveJoinSurface: async () => ({}),
     });
 
     expect(result).toMatchObject({ state: "blocked", code: "MEETING_ENDED", retryable: false });
@@ -115,6 +116,7 @@ describe("joining back into a meeting that ended", () => {
     const result = await joinMeetingImpl({
       data: { code: "res-umes-lnk", clientAttemptId: crypto.randomUUID(), resumeMeetingId: "meet_ended" },
       context: context(),
+      resolveJoinSurface: async () => ({}),
     });
 
     expect(result).toMatchObject({ state: "blocked", code: "MEETING_ENDED" });

@@ -245,9 +245,8 @@ describe("durable object cleanup", () => {
 
 describe("what the cleanup queue counts as a reference", () => {
   // A column holding an R2 key the queue does not know of is a reference it
-  // would delete the object under. Not references: the queue's own rows, and
-  // a retired column nothing writes (see its note in the schema).
-  const NOT_REFERENCES = new Set(["r2_object_cleanup_tasks.r2_key", "whiteboards.current_snapshot_r2_key"]);
+  // would delete the object under. Not a reference: the queue's own rows.
+  const NOT_REFERENCES = new Set(["r2_object_cleanup_tasks.r2_key"]);
 
   it("knows every column that holds an R2 key", () => {
     const columns = (Object.values(schema) as unknown[])

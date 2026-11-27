@@ -72,7 +72,9 @@ function collectServerFnLocalNames(parsed: ReturnType<typeof parseSource>): stri
       specifier.startsWith("@/server/") ||
       specifier.includes("/server/") ||
       specifier.endsWith("/server") ||
-      specifier.includes(".server");
+      specifier.includes(".server") ||
+      // Server functions the app layer composes live in app/rpc/*.functions.ts.
+      specifier.includes(".functions");
     if (!isServerModule) return [];
     return staticImport.entries
       .filter((entry) => !entry.isType)

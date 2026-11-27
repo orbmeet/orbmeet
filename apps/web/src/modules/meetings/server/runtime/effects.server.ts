@@ -51,7 +51,7 @@ export interface EffectContext {
   db: Database;
   /** The committed state that claimed the effect. */
   state: MeetingState;
-  whiteboardEffects?: MeetingWhiteboardEffects;
+  whiteboardEffects: MeetingWhiteboardEffects;
 }
 
 /** Run one effect and describe its outcome as the input the core applies next. */
@@ -196,25 +196,21 @@ export async function executeEffect(
       return { kind: "whiteboardCaptureStarted" };
 
     case "whiteboard.pin":
-      // Without a sync server (or configured adapter) there is nothing to pin; the capture records why.
-      if (whiteboardEffects) {
-        await whiteboardEffects.pinSharedState(db, env, {
-          meetingId: effect.meetingId,
-          usageId: effect.pin.usageId,
-          commandId: effect.pin.commandId,
-          startBefore: effect.pin.startBefore,
-        });
-      }
+      // Without a sync server the adapter has nothing to pin; the capture records why.
+      await whiteboardEffects.pinSharedState(db, env, {
+        meetingId: effect.meetingId,
+        usageId: effect.pin.usageId,
+        commandId: effect.pin.commandId,
+        startBefore: effect.pin.startBefore,
+      });
       return { kind: "whiteboardPinned", usageId: effect.pin.usageId, commandId: effect.pin.commandId };
 
     case "whiteboard.authority":
-      if (whiteboardEffects) {
-        await whiteboardEffects.refreshAuthority(
-          env,
-          effect.syncRoomId,
-          effect.narrowed ? effect.principalKey : undefined,
-        );
-      }
+      await whiteboardEffects.refreshAuthority(
+        env,
+        effect.syncRoomId,
+        effect.narrowed ? effect.principalKey : undefined,
+      );
       return { kind: "whiteboardAuthorityApplied", admissionId: effect.admissionId, hash: effect.hash };
 
     case "meeting.discard":
@@ -248,7 +244,7 @@ async function startEgress(
   node: MediaNode,
   meetingId: string,
   effect: Extract<Effect, { kind: "livekit.startEgress" }>,
-  whiteboardEffects?: MeetingWhiteboardEffects,
+  whiteboardEffects: MeetingWhiteboardEffects,
 ): Promise<EffectSucceeded["result"]> {
   const roomName = liveKitMeetingRoomName(meetingId);
   const output = effect.mode === "recording"
@@ -265,7 +261,7 @@ async function startEgress(
     .innerJoin(meetingLinks, eq(meetingLinks.id, meetings.meetingLinkId))
     .where(eq(meetings.id, meetingId))
     .limit(1);
-  const customBaseUrl = await whiteboardEffects?.getRecorderCustomBaseUrl(env, meetingId, {
+  const customBaseUrl = await whiteboardEffects.getRecorderCustomBaseUrl(env, meetingId, {
     egressMode: effect.mode,
     meetingCode: link?.code ?? null,
   });

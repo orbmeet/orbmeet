@@ -260,12 +260,21 @@ export async function purgeSpaceWhiteboard(
 
   // Incoming references are stable here: duplication runs in this same
   // serial scope before it reads the source.
-  await purgeSpaceWhiteboardR2Objects(db, env.R2_BUCKET, {
-    spaceId,
-    whiteboardId,
-    budget: r2Budget,
-    beforePrefixDelete: () => purgeWhiteboardRoom(env, whiteboardId),
-  });
+  try {
+    await purgeSpaceWhiteboardR2Objects(db, env.R2_BUCKET, {
+      spaceId,
+      whiteboardId,
+      budget: r2Budget,
+      beforePrefixDelete: () => purgeWhiteboardRoom(env, whiteboardId),
+    });
+  } catch (error) {
+    // Answered as a spent budget, not thrown: this runs behind Durable Object
+    // RPC, where only an AppError keeps its identity, and the caller must see
+    // progress rather than a failure to retry. The prefix saved its cursor;
+    // the row stays until a later pass finishes it.
+    if (error instanceof R2CleanupBudgetExhaustedError) return { remainingOperations: 0 };
+    throw error;
+  }
   await db
     .delete(whiteboards)
     .where(and(eq(whiteboards.id, whiteboardId), eq(whiteboards.spaceId, spaceId)));

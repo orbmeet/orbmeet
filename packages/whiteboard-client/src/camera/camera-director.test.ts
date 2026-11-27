@@ -85,6 +85,28 @@ describe("CameraDirector", () => {
     for (let frame = 0; frame < frames; frame += 1) editor.emit("tick", 16);
   }
 
+  it("re-measures the board after a transition that can move it, and only then", () => {
+    const { navigator, editor } = boardWithPages(2);
+    const container = editor.getContainer();
+    const sibling = document.createElement("aside");
+    const button = document.createElement("button");
+    sibling.append(button);
+    container.before(sibling);
+    const sync = vi.spyOn(navigator.director, "syncGeometry");
+    const end = (target: Element) => target.dispatchEvent(new Event("transitionend", { bubbles: true }));
+
+    // A side panel sliding in beside the board moves it without resizing it.
+    end(sibling);
+    expect(sync).toHaveBeenCalledTimes(1);
+    // So does the shell around it.
+    end(container.parentElement!);
+    expect(sync).toHaveBeenCalledTimes(2);
+    // A button's hover inside that panel cannot.
+    end(button);
+    expect(sync).toHaveBeenCalledTimes(2);
+    sibling.remove();
+  });
+
   it("re-places a page when the board changes size, with no waiting", () => {
     const { editor, navigator, resize, pages } = boardWithPages(3);
     navigator.director.go({ kind: "page", pageId: pages[1].id }, { animate: false });

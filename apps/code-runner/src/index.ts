@@ -68,7 +68,9 @@ declare global {
 
 const SECRET_HEADER = "X-Code-Runner-Secret";
 const NO_STORE = { "Cache-Control": "no-store" };
-const MAX_REQUEST_BYTES = 256 * 1024;
+// apps/web accepts 256 KiB from the browser and forwards it re-serialized with
+// the sandbox and run ids added, so the runner allows a little more than that.
+const MAX_REQUEST_BYTES = 256 * 1024 + 4 * 1024;
 
 async function readBoundedJson(request: Request): Promise<
   | { ok: true; body: unknown }
@@ -93,6 +95,9 @@ async function readBoundedJson(request: Request): Promise<
       }
       chunks.push(value);
     }
+  } catch {
+    // The caller went away or the body stream broke mid-read.
+    return { ok: false, status: 400, error: "Invalid JSON" };
   } finally {
     reader.releaseLock();
   }

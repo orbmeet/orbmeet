@@ -62,7 +62,8 @@ export interface MeetingRoomStorage {
 
 export interface MeetingRoomOptions {
   now?: () => number;
-  whiteboardEffects?: MeetingWhiteboardEffects;
+  /** Required: a host without it would skip whiteboard effects and still report them done. */
+  whiteboardEffects: MeetingWhiteboardEffects;
 }
 
 /**
@@ -84,7 +85,7 @@ export interface MeetingRoomOptions {
 export class MeetingRoomHost {
   private readonly db: Database;
   private readonly now: () => number;
-  private readonly whiteboardEffects?: MeetingWhiteboardEffects;
+  private readonly whiteboardEffects: MeetingWhiteboardEffects;
   /** Undefined until loaded; null for a meeting with no state. */
   private state: MeetingState | null | undefined;
   /**
@@ -101,7 +102,7 @@ export class MeetingRoomHost {
     private readonly env: Env,
     private readonly meetingId: string,
     private readonly storage: MeetingRoomStorage,
-    options: MeetingRoomOptions = {},
+    options: MeetingRoomOptions,
   ) {
     this.db = createDb(env.DB);
     this.now = options.now ?? Date.now;

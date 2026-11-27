@@ -2,7 +2,7 @@
 // Internal ids and server-only fields stay out unless --raw is used.
 
 import type { ApiAttendee, ApiSchedule, ApiTargets, RetrievedMeeting } from "./api.ts";
-import { CLOUD_API_URL } from "./config.ts";
+import { apiBaseUrl } from "./config.ts";
 
 interface PublicAttendee {
   name?: string;
@@ -76,7 +76,7 @@ export function publicSchedule(schedule: ApiSchedule): PublicSchedule {
     organizer: schedule.organizerName || undefined,
     attendeeCount: schedule.attendeeCount,
     attendees: schedule.attendees?.map(publicAttendee),
-    joinUrl: schedule.code ? `${CLOUD_API_URL}/${schedule.code}` : undefined,
+    joinUrl: schedule.code ? `${apiBaseUrl()}/${schedule.code}` : undefined,
     canManage: schedule.canManage,
   };
 }

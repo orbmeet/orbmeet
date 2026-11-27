@@ -38,7 +38,10 @@ async function readStoredToken(): Promise<string | undefined> {
   return token === undefined || token === null ? undefined : String(token);
 }
 
-function resolveApiUrl(): string {
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** The Orb Meet origin this CLI talks to, and that the links it prints point at. */
+export function apiBaseUrl(): string {
   const override = process.env.ORBMEET_API_URL?.trim();
   if (!override) return CLOUD_API_URL;
   let parsed: URL;
@@ -50,6 +53,14 @@ function resolveApiUrl(): string {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error("ORBMEET_API_URL must use http:// or https://");
   }
+  // The token goes out as a bearer header on every request.
+  if (parsed.protocol === "http:" && !LOOPBACK_HOSTS.has(parsed.hostname)) {
+    throw new Error("ORBMEET_API_URL must use https:// unless it points at this machine");
+  }
+  // Request paths are appended to it as text.
+  if (parsed.search || parsed.hash || parsed.username || parsed.password) {
+    throw new Error("ORBMEET_API_URL must be a base URL, without credentials, query or fragment");
+  }
   return parsed.toString().replace(/\/+$/, "");
 }
 
@@ -60,7 +71,7 @@ export async function readConfig(): Promise<CliConfig> {
   if (!token) {
     throw new Error("Orb Meet is not configured. Pipe a token to: orbmeet configure");
   }
-  return { url: resolveApiUrl(), token };
+  return { url: apiBaseUrl(), token };
 }
 
 /**

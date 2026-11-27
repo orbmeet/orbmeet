@@ -217,7 +217,9 @@ function generate() {
     for (const index of targetIndexes) if (index.tableName === name) statements.push(index.sql);
   }
   for (const { table, statement } of plainDropColumns) {
-    if (plainAlteredTables.has(table)) statements.push(statement.replace(/;+$/, ""));
+    // A table the subtree pulled in as a dependent is rebuilt from the target
+    // schema, already without the column: dropping it again would fail.
+    if (plainAlteredTables.has(table) && !subtree.has(table)) statements.push(statement.replace(/;+$/, ""));
   }
   for (const index of keyIndexes) statements.push(`DROP INDEX \`${index.name}_rebuild\``);
   statements.push("PRAGMA optimize");

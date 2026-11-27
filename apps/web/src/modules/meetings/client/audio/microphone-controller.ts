@@ -56,13 +56,6 @@ export class MicrophoneController {
   private expectedPortState: MicrophoneIntent | null = null;
   /** Off because the device went away while on; nobody chose it. */
   private lost = false;
-  /**
-   * The generation a mute could not be applied for. LiveKit refused it, and
-   * asking again at once would refuse again — in a loop of microtasks that
-   * never yields to the page. It is tried again when something changes: a new
-   * intent, the track changing under us, or a reconnect asking for intent.
-   */
-  private unappliedGeneration: number | null = null;
 
   constructor(
     private readonly port: MicrophoneControllerPort,
@@ -184,7 +177,6 @@ export class MicrophoneController {
    * a full reconnect that could not publish the microphone again.
    */
   driveToIntent(): void {
-    this.unappliedGeneration = null;
     this.kick();
   }
 
@@ -193,7 +185,6 @@ export class MicrophoneController {
   }
 
   private needsWork(): boolean {
-    if (this.unappliedGeneration === this.generation) return false;
     const desiredOn = this.intent === "on";
     if (desiredOn !== this.port.isMicrophoneEnabled) return true;
     return desiredOn && this.verifiedGeneration !== this.generation;
@@ -234,12 +225,16 @@ export class MicrophoneController {
           await this.setPortEnabled(desiredOn);
         } catch (error) {
           this.options.onFailure?.(desiredOn ? "enable" : "disable", error);
-          // An unmute that cannot be applied falls back to muted, and the loop
-          // settles there. A mute that cannot be applied waits for a change.
+          // Either way the loop settles on the state the track is really in,
+          // so the button never shows a microphone muted that is still live.
+          // An unmute that cannot be applied falls back to muted. A mute that
+          // cannot be applied leaves the microphone on, as intent, for the user
+          // to try again: retrying at once would be refused again, in a loop of
+          // microtasks that never yields to the page.
           if (desiredOn) {
             this.forceOff();
           } else {
-            this.unappliedGeneration = this.generation;
+            this.adoptLiveMicrophone();
             return;
           }
         }
@@ -276,6 +271,15 @@ export class MicrophoneController {
   private forceOff(): void {
     this.intent = "off";
     this.generation += 1;
+    this.verifiedGeneration = this.generation;
+    this.options.onStateChange?.();
+  }
+
+  /** The mute did not land: the user is still live, and is shown so. */
+  private adoptLiveMicrophone(): void {
+    this.intent = "on";
+    this.generation += 1;
+    // Already publishing; the refusal is no reason to run the repair ladder.
     this.verifiedGeneration = this.generation;
     this.options.onStateChange?.();
   }

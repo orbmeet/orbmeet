@@ -169,8 +169,7 @@ const SNAPSHOT_DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
  */
 function snapshotLabel(snapshot: Snapshot): string {
   if (snapshot.kind === "pre_restore") return "Before restore";
-  return snapshot.meetingTitle
-    ?? (snapshot.kind === "meeting_end" ? "A Meeting" : "Manual snapshot");
+  return snapshot.meetingTitle ?? "A Meeting";
 }
 
 /**

@@ -103,6 +103,26 @@ describe("saveToken and readConfig", () => {
     await expect(readConfig()).rejects.toThrow("ORBMEET_API_URL");
   });
 
+  it("sends the token in clear only to this machine", async () => {
+    const { readConfig } = await loadConfig();
+    process.env.ORBMEET_TOKEN = "env-token";
+    process.env.ORBMEET_API_URL = "http://staging.orbmeet.com";
+    await expect(readConfig()).rejects.toThrow("https://");
+    for (const local of ["http://localhost:3000", "http://127.0.0.1:3000", "http://[::1]:3000"]) {
+      process.env.ORBMEET_API_URL = local;
+      await expect(readConfig()).resolves.toEqual({ url: local, token: "env-token" });
+    }
+  });
+
+  it("rejects ORBMEET_API_URL values that request paths cannot be appended to", async () => {
+    const { readConfig } = await loadConfig();
+    process.env.ORBMEET_TOKEN = "env-token";
+    for (const value of ["https://orbmeet.test/?x=1", "https://orbmeet.test/#top", "https://user:pw@orbmeet.test"]) {
+      process.env.ORBMEET_API_URL = value;
+      await expect(readConfig()).rejects.toThrow("base URL");
+    }
+  });
+
   it("publishes complete JSON when configure commands overlap", async () => {
     const { saveToken, CONFIG_PATH } = await loadConfig();
     await Promise.all(Array.from({ length: 20 }, (_, index) => saveToken(`token_${index}`)));

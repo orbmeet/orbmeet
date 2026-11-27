@@ -127,7 +127,7 @@ describe("MicrophoneController", () => {
     expect(port.isMicrophoneEnabled).toBe(false);
   });
 
-  it("waits for a change rather than retrying a mute that cannot be applied", async () => {
+  it("shows a mute that cannot be applied as still live, without retrying it on its own", async () => {
     const { port } = createPort({ startOn: true });
     const onFailure = vi.fn();
     const controller = new MicrophoneController(port, "on", { recover: healthy, onFailure });
@@ -141,12 +141,16 @@ describe("MicrophoneController", () => {
     expect(controller.pending).toBe(false);
     expect(setEnabled).toHaveBeenCalledTimes(1);
     expect(onFailure).toHaveBeenCalledWith("disable", expect.any(Error));
+    // The button follows the track, which is still publishing.
+    expect(controller.intentOn).toBe(true);
+    expect(port.isMicrophoneEnabled).toBe(true);
 
-    // A reconnect asks for intent again; this time the mute lands.
+    // Pressing mute again tries again; this time the mute lands.
     setEnabled.mockImplementation(apply);
-    controller.driveToIntent();
+    controller.toggle();
     await vi.waitFor(() => expect(controller.pending).toBe(false));
     expect(setEnabled).toHaveBeenCalledTimes(2);
+    expect(controller.intentOn).toBe(false);
     expect(port.isMicrophoneEnabled).toBe(false);
   });
 

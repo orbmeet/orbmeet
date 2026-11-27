@@ -27,7 +27,7 @@ import {
   requiredOption,
   type ParsedArgs,
 } from "./args.ts";
-import { CLOUD_API_URL, CONFIG_PATH, decodeTokenText, readConfig, readPiped, saveToken } from "./config.ts";
+import { apiBaseUrl, CONFIG_PATH, decodeTokenText, readConfig, readPiped, saveToken } from "./config.ts";
 import { CliError, errorCode, errorMessage } from "./errors.ts";
 import { commandHelp, globalHelp } from "./help.ts";
 import { publicRetrievedMeeting, publicSchedule, publicSearchResults } from "./output.ts";
@@ -327,7 +327,7 @@ async function main(argv: readonly string[]): Promise<void> {
   if (command === "version") return version();
   if (command === "configure") {
     await saveToken(await readConfigureToken(args));
-    return emit({ configured: true, cloud: CLOUD_API_URL, configPath: CONFIG_PATH });
+    return emit({ configured: true, cloud: apiBaseUrl(), configPath: CONFIG_PATH });
   }
   if (command === "whoami") {
     const result = await request("/api/v1/me");
@@ -400,7 +400,7 @@ async function main(argv: readonly string[]): Promise<void> {
       meeting: {
         ...scheduleSummary(data),
         attendeeCount: data.attendeeCount,
-        joinUrl: data.code ? `${CLOUD_API_URL}/${data.code}` : undefined,
+        joinUrl: data.code ? `${apiBaseUrl()}/${data.code}` : undefined,
       },
     });
   }

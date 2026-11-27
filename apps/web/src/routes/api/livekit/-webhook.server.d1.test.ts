@@ -7,6 +7,14 @@ import { seedPersonalSpace } from "@/test/fixtures";
 import { TEST_MEDIA_ENV, TEST_MEDIA_NODE } from "@/test/nodes";
 import { MemoryStorage } from "@/test/meeting-room-storage";
 import type { CoordinatorRequest, JoinReply } from "@/modules/meetings/server/runtime/api";
+import type { MeetingWhiteboardEffects } from "@/modules/meetings/server/runtime/effects.server";
+
+/** The meeting runtime without a whiteboard server: every whiteboard effect is a no-op. */
+const noWhiteboardEffects: MeetingWhiteboardEffects = {
+  getRecorderCustomBaseUrl: async () => undefined,
+  pinSharedState: async () => {},
+  refreshAuthority: async () => {},
+};
 
 const livekit = vi.hoisted(() => ({
   updateParticipant: vi.fn(async () => ({})),
@@ -70,7 +78,7 @@ type RoomRequest = CoordinatorRequest extends infer R ? R extends unknown ? Omit
 
 /** A meeting a participant joined, then the host ended and its room drained. */
 async function endedMeeting() {
-  const host = new MeetingRoomHost(env, "meeting_1", new MemoryStorage());
+  const host = new MeetingRoomHost(env, "meeting_1", new MemoryStorage(), { whiteboardEffects: noWhiteboardEffects });
   coordinator.handle = (request) => host.handle(request as CoordinatorRequest);
   const send = (request: RoomRequest) => host.handle({ ...request, meetingId: "meeting_1" });
   const reply = await send({
