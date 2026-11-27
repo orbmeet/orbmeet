@@ -98,7 +98,7 @@ export class Room {
       { whiteboardId: dependencies.whiteboardId, initialSnapshot: dependencies.initialSnapshot },
     );
     this.sync = this.document.sync;
-    // Reading the spotlight and the page frames can still throw on a corrupt
+    // Reading the navigation state and the page frames can still throw on a corrupt
     // database. Nothing before here owns a timer, so the document is all there
     // is to release.
     try {

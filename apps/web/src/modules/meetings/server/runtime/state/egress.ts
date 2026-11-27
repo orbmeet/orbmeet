@@ -24,6 +24,8 @@ export function setEgress(
   if (on) {
     if (mode === "recording" && !state.meta.recordingEnabled) throw Errors.FORBIDDEN();
     if (egress.desired === mode) {
+      // The same request again. A different destination is not: the stream
+      // already wanted keeps its own until it is stopped.
       if (egress.target === (mode === "streaming" ? target : null)) return;
       throw Errors.VALIDATION("Stop the current stream before changing its destination.");
     }
@@ -43,6 +45,7 @@ export function setEgress(
     planEgressStart(state, now, outcome);
     return;
   }
+  // Off already, whether asked before or never on.
   if (egress.desired !== mode && egress.mode !== mode) return;
   egress.desired = null;
   egress.target = null;
@@ -50,7 +53,10 @@ export function setEgress(
 
 /**
  * What a look at the room's egresses says. `listedAt` is when a complete
- * listing was asked for, null for a webhook's word on one egress.
+ * listing was asked for, null for a webhook's word on one egress. A listing
+ * lands whenever it lands, so what it does not show is taken as gone only
+ * when it was asked for after this coordinator knew of it: a listing from
+ * before a restart says nothing of the restarted recording.
  */
 export function observeEgress(
   state: MeetingState,
@@ -63,10 +69,15 @@ export function observeEgress(
   egress.lastPolledAt = now;
   if (complete) state.room.unreachableSince = null;
 
+  // A start whose result never arrived: adopt what it created, or give it up.
+  // Only a listing asked for after the start began can know what it created.
   if (egress.op && !egress.egressId && listedAt !== null && listedAt >= egress.op.startedAt) {
+    // One already being stopped is not it.
     const orphan = observed.find(
       (info) => (info.status === "starting" || info.status === "active") && !egress.strays.includes(info.egressId),
     );
+    // One that no longer matches what is wanted is left untracked, and so
+    // stopped below.
     if (orphan && startStillWanted(egress, egress.op)) {
       egress.egressId = orphan.egressId;
       egress.mode = egress.desired;
@@ -79,14 +90,21 @@ export function observeEgress(
     egress.op = null;
   }
 
+  // While a start is unanswered, the egress it created may already be
+  // reported (LiveKit's `egress_started` webhook can beat the start's own
+  // reply). Only a complete listing may decide an untracked egress is left
+  // over; the orphan adoption above has already cleared the op when it did.
   const startUnanswered = egress.op !== null && !egress.egressId;
   for (const info of observed) {
     if (info.egressId === egress.egressId) continue;
+    // A stray that ended on its own needs no stop: LiveKit would refuse one.
     if (info.status === "complete" || info.status === "failed") {
       egress.strays = egress.strays.filter((egressId) => egressId !== info.egressId);
       continue;
     }
     if (startUnanswered) continue;
+    // Every egress in the room is this coordinator's: one it no longer tracks
+    // is left over from a lost result or an earlier failure.
     if (info.status === "starting" || info.status === "active") addStrayEgress(state, info.egressId);
   }
 
@@ -132,6 +150,11 @@ export function observeEgress(
   }
 }
 
+/**
+ * The tracked egress is over; say whether that was asked for. One already
+ * reported failed (`lastFailure`, cleared by every start) was announced when
+ * the failure was decided: the room only stops showing it.
+ */
 export function settleEgress(state: MeetingState, error: string | null): void {
   const egress = state.egress;
   const announced = egress.lastFailure !== null;

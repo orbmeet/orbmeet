@@ -46,6 +46,7 @@ export function decide(
   now: number,
 ): void {
   const wasPending = admission.status === "pending";
+  // What its connections were, before this decision changes what it resolves to.
   const roleBefore = roleOf(state, admission);
   admission.status = status;
   admission.decidedByUserId = decidedByUserId;
@@ -73,7 +74,9 @@ export function decide(
 
 /**
  * Apply a user's Space authority as read no earlier than `readAt`. A read
- * requested before an admission's role last changed is not applied over it.
+ * requested before an admission's role last changed (a periodic check that
+ * was in flight when a change was pushed) is not applied over it. Only a
+ * change is stamped, so a read that finds the role as it was keeps nothing.
  */
 export function applyAuthority(
   state: MeetingState,
@@ -132,6 +135,12 @@ export function bar(state: MeetingState, admission: Admission, decidedByUserId: 
 }
 
 /** The admissions a bar on `admission`'s owner reaches. */
+/**
+ * The admissions a bar on `admission`'s owner reaches: every one of the
+ * user's, or every guest's that came from the same network. A guest a
+ * moderator made a moderator was let in deliberately and is not reached
+ * through a network they share.
+ */
 export function keptOutBy(state: MeetingState, admission: Admission): Admission[] {
   return Object.values(state.admissions).filter((candidate) => {
     if (candidate.id === admission.id) return true;
@@ -163,6 +172,8 @@ function remember(list: string[], value: string): void {
 
 /**
  * Refuse a join by someone a moderator removed, whichever admission it names.
+ * A barred network turns away only attendee guests: whoever signs in is known
+ * by their own account, and a guest made moderator was let in deliberately.
  */
 export function refuseBarred(
   state: MeetingState,

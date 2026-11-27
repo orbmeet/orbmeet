@@ -3,6 +3,21 @@
 -- meeting_admissions, meeting_whiteboards, meetings, whiteboard_revisions, whiteboards with every table that depends on them (20 tables):
 -- create each as `<name>_new`, copy parents first, drop the originals leaves
 -- first, rename, then recreate their indexes and triggers.
+--
+-- Deploy order (see REBUILDS.md): this does not work under the code serving
+-- while it runs, and is meant for a quiet-hours deploy with no meeting open.
+-- Between `migrate` and the Worker deploy, the previous Worker's reads that
+-- select every column fail with "no such column": signing in and session
+-- lookups (users.transcribe_meetings), and anything reading meetings
+-- (retain_until, closing_*), whiteboards (current_snapshot_*) or
+-- meeting_whiteboards (start_*); ending a meeting fails on the closing_*
+-- writes. All of it succeeds again once the new Worker serves. If the Worker
+-- deploy fails after this has run, deploy again before anything else.
+--
+-- whiteboard_revisions.kind narrows to ('meeting_end', 'pre_restore'): a row of
+-- the retired 'checkpoint' or 'manual' kinds fails the copy and aborts this
+-- migration. Nothing has written either since the baseline; check first with
+-- `SELECT kind, count(*) FROM whiteboard_revisions GROUP BY kind`.
 DROP TRIGGER `meeting_links_one_time_occurrence_count_update`;--> statement-breakpoint
 DROP TABLE `whiteboard_edit_grants`;--> statement-breakpoint
 DROP TABLE `whiteboard_ai_usage`;--> statement-breakpoint

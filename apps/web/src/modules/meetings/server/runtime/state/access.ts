@@ -181,7 +181,9 @@ export function setScreenShare(
  * A time stamped on an admission. Its row holds every stamp at or after
  * `created_at` (`meeting_admissions_timestamps_check`), and `created_at` was
  * read from the clock of whichever machine created the admission; this commit
- * may run on one whose clock is behind it. Every admission time goes through here.
+ * may run on one whose clock is behind it. A stamp under it would fail the
+ * projection on every retry — the state is already kept, so the same values
+ * replay — and wedge the meeting. Every admission time goes through here.
  */
 export function admissionTime(admission: Admission, now: number): number {
   return Math.max(now, admission.createdAt);

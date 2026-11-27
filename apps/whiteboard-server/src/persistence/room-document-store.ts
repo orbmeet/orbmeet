@@ -9,8 +9,7 @@ import { logError, logWarn } from "../lib/log.ts";
  * Persistence-owned construction of a room's document database.
  *
  * One room database serves two readers over one handle: the `whiteboard_meta`
- * key/value table (board identity, generation, lifecycle, spotlight and
- * navigation) and tldraw's own `SQLiteSyncStorage` document storage. Opening
+ * key/value table (board identity, generation, lifecycle and navigation) and tldraw's own `SQLiteSyncStorage` document storage. Opening
  * both, deciding whether the initial snapshot seeds an empty database, and
  * closing in the right order are storage mechanics — the Room consumes them and
  * owns none of the SQL.
@@ -84,9 +83,8 @@ export function openRoomDocumentStore(dbPath: string, initialSnapshot: unknown):
 
     // `query` rather than `prepare`: it returns the statement compiled once for
     // that SQL and kept with the handle, while `prepare` recompiles every call.
-    // These run on the hot metadata path — persistSpotlight alone writes six
-    // keys per settled viewport — so recompiling would cost a fresh prepare per
-    // key per settle, for statements that never vary. Closing the handle
+    // Every metadata read and write goes through them, so recompiling would
+    // cost a fresh prepare per key for statements that never vary. Closing the handle
     // releases them, so closing the store needs no extra teardown.
     const getMeta = (key: string): string | null => {
       const row = db.query("SELECT value FROM whiteboard_meta WHERE key = ?").get(key) as
@@ -142,7 +140,7 @@ export function openRoomDocumentStore(dbPath: string, initialSnapshot: unknown):
 /**
  * A value that changes whenever the room's database does: tldraw's document
  * clock (every document change) and the room's own metadata (lifecycle,
- * spotlight, restore records). The backup compares it between runs. File
+ * navigation, restore records). The backup compares it between runs. File
  * times can't serve: a reader opening an idle room rewrites its WAL files.
  */
 export function roomDatabaseFingerprint(db: SqliteDatabase): string {

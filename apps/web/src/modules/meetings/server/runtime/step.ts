@@ -760,6 +760,8 @@ function applyResult(state: MeetingState, input: EffectResult, now: number): voi
   }
   switch (input.kind) {
     case "grantApplied": {
+      // Applied to the session it was planned for. A session that has
+      // replaced it since holds an unknown grant, which is planned anew.
       const attempt = state.attempts[input.attemptId];
       if (attempt && attempt.sid === input.sid) attempt.appliedGrant = input.hash;
       return;
@@ -780,6 +782,7 @@ function applyResult(state: MeetingState, input: EffectResult, now: number): voi
       }
       return;
     case "metadataApplied":
+      // Written to a room that has since gone: the current one holds none of it.
       if (input.room !== state.room.instance) return;
       state.room.appliedVersion = Math.max(state.room.appliedVersion, input.version);
       return;
@@ -791,6 +794,8 @@ function applyResult(state: MeetingState, input: EffectResult, now: number): voi
       }
       const op = egress.op;
       egress.op = null;
+      // Asked for before the host changed their mind: a refusal of it says
+      // nothing about what is wanted now, and what it started is not that.
       const wanted = startStillWanted(egress, op);
       if (!input.egressId) {
         if (wanted) failEgress(state, input.error ?? "LiveKit egress did not start.");
@@ -816,6 +821,7 @@ function applyResult(state: MeetingState, input: EffectResult, now: number): voi
       }
       return;
     case "roomDeleted":
+      // Nobody is left in a deleted room.
       for (const attempt of Object.values(state.attempts)) attempt.removed = true;
       state.room.strays = [];
       state.room.deleted = true;
@@ -828,6 +834,8 @@ function applyResult(state: MeetingState, input: EffectResult, now: number): voi
       state.postMeetingDone = true;
       return;
     case "whiteboardPinned": {
+      // A newer boundary of the same board replaced this pin meanwhile; that
+      // one still has to land.
       if (state.surface.pins[input.usageId]?.commandId === input.commandId) {
         delete state.surface.pins[input.usageId];
       }
@@ -848,6 +856,8 @@ function applyResult(state: MeetingState, input: EffectResult, now: number): voi
       recordFailure(state, input.key, now);
       giveUpStalePins(state, now);
       if (ROOM_LOOKS.has(input.key)) state.room.unreachableSince ??= now;
+      // A start that failed without an answer may still have created an
+      // egress: its op stays, and the room lookup adopts or clears it.
       return;
     }
   }
