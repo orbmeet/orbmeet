@@ -26,21 +26,6 @@ export interface RoomNavigationHost {
 const CONTROLLER_META_KEY = "navigationControllerPrincipal";
 
 /**
- * Where the room's spotlight was kept before navigation became a document
- * record. A room opened with them still set carries them over once
- * (`readLegacyNavigation`).
- */
-const LEGACY_SPOTLIGHT_META_KEYS = [
-  "spotlightPageId",
-  "spotlightPageNumber",
-  "spotlightPageCount",
-  "spotlightRev",
-  "spotlightRect",
-  "spotlightPresenterId",
-  "spotlightRoam",
-] as const;
-
-/**
  * Who drives the room's navigation.
  *
  * Where the room is lives in the document, as the navigation record its
@@ -176,31 +161,6 @@ export class RoomNavigation {
       // Roam is the presenter's call; a new presenter starts with everyone following.
       roam: current?.presenterId === userId ? current.roam : false,
     };
-  }
-
-  /**
-   * The navigation a room kept in its metadata before navigation was a
-   * document record, if it still holds any. The room writes it as the record
-   * once, then `clearLegacyNavigation`.
-   */
-  readLegacyNavigation(): RoomNavigationRecord | null {
-    const pageId = this.host.getMeta("spotlightPageId");
-    if (!pageId) return null;
-    const pageNumber = Number(this.host.getMeta("spotlightPageNumber"));
-    return createRoomNavigation({
-      pageId,
-      pageNumber: Number.isSafeInteger(pageNumber)
-        ? Math.min(WHITEBOARD_CONFIG.MAX_PAGES, Math.max(1, pageNumber))
-        : 1,
-      presenterId: this.host.getMeta("spotlightPresenterId") || null,
-      roam: this.host.getMeta("spotlightRoam") === "true",
-    });
-  }
-
-  clearLegacyNavigation(): void {
-    for (const key of LEGACY_SPOTLIGHT_META_KEYS) {
-      if (this.host.getMeta(key) !== null) this.host.setMeta(key, null);
-    }
   }
 
   private persistController(principalKey: string | null): void {

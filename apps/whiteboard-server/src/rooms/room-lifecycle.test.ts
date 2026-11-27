@@ -7,7 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Room } from "./room.ts";
 import { REFRESH_RECONNECT_GRACE_MS } from "./room-connections.ts";
 import { RoomManager } from "./room-manager.ts";
-import { RoomNavigation } from "./room-navigation.ts";
 import type { TldrawSocket, SocketSession } from "./room-types.ts";
 import type { WhiteboardRoomId } from "@orbmeet/whiteboard-core/whiteboard-room-id";
 import { whiteboardRevisionKey } from "@orbmeet/whiteboard-core/document-keys";
@@ -547,12 +546,13 @@ describe("room storage failures", () => {
 describe("room construction failure", () => {
   it("closes the sync room when a later constructor step throws", () => {
     const closeSpy = vi.spyOn(TLSocketRoom.prototype, "close");
-    // Adopting legacy navigation is a real constructor step that runs after
+    // Attaching loose page content is a real constructor step that runs after
     // `new TLSocketRoom` and reads persisted state — exactly the shape of
     // failure the constructor's catch exists to absorb.
-    vi.spyOn(RoomNavigation.prototype, "readLegacyNavigation").mockImplementation(() => {
-      throw new Error("corrupt persisted room state");
-    });
+    vi.spyOn(Room.prototype as unknown as { attachLoosePageContent(): void }, "attachLoosePageContent")
+      .mockImplementation(() => {
+        throw new Error("corrupt persisted room state");
+      });
 
     expect(
       () => createTestRoom("meet-broken", makeDataDir(), () => {}),

@@ -117,26 +117,52 @@ describe("public schedule responses", () => {
 });
 
 describe("public meeting responses", () => {
+  const baseMeeting = {
+    id: "meeting_01example",
+    title: null,
+    startedAt: "2026-08-22T10:00:00.000Z",
+    endedAt: null,
+    spaceName: "Example",
+    participants: [],
+  };
+
+  const baseAvailable = {
+    summary: false,
+    transcript: false,
+    recordings: false,
+    whiteboardPdf: false,
+  };
+
   it("accepts the null title emitted for default-link meetings", () => {
     expect(v.safeParse(publicMeetingResponseSchema, {
       data: {
-        meeting: {
-          id: "meeting_01example",
-          title: null,
-          startedAt: "2026-08-22T10:00:00.000Z",
-          endedAt: null,
-          retainUntil: null,
-          spaceName: "Example",
-          participants: [],
-        },
-        available: {
-          summary: false,
-          transcript: false,
-          recordings: false,
-          whiteboardPdf: false,
+        meeting: baseMeeting,
+        available: baseAvailable,
+      },
+    }).success).toBe(true);
+  });
+
+  it("validates structured meeting summaries and rejects untyped strings", () => {
+    expect(v.safeParse(publicMeetingResponseSchema, {
+      data: {
+        meeting: baseMeeting,
+        available: { ...baseAvailable, summary: true },
+        summary: {
+          summary: "Key decisions.",
+          durationSeconds: 1800,
+          participantCount: 2,
+          createdAt: "2026-08-22T10:30:00.000Z",
         },
       },
     }).success).toBe(true);
+
+    expect(v.safeParse(publicMeetingResponseSchema, {
+      data: {
+        meeting: baseMeeting,
+        available: { ...baseAvailable, summary: true },
+        summary: "unstructured text",
+      },
+    }).success).toBe(false);
   });
 });
 

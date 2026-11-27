@@ -1,4 +1,4 @@
-import { parseKeyring, type Keyring } from "@orbmeet/primitives";
+import { keepsKeyringOrder, parseKeyringRecord, type Keyring } from "@orbmeet/primitives";
 import * as v from "valibot";
 
 /**
@@ -183,16 +183,6 @@ const REGION = /^[a-z][a-z0-9-]{0,30}$/;
 const MAX_NODES = 16;
 export const MAX_KEYRING_KEYS = 4;
 
-/**
- * Whether a key id keeps its written place in a keyring. JavaScript orders an
- * object's integer-like keys ahead of every other, whatever order they were
- * written in, so a numeric id would silently become the first key: the one
- * that signs.
- */
-export function keepsKeyringOrder(keyId: string): boolean {
-  return !/^(?:0|[1-9][0-9]*)$/.test(keyId);
-}
-
 const KEYRING_SIZE = `must hold between 1 and ${MAX_KEYRING_KEYS} keys`;
 const KEYRING_ORDER = "must not use plain numbers as key ids, which would move them to the front of the keyring";
 
@@ -215,9 +205,9 @@ const WhiteboardKeyringSchema = v.pipe(
   v.record(v.string(), v.string()),
   v.check((keys) => Object.keys(keys).every(keepsKeyringOrder), KEYRING_ORDER),
   v.check((keys) => Object.keys(keys).length > 0 && Object.keys(keys).length <= MAX_KEYRING_KEYS, KEYRING_SIZE),
-  v.check((keys) => parseKeyring(JSON.stringify(keys)) !== null,
+  v.check((keys) => parseKeyringRecord(keys) !== null,
     "must map key ids of letters, digits, '-' and '_' to secrets of 32-512 characters"),
-  v.transform((keys) => parseKeyring(JSON.stringify(keys))!),
+  v.transform((keys) => parseKeyringRecord(keys)!),
 );
 
 const origin = (protocols: string, message: string) => v.pipe(

@@ -92,8 +92,8 @@ async function route(
   return handleDocumentRequest(request, env, ctx);
 }
 
-/** Each open meeting's single writer; see modules/meetings/server/runtime/meeting-room.ts. */
-export { MeetingRoom } from "@/modules/meetings/server/runtime/meeting-room";
+/** Each open meeting's single writer; see app/durable-objects/meeting-room.ts. */
+export { MeetingRoom } from "@/app/durable-objects/meeting-room";
 /** The Workflow background jobs run in; see platform/jobs/jobs.ts. */
 export { DurableJobWorkflow } from "@/app/jobs/durable-job-workflow";
 /** One queue per scope for work that must not overlap; see app/serial/tasks.ts. */

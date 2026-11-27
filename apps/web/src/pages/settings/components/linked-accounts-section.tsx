@@ -3,7 +3,7 @@ import { useMutation, useSuspenseQuery, useQueryClient } from "@tanstack/react-q
 import { useRouter, useSearch } from "@tanstack/react-router";
 import { linkedAccountsQueryOptions } from "@/app/query-client/queries/settings";
 import { getGoogleLinkUrl, unlinkGoogleAccount } from "@/modules/identity/server/oauth-google.functions";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { getErrorMessage } from "@/lib/error-inspection";
 import { Button } from "@orbmeet/ui/react";
 import { Alert } from "@orbmeet/ui/react";

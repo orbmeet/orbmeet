@@ -2,18 +2,18 @@ import { useState, useRef, useEffect } from "react";
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { removeMember, addMemberByEmail, updateMemberRole, transferOwnership } from "@/modules/spaces/server/membership.functions";
 import { rotateSpaceInvite } from "@/modules/spaces/server/invites.functions";
-import { spaceInviteQueryOptions } from "@/app/query-client/queries/spaces";
+import { spaceInviteQueryOptions } from "@/modules/spaces/client/spaces.queries";
 import type { SpaceMemberSummary } from "@/modules/spaces/contract/types";
 import { spaceRoleBadgeVariant } from "@/modules/spaces/client/space-role-badge";
 import { getSpaceAccessLabel } from "@/modules/spaces/space-access";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
 import { Avatar } from "@orbmeet/ui/react";
 import { Badge } from "@orbmeet/ui/react";
 import { Button } from "@orbmeet/ui/react";
 import { Input } from "@orbmeet/ui/react";
 import { EmptyState } from "@orbmeet/ui/react";
-import { QueryErrorNotice } from "@/app/query-client/query-error-notice";
+import { QueryErrorNotice } from "@orbmeet/ui/react";
 import {
   Dialog,
   DialogBody,
@@ -401,6 +401,11 @@ export function MembersList({
                 Remove
               </Button>
             </div>
+            {removeMutation.isError && (
+              <p {...stylex.props(status.error)}>
+                Failed to remove member. Please try again.
+              </p>
+            )}
           </DialogBody>
         </DialogContent>
       </Dialog>

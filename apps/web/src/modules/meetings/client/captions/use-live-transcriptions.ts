@@ -10,7 +10,7 @@ import {
   type Room,
   type TextStreamReader,
 } from "livekit-client";
-import { ReceiverRateLimiter } from "@/platform/realtime/receiver-rate-limiter";
+import { ReceiverRateLimiter } from "@/lib/receiver-rate-limiter";
 import {
   emptyCaptionBoard,
   nextCaptionExpiry,

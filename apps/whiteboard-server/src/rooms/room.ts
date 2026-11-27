@@ -22,7 +22,7 @@ import { RoomMessageGuard } from "./room-message-guard.ts";
 import { RoomPresenceLane } from "./room-presence-lane.ts";
 import { ROOM_NAVIGATION_ID, type RoomNavigationRecord } from "@orbmeet/whiteboard-core/room-navigation";
 import { roomRecordAuthorizers } from "./room-record-authorizers.ts";
-import { assertValidRoomRecord, isValidRoomRecord } from "./record-rules.ts";
+import { isValidRoomRecord } from "./record-rules.ts";
 import { shapeAuthorOf } from "@orbmeet/whiteboard-core/shape-author";
 import { attachLooseShapesToPages } from "@orbmeet/whiteboard-core/page-frame-model";
 import type { SnapshotStore } from "../persistence/snapshot-store.ts";
@@ -173,7 +173,6 @@ export class Room {
         notePageFramesChanged: () => this.messageGuard.noteServerPageFrameMutation(),
       });
       this.attachLoosePageContent();
-      this.adoptLegacyNavigation();
     } catch (error) {
       this.document.close();
       throw error;
@@ -266,24 +265,6 @@ export class Room {
     }).result;
     if (attached > 0) logInfo(`[Room ${this.whiteboardRoomId}] Put ${attached} loose shape(s) on their pages`);
     if (refused > 0) logWarn(`[Room ${this.whiteboardRoomId}] Left ${refused} loose shape(s) the schema refuses where they are`);
-  }
-
-  /**
-   * A room that kept its navigation in metadata, from before navigation was
-   * a document record, writes it as the record once — unless the document
-   * already has one — and forgets the old keys.
-   */
-  private adoptLegacyNavigation(): void {
-    if (!this.document.isWritable) return;
-    const legacy = this.navigation.readLegacyNavigation();
-    if (legacy) {
-      this.sync.storage.transaction((transaction) => {
-        if (transaction.get(ROOM_NAVIGATION_ID)) return;
-        assertValidRoomRecord(legacy);
-        transaction.set(legacy.id, legacy);
-      });
-    }
-    this.navigation.clearLegacyNavigation();
   }
 
   private sendToParticipants(participants: readonly string[], event: AssistantEvent): void {

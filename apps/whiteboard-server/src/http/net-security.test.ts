@@ -195,7 +195,7 @@ describe("whiteboard network security helpers", () => {
 
   describe("isPublicBrowserHost", () => {
     it("rejects literal private, loopback, and metadata IPs that isSuspiciousHostname accepts", async () => {
-      const { isPublicBrowserHost, isSuspiciousHostname } = await import("@orbmeet/whiteboard-core/public-host");
+      const { isPublicBrowserHost, isSuspiciousHostname } = await import("@orbmeet/primitives/public-host");
       for (const host of [
         "127.0.0.1",
         "10.0.0.5",
@@ -210,7 +210,7 @@ describe("whiteboard network security helpers", () => {
     });
 
     it("still rejects blocked/suspicious hostnames", async () => {
-      const { isPublicBrowserHost } = await import("@orbmeet/whiteboard-core/public-host");
+      const { isPublicBrowserHost } = await import("@orbmeet/primitives/public-host");
       expect(isPublicBrowserHost("localhost")).toBe(false);
       expect(isPublicBrowserHost("printer.local")).toBe(false);
       expect(isPublicBrowserHost("0x7f000001")).toBe(false);
@@ -221,7 +221,7 @@ describe("whiteboard network security helpers", () => {
     });
 
     it("allows genuinely public hosts and IPs", async () => {
-      const { isPublicBrowserHost } = await import("@orbmeet/whiteboard-core/public-host");
+      const { isPublicBrowserHost } = await import("@orbmeet/primitives/public-host");
       expect(isPublicBrowserHost("example.com")).toBe(true);
       expect(isPublicBrowserHost("8.8.8.8")).toBe(true);
       expect(isPublicBrowserHost("2606:4700:4700::1111")).toBe(true);

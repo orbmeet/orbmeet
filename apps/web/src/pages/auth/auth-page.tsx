@@ -6,7 +6,7 @@ import { finishPasskeyAuthentication, startPasskeyAuthentication } from "@/modul
 import { beginEmailAuth } from "@/modules/identity/server/begin-email-auth.functions";
 import { getGoogleAuthUrl } from "@/modules/identity/server/oauth-google.functions";
 import { getErrorMessage } from "@/lib/error-inspection";
-import { rememberedUserQueryOptions } from "@/app/query-client/queries/session";
+import { rememberedUserQueryOptions } from "@/modules/identity/client/session.queries";
 import { AuthLayout } from "@/modules/identity/client/components/auth-layout";
 import { Button } from "@orbmeet/ui/react";
 import { Input } from "@orbmeet/ui/react";

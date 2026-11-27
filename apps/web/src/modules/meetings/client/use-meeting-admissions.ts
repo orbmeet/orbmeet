@@ -5,7 +5,7 @@ import type { MeetingRoomState } from "@/modules/meetings/contract/live-state";
 import { getErrorMessage } from "@/lib/error-inspection";
 import { logError } from "@/lib/logger";
 import type { useToast } from "@orbmeet/ui/react";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { decideAdmission, listPendingAdmissions } from "@/modules/meetings/server/runtime/live.functions";
 import { useMeetingRoomState } from "./use-meeting-live-state";
 import type { HostPermissionRequest } from "./types";

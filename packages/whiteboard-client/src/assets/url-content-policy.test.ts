@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
-import { isSafeExternalBrowserUrl } from "@orbmeet/whiteboard-core/public-host";
+import { isSafeExternalBrowserUrl } from "@orbmeet/primitives/public-host";
 
 /**
  * The client and the sync server have to agree about which URLs may appear on a
@@ -10,7 +10,7 @@ import { isSafeExternalBrowserUrl } from "@orbmeet/whiteboard-core/public-host";
  * participant their sync session rather than costing them one edit.
  *
  * Both sides answer the question with the same predicate from
- * `@orbmeet/whiteboard-core/public-host`. What can drift is *where* the client
+ * `@orbmeet/primitives/public-host`. What can drift is *where* the client
  * asks: a check placed after tldraw has already built the shape is too late to
  * decline it, which is how bookmark shapes for `mailto:` and private-host links
  * reached the server in the first place.

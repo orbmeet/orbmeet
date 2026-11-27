@@ -33,7 +33,6 @@ const MEETING = {
   title: "Standup",
   startedAt: "2026-07-21T14:00:00.000Z",
   endedAt: "2026-07-21T15:30:00.000Z",
-  retainUntil: null,
   spaceName: null,
   participants: [],
 };
@@ -187,7 +186,6 @@ describe("whoami", () => {
           plan: "pro",
           timeZone: "Asia/Dhaka",
         },
-        tokenId: "pat_x",
         scopes: ["meetings:read"],
         serverTime: "2026-07-17T08:00:00.000Z",
       },

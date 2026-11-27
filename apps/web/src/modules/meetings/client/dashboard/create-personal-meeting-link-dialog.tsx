@@ -10,8 +10,8 @@ import { generateMeetingCode } from "@/modules/meetings/contract/code-generation
 import { createMeetingLink } from "@/modules/meetings/server/lifecycle/create.functions";
 import { getErrorMessage } from "@/lib/error-inspection";
 import { formatCode } from "@/modules/meetings/client/format-code";
-import { queryKeys } from "@/app/query-client/query-keys";
-import { sessionQueryOptions } from "@/app/query-client/queries/session";
+import { queryKeys } from "@/lib/query-keys";
+import { sessionQueryOptions } from "@/modules/identity/client/session.queries";
 import { reusableLinkCreationInput } from "./reusable-link-input";
 import { Button } from "@orbmeet/ui/react";
 import {

@@ -9,14 +9,14 @@ import {
   addStandaloneWhiteboardPage,
   getStandaloneWhiteboardAccess,
 } from "@/modules/whiteboards/server/standalone.functions";
-import { standaloneWhiteboardAccessQueryOptions } from "@/app/query-client/queries/whiteboards";
+import { standaloneWhiteboardAccessQueryOptions } from "@/modules/whiteboards/client/whiteboards.queries";
 import { archiveWhiteboard, duplicateWhiteboard, renameWhiteboard } from "@/modules/whiteboards/server/api.functions";
 import { MenuContent, MenuItem, MenuRoot, MenuTrigger } from "@orbmeet/ui/react";
 import { WhiteboardHistoryPanel } from "@/modules/whiteboards/client/components/whiteboard-history-panel";
 import { WHITEBOARD_ASSET_URLS } from "@/modules/whiteboards/client/surface/whiteboard-canvas";
 import { Spinner } from "@orbmeet/ui/react";
 import { getErrorMessage } from "@/lib/error-inspection";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { Button } from "@orbmeet/ui/react";
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@orbmeet/ui/react";
 import { useWhiteboardToastAdapter } from "@/modules/whiteboards/client/use-whiteboard-toast-adapter";

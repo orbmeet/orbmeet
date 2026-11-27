@@ -1,6 +1,6 @@
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 
 describe("Whiteboard query-key boundaries", () => {
   it("refreshing the document list does not invalidate active access authority", async () => {

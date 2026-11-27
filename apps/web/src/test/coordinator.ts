@@ -20,5 +20,19 @@ export async function recordCoordinatorRequest(_env: Env, request: CoordinatorRe
 /** A fresh record of coordinator requests, and an Env to pass along. */
 export function fakeCoordinatorEnv(): { env: Env; requests: CoordinatorRequest[] } {
   requests.length = 0;
-  return { env: { ...TEST_MEDIA_ENV } as unknown as Env, requests };
+  return {
+    env: {
+      ...TEST_MEDIA_ENV,
+      MEETING_ROOM: {
+        idFromName: (name: string) => name,
+        get: () => ({
+          handle: async (request: CoordinatorRequest) => {
+            requests.push(request);
+            return { ok: true as const, value: { kind: "ok" as const } };
+          },
+        }),
+      },
+    } as unknown as Env,
+    requests,
+  };
 }

@@ -89,7 +89,6 @@ async function insertMeetingFixture(input: {
     activeEgressId: null,
     startedAt: now,
     endedAt: status === "ended" ? now : null,
-    retainUntil: null,
     updatedAt: now,
   });
 }
@@ -317,7 +316,7 @@ describe("database schema integrity", () => {
         whiteboardId: "whiteboard_pin_target",
         spaceId: "usr_schema_space",
         revisionNumber: 1,
-        kind: "checkpoint",
+        kind: "meeting_end",
         snapshotR2Key: "whiteboards/whiteboard_pin_target/revisions/1.bin",
         snapshotSize: 1,
         createdAt: now,
@@ -327,21 +326,13 @@ describe("database schema integrity", () => {
         whiteboardId: "whiteboard_pin_other",
         spaceId: "usr_schema_space",
         revisionNumber: 1,
-        kind: "checkpoint",
+        kind: "meeting_end",
         snapshotR2Key: "whiteboards/whiteboard_pin_other/revisions/1.bin",
         snapshotSize: 1,
         createdAt: now,
       },
     ]);
 
-    await expect(db.insert(meetingWhiteboards).values({
-      id: "meeting_whiteboard_bad_start_pin",
-      meetingId: "mtg_revision_pin",
-      spaceId: "usr_schema_space",
-      whiteboardId: "whiteboard_pin_target",
-      startRevisionId: "revision_pin_other",
-      attachedAt: now,
-    })).rejects.toBeDefined();
     await expect(db.insert(meetingWhiteboards).values({
       id: "meeting_whiteboard_bad_capture_pin",
       meetingId: "mtg_revision_pin",
@@ -358,13 +349,8 @@ describe("database schema integrity", () => {
       meetingId: "mtg_revision_pin",
       spaceId: "usr_schema_space",
       whiteboardId: "whiteboard_pin_target",
-      startRevisionId: "revision_pin_target",
       attachedAt: now,
     });
-    await expect(db.update(meetingWhiteboards)
-      .set({ startRevisionId: "revision_pin_other" })
-      .where(eq(meetingWhiteboards.id, "meeting_whiteboard_valid_pin")))
-      .rejects.toBeDefined();
     await expect(db.update(meetingWhiteboards)
       .set({
         capturedRevisionId: "revision_pin_other",
@@ -475,7 +461,6 @@ spaceKind: "personal" as const,
       activeEgressId: null,
       startedAt: now,
       endedAt: now,
-      retainUntil: new Date(now.getTime() + 60_000),
       updatedAt: now,
     });
 
@@ -609,7 +594,6 @@ spaceKind: "personal" as const,
         activeEgressId: null,
         startedAt: now,
         endedAt: new Date(now.getTime() - 1_000),
-        retainUntil: new Date(now.getTime() + 60_000),
         updatedAt: now,
       }),
     ).rejects.toBeDefined();
@@ -667,7 +651,6 @@ spaceKind: "personal" as const,
       activeEgressId: null,
       startedAt: now,
       endedAt: null,
-      retainUntil: null,
       updatedAt: now,
     });
 
@@ -730,7 +713,6 @@ spaceKind: "personal" as const,
       activeEgressId: null,
       startedAt: now,
       endedAt: now,
-      retainUntil: new Date(now.getTime() + 60_000),
       updatedAt: now,
     });
 
@@ -782,7 +764,6 @@ spaceKind: "personal" as const,
       activeEgressId: null,
       startedAt: now,
       endedAt: now,
-      retainUntil: new Date(now.getTime() + 60_000),
       updatedAt: now,
     });
 
@@ -795,6 +776,35 @@ spaceKind: "personal" as const,
         guestSecretHash: null,
         displayName: "Guest",
         admissionStatus: "approved",
+        decidedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    ).rejects.toBeDefined();
+
+    await expect(
+      db.insert(meetingAdmissions).values({
+        id: "mad_pending_with_board_edit",
+        meetingId: "mtg_guest_shape",
+        subjectType: "user",
+        subjectUserId: "usr_schema",
+        displayName: "Schema User",
+        admissionStatus: "pending",
+        whiteboardEditGranted: true,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    ).rejects.toBeDefined();
+
+    await expect(
+      db.insert(meetingAdmissions).values({
+        id: "mad_revoked_with_board_edit",
+        meetingId: "mtg_guest_shape",
+        subjectType: "user",
+        subjectUserId: "usr_schema",
+        displayName: "Schema User",
+        admissionStatus: "revoked",
+        whiteboardEditGranted: true,
         decidedAt: now,
         createdAt: now,
         updatedAt: now,
@@ -1200,7 +1210,6 @@ describe("composite foreign keys and projection triggers", () => {
       activeEgressId: null,
       startedAt: NOW,
       endedAt: input.status === "ended" ? NOW : null,
-      retainUntil: null,
       updatedAt: NOW,
     } as typeof meetings.$inferInsert);
   }

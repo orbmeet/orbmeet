@@ -14,8 +14,6 @@ export const DATABASE_TRIGGERS = {
   meeting_whiteboards: [
     "meeting_whiteboards_captured_revision_insert_check",
     "meeting_whiteboards_captured_revision_update_check",
-    "meeting_whiteboards_start_revision_insert_check",
-    "meeting_whiteboards_start_revision_update_check",
   ],
   meetings: [
     "meetings_one_time_link_single_occurrence_insert",

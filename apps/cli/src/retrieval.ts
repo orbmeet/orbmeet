@@ -1,4 +1,5 @@
 import {
+  MAX_AUTOMATION_TRANSCRIPT_LIMIT,
   publicMeetingResponseSchema,
   publicMeetingTranscriptPageResponseSchema,
   publicTranscriptSchema,
@@ -14,7 +15,7 @@ import {
 import type { ParsedArgs } from "./args.ts";
 import { meetingSelectionParams, type MeetingInclude } from "./selectors.ts";
 
-const PAGE_SIZE = 500;
+const PAGE_SIZE = MAX_AUTOMATION_TRANSCRIPT_LIMIT;
 
 export interface RetrievedMeetingResult {
   /** The API response as received, for --raw output. */

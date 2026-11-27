@@ -3,7 +3,24 @@ import { meetings, meetingWhiteboards, whiteboards } from "@orbmeet/db/schema";
 import { eq } from "drizzle-orm";
 
 import { seedMeeting } from "@/test/documents-test-support";
-import { nameUntitledMeeting } from "./meeting-name.server";
+import type { TestDb } from "@/test/db";
+import { nameUntitledMeetingStatements } from "./meeting-name.server";
+
+async function nameUntitledMeeting(db: TestDb, meetingId: string, proposed: string) {
+  const meeting = await db.query.meetings.findFirst({
+    where: { id: meetingId },
+    columns: { startedAt: true },
+  });
+  if (!meeting) return;
+  const statements = nameUntitledMeetingStatements(db, {
+    meetingId,
+    startedAt: meeting.startedAt,
+    proposed,
+  });
+  if (statements.length === 0) return;
+  const [first, ...rest] = statements;
+  await db.batch([first, ...rest]);
+}
 
 describe("nameUntitledMeeting", () => {
   it("names a meeting that has no title", async () => {

@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@base-ui/react": "catalog:",
-    "@orbmeet/public-api-contract": "workspace:*",
+    "@orbmeet/primitives": "workspace:*",
     "@stylexjs/stylex": "catalog:",
     "lucide-react": "catalog:",
     "react": "catalog:"

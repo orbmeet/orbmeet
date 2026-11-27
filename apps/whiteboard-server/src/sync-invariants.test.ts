@@ -10,7 +10,7 @@ import { WHITEBOARD_EVENTS } from "@orbmeet/whiteboard-core/protocol";
 import {
   isPublicIpAddress,
   isSafeExternalBrowserUrl,
-} from "@orbmeet/whiteboard-core/public-host";
+} from "@orbmeet/primitives/public-host";
 
 import { RoomMessageGuard } from "./rooms/room-message-guard.ts";
 import { roomRecordAuthorizers } from "./rooms/room-record-authorizers.ts";

@@ -1,13 +1,9 @@
 import { createFileRoute, redirect, lazyRouteComponent } from "@tanstack/react-router";
-import {
-  spaceMeetingsQueryOptions,
-  spaceMembersInfiniteQueryOptions,
-  spaceAuditEventsInfiniteQueryOptions,
-  spaceBySlugQueryOptions,
-  spaceWhiteboardsQueryOptions,
-} from "@/app/query-client/queries/spaces";
-import { spaceDefaultMeetingLinkQueryOptions } from "@/app/query-client/queries/meetings";
-import { filesInfiniteQueryOptions } from "@/app/query-client/queries/files";
+import { spaceMeetingsQueryOptions } from "@/modules/meetings/client/meetings.queries";
+import { spaceMembersInfiniteQueryOptions, spaceAuditEventsInfiniteQueryOptions, spaceBySlugQueryOptions } from "@/modules/spaces/client/spaces.queries";
+import { spaceWhiteboardsQueryOptions } from "@/modules/whiteboards/client/whiteboards.queries";
+import { spaceDefaultMeetingLinkQueryOptions } from "@/modules/meetings/client/meetings.queries";
+import { filesInfiniteQueryOptions } from "@/modules/spaces/client/spaces.queries";
 import { primeSpaceDetailCache } from "@/modules/spaces/client/space-query-cache";
 import { RouteError, RoutePending } from "@/app/shell/route-state";
 import { parseSpaceTab, type SpaceTab } from "@/modules/spaces/contract";

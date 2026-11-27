@@ -18,11 +18,13 @@ beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), "orbmeet-cli-config-"));
   process.env.XDG_CONFIG_HOME = configDir;
   delete process.env.ORBMEET_TOKEN;
+  delete process.env.ORBMEET_API_URL;
 });
 
 afterEach(() => {
   delete process.env.XDG_CONFIG_HOME;
   delete process.env.ORBMEET_TOKEN;
+  delete process.env.ORBMEET_API_URL;
 });
 
 describe("saveToken and readConfig", () => {
@@ -80,6 +82,25 @@ describe("saveToken and readConfig", () => {
 
     expect(dirStats.mode & 0o777).toBe(0o700);
     expect(fileStats.mode & 0o777).toBe(0o600);
+  });
+
+  it("lets ORBMEET_API_URL override the API base URL and trims trailing slashes", async () => {
+    const { readConfig } = await loadConfig();
+    process.env.ORBMEET_TOKEN = "env-token";
+    process.env.ORBMEET_API_URL = "https://staging.orbmeet.com///";
+    await expect(readConfig()).resolves.toEqual({
+      url: "https://staging.orbmeet.com",
+      token: "env-token",
+    });
+  });
+
+  it("rejects non-HTTP(S) ORBMEET_API_URL values", async () => {
+    const { readConfig } = await loadConfig();
+    process.env.ORBMEET_TOKEN = "env-token";
+    process.env.ORBMEET_API_URL = "ftp://example.com";
+    await expect(readConfig()).rejects.toThrow("ORBMEET_API_URL");
+    process.env.ORBMEET_API_URL = "not-a-url";
+    await expect(readConfig()).rejects.toThrow("ORBMEET_API_URL");
   });
 
   it("publishes complete JSON when configure commands overlap", async () => {

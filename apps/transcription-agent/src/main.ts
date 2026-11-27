@@ -15,11 +15,21 @@ configureLiveKitEnvironment(config);
 // when the process exits stays journaled for the next one; a request cut off
 // mid-flight is replayed, and the app ignores a segment it already has.
 const journal = new TranscriptJournal(config.transcriptJournalPath);
+const shipperAbort = new AbortController();
 void runTranscriptShipper(
   journal,
   (payload) => deliverTranscriptPayload(config, payload),
-  { maxUnresolvedAgeMs: config.maxUnresolvedAgeMs, signal: new AbortController().signal },
+  { maxUnresolvedAgeMs: config.maxUnresolvedAgeMs, signal: shipperAbort.signal },
 ).catch((error: unknown) => logError("Transcript shipper stopped unexpectedly", error));
+
+process.once("exit", () => {
+  shipperAbort.abort();
+  try {
+    journal.close();
+  } catch {
+    // Ignore double-close on shutdown.
+  }
+});
 
 cli.runApp(new ServerOptions({
   agent: fileURLToPath(new URL("./agent/agent.js", import.meta.url)),

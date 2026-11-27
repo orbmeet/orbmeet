@@ -21,6 +21,7 @@ import { copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFile
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DATABASE_TRIGGERS } from "../src/triggers.ts";
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "drizzle", "migrations");
 const BREAKPOINT = "--> statement-breakpoint";
@@ -35,10 +36,18 @@ const splitStatements = (sql) => sql
   .filter((statement) => statement.replace(/^(?:\s*--[^\n]*\n?)*/u, "").trim());
 const statementsOf = (folder) => splitStatements(readFileSync(migrationFile(folder), "utf8"));
 
-function build(count) {
+function build(count, { dropTriggersBeforeLast = false } = {}) {
   const db = new DatabaseSync(":memory:");
   db.exec("PRAGMA foreign_keys = ON");
-  for (const folder of folders.slice(0, count)) for (const statement of statementsOf(folder)) db.exec(statement);
+  for (const [index, folder] of folders.slice(0, count).entries()) {
+    if (dropTriggersBeforeLast && index === count - 1) {
+      const triggers = db
+        .prepare(`SELECT name FROM sqlite_master WHERE type = 'trigger' AND ${INTERNAL_TABLES}`)
+        .all();
+      for (const { name } of triggers) db.exec(`DROP TRIGGER \`${String(name)}\``);
+    }
+    for (const statement of statementsOf(folder)) db.exec(statement);
+  }
   return db;
 }
 
@@ -54,7 +63,7 @@ const withNotNullTextPrimaryKeys = (sql) =>
 function generate() {
   const generated = folders.at(-1);
   const oldDb = build(folders.length - 1);
-  const targetDb = build(folders.length);
+  const targetDb = build(folders.length, { dropTriggersBeforeLast: true });
 
   const IDENT = String.raw`[\`"]?(\w+)[\`"]?`;
   const objects = (db, type) => db
@@ -79,11 +88,33 @@ function generate() {
   const oldTables = new Map(objects(oldDb, "table").map((row) => [row.name, row]));
   const targetTables = new Map(objects(targetDb, "table").map((row) => [row.name, row]));
   const newTables = [...targetTables.keys()].filter((name) => !oldTables.has(name));
+  const droppedTables = [...oldTables.keys()].filter((name) => !targetTables.has(name));
 
-  // Tables whose shape changed, and every table that depends on one.
+  // Tables that drizzle-kit altered with a plain `ALTER TABLE ... DROP COLUMN`
+  // (no table rebuild needed) stay out of the subtree rebuild.
+  const rawStatements = statementsOf(generated);
+  const plainDropColumns = [];
+  const plainAlteredTables = new Set();
+  for (const statement of rawStatements) {
+    const match = new RegExp(String.raw`^ALTER\s+TABLE\s+${IDENT}\s+DROP\s+COLUMN\s+${IDENT}`, "i").exec(statement);
+    if (match) {
+      plainDropColumns.push({ table: match[1], statement });
+      plainAlteredTables.add(match[1]);
+    }
+  }
+  for (const statement of rawStatements) {
+    const match = new RegExp(String.raw`^CREATE\s+TABLE\s+[\`"]?__new_(\w+)[\`"]?`, "i").exec(statement);
+    if (match) plainAlteredTables.delete(match[1]);
+  }
+
+  // Tables whose shape changed (beyond plain column drops), and every table that depends on one.
   const body = (sql) => sql.replace(/^CREATE TABLE \S+/, "").replace(/["`]/g, "").replace(/\s+/g, " ").trim();
   const reshaped = [...targetTables.keys()]
-    .filter((name) => oldTables.has(name) && body(oldTables.get(name).sql) !== body(targetTables.get(name).sql));
+    .filter((name) =>
+      oldTables.has(name)
+      && !plainAlteredTables.has(name)
+      && body(oldTables.get(name).sql) !== body(targetTables.get(name).sql),
+    );
   if (reshaped.length === 0) throw new Error(`${generated} reshapes no existing table: nothing to rebuild`);
   const subtree = new Set(reshaped);
   for (let grew = true; grew;) {
@@ -96,6 +127,20 @@ function generate() {
       }
     }
   }
+
+  // Order dropped tables leaves-first so dropping them cannot cascade into another dropped table.
+  const droppedOrder = [];
+  const droppedState = new Map();
+  const droppedSet = new Set(droppedTables);
+  const visitDropped = (name) => {
+    if (droppedState.get(name) === "done") return;
+    droppedState.set(name, "active");
+    for (const parent of parents(oldDb, name)) if (parent !== name && droppedSet.has(parent)) visitDropped(parent);
+    droppedState.set(name, "done");
+    droppedOrder.push(name);
+  };
+  for (const name of [...droppedTables].sort()) visitDropped(name);
+  droppedOrder.reverse();
 
   // Parents before children. A cycle across tables would need deferred checks.
   const order = [];
@@ -134,7 +179,17 @@ function generate() {
     }
   }
 
+  // Triggers on tables outside `subtree` whose body references a table being
+  // dropped/renamed must be dropped beforehand (SQLite validates all triggers
+  // during `ALTER TABLE ... RENAME TO`) and recreated once the tables are back.
+  const externalTriggers = oldTriggers.filter((trigger) =>
+    !subtree.has(trigger.tableName)
+    && [...subtree].some((name) => new RegExp(String.raw`\b${name}\b`, "i").test(trigger.sql)),
+  );
+
   const statements = [];
+  for (const trigger of externalTriggers) statements.push(`DROP TRIGGER \`${trigger.name}\``);
+  for (const name of droppedOrder) statements.push(`DROP TABLE \`${name}\``);
   for (const name of order) statements.push(asNew(targetTables.get(name).sql));
   for (const index of keyIndexes) {
     statements.push(index.sql
@@ -150,10 +205,19 @@ function generate() {
   for (const name of [...order].reverse()) statements.push(`DROP TABLE \`${name}\``);
   for (const name of order) statements.push(`ALTER TABLE \`${name}_new\` RENAME TO \`${name}\``);
   for (const index of targetIndexes) if (subtree.has(index.tableName)) statements.push(index.sql);
-  for (const trigger of oldTriggers) if (subtree.has(trigger.tableName)) statements.push(trigger.sql);
+  const declaredTriggers = DATABASE_TRIGGERS;
+  for (const trigger of oldTriggers) {
+    const allowed = declaredTriggers[trigger.tableName] ?? [];
+    if ((subtree.has(trigger.tableName) || externalTriggers.includes(trigger)) && allowed.includes(trigger.name)) {
+      statements.push(trigger.sql);
+    }
+  }
   for (const name of newTables) {
     statements.push(withNotNullTextPrimaryKeys(targetTables.get(name).sql));
     for (const index of targetIndexes) if (index.tableName === name) statements.push(index.sql);
+  }
+  for (const { table, statement } of plainDropColumns) {
+    if (plainAlteredTables.has(table)) statements.push(statement.replace(/;+$/, ""));
   }
   for (const index of keyIndexes) statements.push(`DROP INDEX \`${index.name}_rebuild\``);
   statements.push("PRAGMA optimize");

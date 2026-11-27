@@ -81,13 +81,19 @@ export default defineConfig(async ({ command, mode }) => {
             "**/packages/whiteboard-client/src/**",
           ],
           client: {
-            // Server-only: every `*.server.*` file and everything under a
-            // `server/` directory. The exception is `*.functions.ts` — the
-            // createServerFn wrappers, which Start replaces with RPC stubs in
-            // the browser build (the convention in Start's server-functions
-            // guide). A new server module is therefore protected by where it
-            // lives, not by remembering a suffix.
-            files: ["**/*.server.*", "**/server/**"],
+            // Server-only: every `*.server.*` file, everything under `server/`,
+            // `src/platform/`, and server-only `src/app/` subsystems. The
+            // exception is `*.functions.ts` — the createServerFn wrappers,
+            // which Start replaces with RPC stubs in the browser build.
+            files: [
+              "**/*.server.*",
+              "**/server/**",
+              "src/platform/**",
+              "src/app/adapters/**",
+              "src/app/durable-objects/**",
+              "src/app/jobs/**",
+              "src/app/serial/**",
+            ],
             // Replaces Start's default, so node_modules is restated.
             excludeFiles: ["**/node_modules/**", "**/*.functions.ts"],
             // Checked after the Start compiler has replaced server function

@@ -1,27 +1,26 @@
 import { lazy, Suspense, useCallback, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { sessionQueryOptions } from "@/app/query-client/queries/session";
-import { meetingAttendanceQueryOptions } from "@/app/query-client/queries/meetings";
+import { sessionQueryOptions } from "@/modules/identity/client/session.queries";
+import { meetingAttendanceQueryOptions } from "@/modules/meetings/client/meetings.queries";
 import { formatMeetingLength, formatTimeRange, meetingDisplayTitle } from "@/modules/meetings/client/components/meeting-format";
 import * as stylex from "@stylexjs/stylex";
-import { meetingTranscriptsInfiniteQueryOptions } from "@/app/query-client/queries/meeting-summary";
+import { meetingTranscriptsInfiniteQueryOptions } from "@/modules/transcripts/client/transcripts.queries";
 import { groupTranscriptTurns } from "./transcript-turns";
 import { MeetingWhiteboardPanel } from "@/pages/meeting-summary/components/whiteboard-dashboard";
 import { useEndedMeeting, type EndedMeeting } from "@/pages/meeting-summary/lib/use-ended-meeting";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { Avatar, Button, Card, DotList, EmptyState, Spinner } from "@orbmeet/ui/react";
-import { QueryErrorNotice } from "@/app/query-client/query-error-notice";
+import { QueryErrorNotice } from "@orbmeet/ui/react";
 import { RecordingDownloadButton } from "@/modules/meetings/client/components/recording-download";
 import { BackLink } from "@/app/shell/back-link";
 import { List, ListGlyph, ListRow } from "@/app/shell/list";
 import { Page } from "@/app/shell/page";
 import { PageHeader } from "@/app/shell/page-header";
-import { Section } from "@/app/shell/section";
+import { Section } from "@orbmeet/ui/react";
 import { focus, motion } from "@orbmeet/ui/styles/atoms";
-import { accent, danger, ink, neutral, surface, warning } from "@orbmeet/ui/tokens/colors.stylex";
+import { accent, danger, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
 import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
-import { radii } from "@orbmeet/ui/tokens/radii.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { fonts, leading, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
 import { AlertTriangle, Clock, Download, MicOff, PenTool, RefreshCw } from "lucide-react";
@@ -66,23 +65,6 @@ const styles = stylex.create({
     color: { default: accent.a700, [env.hoverable]: { default: accent.a700, ":hover": accent.a800 } },
     textDecorationLine: "none",
   },
-  /** A record that will be deleted says so above everything else. */
-  retentionLimited: {
-    display: "flex",
-    alignItems: "flex-start",
-    gap: space.s2,
-    borderRadius: radii.card,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: warning.w200,
-    backgroundColor: warning.w50,
-    paddingInline: space.s4,
-    paddingBlock: space.s3,
-    fontSize: text.sm,
-    lineHeight: leading.sm,
-    color: warning.w800,
-  },
-  retentionGlyph: { marginTop: space.s0_5, flexShrink: 0 },
 
   tabBar: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: space.s2 },
   tabs: { display: "flex", gap: space.s1 },
@@ -235,8 +217,6 @@ export function EndedMeetingPage({
         <MeetingFacts meetingId={meetingId} startedAt={startedAt?.toISOString() ?? null} endedAt={endedAt?.toISOString() ?? null} />
       </header>
 
-      {meeting.retainUntil ? <RetentionNotice retainUntil={meeting.retainUntil} /> : null}
-
       {views.length === 0 ? (
         <EmptyState icon={MicOff} title="Nothing was saved from this meeting" description="There’s no board, recording or transcript to show." />
       ) : (
@@ -317,20 +297,6 @@ function MeetingFacts({ meetingId, startedAt, endedAt }: { meetingId: string; st
         </span>
       ) : null}
     </DotList>
-  );
-}
-
-function RetentionNotice({ retainUntil }: { retainUntil: string | Date }) {
-  const date = new Date(retainUntil).toLocaleDateString([], { year: "numeric", month: "long", day: "numeric" });
-  return (
-    <div role="note" {...stylex.props(styles.retentionLimited)}>
-      <Clock size={14} {...stylex.props(styles.retentionGlyph)} />
-      <span>
-        This Meeting&apos;s recordings, Transcript, Summary, Whiteboard captures, and handout are
-        available until {date}. Editable Whiteboards, their Space history, and reusable Files continue
-        separately.
-      </span>
-    </div>
   );
 }
 

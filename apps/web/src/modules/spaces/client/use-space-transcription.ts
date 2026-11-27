@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { setSpaceTranscription } from "@/modules/spaces/server/transcription.functions";
 
 export interface SpaceTranscriptionDefault {

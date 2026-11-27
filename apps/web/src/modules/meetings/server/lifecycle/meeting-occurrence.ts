@@ -201,7 +201,6 @@ export async function insertMeetingForLinkWithinLimit(
           egressStateRevision: sql`0`.as("egress_state_revision"),
           startedAt: sql`${startedAtSeconds}`.as("started_at"),
           endedAt: sql`null`.as("ended_at"),
-          retainUntil: sql`null`.as("retain_until"),
           transcriptSegmentCount: sql`0`.as("transcript_segment_count"),
           transcriptLastIngestedAt: sql`null`.as("transcript_last_ingested_at"),
           updatedAt: sql`${startedAtSeconds}`.as("updated_at"),

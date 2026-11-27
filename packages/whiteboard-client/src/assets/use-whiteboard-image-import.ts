@@ -5,7 +5,7 @@ import {
   type Editor,
   type TldrawOptions,
 } from "tldraw";
-import { isSafeExternalBrowserUrl } from "@orbmeet/whiteboard-core/public-host";
+import { isSafeExternalBrowserUrl } from "@orbmeet/primitives/public-host";
 import {
   filterSupportedImageFiles,
   looksLikeWhiteboardImageUrl,

@@ -5,7 +5,7 @@ import { verifyWhiteboardJWT } from "@orbmeet/whiteboard-core/whiteboard-jwt";
 import { whiteboardJwtKeyring } from "@/platform/realtime/nodes";
 import { syncRoomIdFromWhiteboardRoomId } from "@orbmeet/whiteboard-core/whiteboard-room-id";
 import { extractWhiteboardDocumentAssetIdentity } from "@orbmeet/whiteboard-core/whiteboard-asset-key";
-import { getWhiteboardAssetTokenFromCookie } from "@/modules/whiteboards/server/cookies";
+import { getWhiteboardAssetTokenFromCookie } from "@/platform/http/whiteboard-cookies.server";
 import { verifySessionFromRawRequest } from "@/modules/identity/server/session";
 import { canAccessMeetingHistory, guestCanAccessMeetingHistory } from "@/modules/meetings/server/access/resource-access";
 import {

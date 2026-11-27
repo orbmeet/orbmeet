@@ -88,16 +88,13 @@ describe("finalizeMeetingEnd", () => {
     }
     await beginMeetingCloseStatement(db, "meeting_1", now);
     const first = await db.query.meetings.findFirst({ where: { id: "meeting_1" } });
-    expect(first?.closingWhiteboardId).toBe("usage_1");
-    expect(first?.closingCommandId).toBeTruthy();
+    expect(first?.closingAt).toEqual(now);
     await expect(attachExistingWhiteboardToMeeting(db, {
       meetingId: "meeting_1", whiteboardId: "whiteboard_2", presentedByUserId: "host",
     })).rejects.toThrow();
     await beginMeetingCloseStatement(db, "meeting_1", new Date(now.getTime() + 60_000));
     const retried = await db.query.meetings.findFirst({ where: { id: "meeting_1" } });
-    expect(retried?.closingCommandId).toBe(first?.closingCommandId);
     expect(retried?.closingAt).toEqual(now);
-    expect(retried?.closingWhiteboardId).toBe("usage_1");
     const focused = await db.query.meetingWhiteboards.findFirst({ where: { id: "usage_1" } });
     expect(focused?.focusedAt).not.toBeNull();
     const other = await db.query.meetingWhiteboards.findFirst({ where: { id: "usage_2" } });

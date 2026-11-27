@@ -43,7 +43,10 @@ export async function whiteboardFetchHandler(
     // most of all, which a 500 would tell the sync server to treat as
     // "infrastructure down" and allow through on stale authorization.
     if (error instanceof AppError) {
-      return Response.json({ error: error.message }, { status: error.statusCode });
+      return Response.json(
+        { error: error.message, code: error.code },
+        { status: error.statusCode },
+      );
     }
     // 500 is the correct signal here — the sync server maps it to a bounded
     // stale-allow ("infrastructure down"), while definitive denials are the

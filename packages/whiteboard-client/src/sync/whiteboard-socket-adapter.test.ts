@@ -2,12 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TLSyncErrorCloseEventCode, TLSyncErrorCloseEventReason } from "@tldraw/sync-core";
 import {
   buildWhiteboardWebSocketRequest,
-  chunkMessage,
   isTransientSyncErrorReason,
   jitterReconnectDelayMs,
   WhiteboardWebSocketAdapter,
 } from "./whiteboard-socket-adapter";
-import { JsonMessageAssembler } from "@orbmeet/whiteboard-core/chunked-json";
+import { chunkMessage, JsonMessageAssembler } from "@orbmeet/whiteboard-core/chunked-json";
 
 describe("buildWhiteboardWebSocketRequest", () => {
   it("moves hash tokens into the websocket protocol list", () => {

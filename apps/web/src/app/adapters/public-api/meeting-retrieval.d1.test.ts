@@ -396,10 +396,18 @@ describe("automation Meeting retrieval", () => {
       available: { summary: true, transcript: true, recordings: true, whiteboardPdf: true },
       summary: { summary: "A concise product discussion." },
       transcript: {
-        segments: [{ text: "First segment" }],
+        segments: [{
+          participantName: "Aariz Rahman",
+          text: "First segment",
+          language: null,
+          startedAt: startedAt.toISOString(),
+        }],
         nextCursor: expect.objectContaining({ id: "transcript_1" }),
       },
     });
+    const firstSegments = (first.transcript as { segments: Record<string, unknown>[] }).segments;
+    expect(Object.keys(firstSegments[0] ?? {}).sort())
+      .toEqual(["language", "participantName", "startedAt", "text"]);
 
     const nextCursor = (first.transcript as {
       nextCursor: { startedAt: number; id: string };

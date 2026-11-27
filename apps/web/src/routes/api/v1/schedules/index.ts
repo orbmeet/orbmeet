@@ -41,7 +41,7 @@ export const Route = createFileRoute("/api/v1/schedules/")({
           );
           if (!hasSelector) {
             const rawLimit = url.searchParams.get("limit");
-            const limit = rawLimit === null ? undefined : Number(rawLimit);
+            const limit = rawLimit === null ? undefined : rawLimit === "" ? Number.NaN : Number(rawLimit);
             if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 100)) {
               throw Errors.VALIDATION("limit must be an integer between 1 and 100");
             }

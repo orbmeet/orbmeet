@@ -1,6 +1,7 @@
 import { CODE_RUN_PATH } from "@orbmeet/whiteboard-core/code-run-contract";
 import { ROOM_AUTHORITY_PATH, SYNC_PROTOCOL, SYNC_PROTOCOL_HEADER } from "@orbmeet/whiteboard-core/sync-commands";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Errors } from "@/lib/app-errors";
 
 const handlePdfUploadMock = vi.fn();
 const handleRecorderAuthMock = vi.fn();
@@ -86,5 +87,15 @@ describe("whiteboardFetchHandler", () => {
     expect(await whiteboardFetchHandler(
       request("/api/whiteboard/pdf-upload", "GET"), env, "/api/whiteboard/pdf-upload",
     )).toBeNull();
+  });
+
+  it("preserves AppError code and statusCode on error responses", async () => {
+    handleRunCodeMock.mockRejectedValueOnce(Errors.RATE_LIMITED());
+    const response = await whiteboardFetchHandler(request(CODE_RUN_PATH, "POST"), env, CODE_RUN_PATH);
+    expect(response?.status).toBe(429);
+    expect(await response?.json()).toEqual({
+      error: "Too many requests. Please try again later.",
+      code: "RATE_LIMITED",
+    });
   });
 });

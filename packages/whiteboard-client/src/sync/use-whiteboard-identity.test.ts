@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decodeWhiteboardJwt } from "./use-whiteboard-identity";
-import { base64urlEncode } from "@orbmeet/whiteboard-core/crypto-utils";
+import { encodeBase64Url as base64urlEncode } from "@orbmeet/primitives";
 
 function tokenFor(claims: Record<string, unknown>): string {
   const encode = (value: unknown) =>

@@ -32,14 +32,21 @@ describe("automation API request policy", () => {
     const routeRoot = new URL("./routes/api/billing/", import.meta.url);
     for (const file of ["checkout.ts", "portal.ts"]) {
       const source = await readFile(new URL(file, routeRoot), "utf8");
-      const ipLimit = source.indexOf("await enforceIpRateLimit(");
-      const sessionLookup = source.indexOf("await verifySessionFromRawRequest(");
-      const userLimit = source.indexOf("await enforceRateLimit(");
-
-      expect(ipLimit, `${file} must have a pre-authentication IP limit`).toBeGreaterThan(-1);
-      expect(sessionLookup, `${file} must verify the cookie session`).toBeGreaterThan(ipLimit);
-      expect(userLimit, `${file} must retain its per-user limit`).toBeGreaterThan(sessionLookup);
+      expect(source, `${file} must authenticate through authenticateBillingPostRequest`)
+        .toContain("authenticateBillingPostRequest(");
     }
+
+    const helperSource = await readFile(
+      new URL("./app/adapters/billing-route.server.ts", import.meta.url),
+      "utf8",
+    );
+    const ipLimit = helperSource.indexOf("await enforceIpRateLimit(");
+    const sessionLookup = helperSource.indexOf("await verifySessionFromRawRequest(");
+    const userLimit = helperSource.indexOf("await enforceRateLimit(");
+
+    expect(ipLimit, "billing-route.server.ts must have a pre-authentication IP limit").toBeGreaterThan(-1);
+    expect(sessionLookup, "billing-route.server.ts must verify the cookie session").toBeGreaterThan(ipLimit);
+    expect(userLimit, "billing-route.server.ts must retain its per-user limit").toBeGreaterThan(sessionLookup);
   });
 
   it("returns bearer auth errors instead of CSRF errors to terminal clients", async () => {

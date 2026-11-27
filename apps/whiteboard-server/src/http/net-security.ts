@@ -1,6 +1,6 @@
 // Network-trust primitives for the sync server: trusted-proxy resolution
 // and the DNS-dependent SSRF guard used by the unfurler. Pure host/URL
-// classification lives in @orbmeet/whiteboard-core/public-host so the browser
+// classification lives in @orbmeet/primitives/public-host so the browser
 // can apply the same rules before creating a record.
 
 import { lookup } from "node:dns/promises";
@@ -11,7 +11,7 @@ import {
   isStrictIpv4,
   isSuspiciousHostname,
   stripIpv6Brackets,
-} from "@orbmeet/whiteboard-core/public-host";
+} from "@orbmeet/primitives/public-host";
 
 export class UnsafeUnfurlTargetError extends Error {
   constructor(message: string) {

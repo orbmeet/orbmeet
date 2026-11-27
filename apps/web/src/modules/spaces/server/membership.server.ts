@@ -41,8 +41,7 @@ import { SPACE_MEMBERSHIP_ROLES } from "@/modules/spaces/contract/types";
 import { PLAN_LIMITS, type PlanLimits } from "@/modules/billing/contract/plan-limits";
 import { userPlanSql } from "@/modules/billing/server/entitlements.server";
 import type { SubscriptionTier } from "@/modules/billing/contract/types";
-import { evictUserFromSpaceMeetings } from "./evict-space-meetings.server";
-import { refreshSpaceAuthorityInOpenMeetings } from "@/modules/meetings/server/runtime/revoke.server";
+import { evictUserFromSpaceMeetings, notifySpaceOpenMeetings } from "./evict-space-meetings.server";
 
 // L2: stable ordering — owner first, then admins, then members; within each
 //     group sort by joinedAt ascending (and id as a final tiebreaker).
@@ -413,7 +412,11 @@ export async function updateMemberRoleImpl({
   }
 
   await db.update(spaces).set({ updatedAt: now }).where(eq(spaces.id, data.spaceId));
-  await refreshSpaceAuthorityInOpenMeetings(db, env, data.userId, data.spaceId, "space_role_changed");
+  await notifySpaceOpenMeetings(db, env, data.userId, data.spaceId, {
+    kind: "refreshAuthority",
+    userId: data.userId,
+    reason: "space_role_changed",
+  });
 
   await recordSpaceAuditEvent(db, {
     spaceId: data.spaceId,
@@ -593,7 +596,11 @@ export async function transferOwnershipImpl({
     throw Errors.VALIDATION("Ownership changed before this transfer completed. Please retry.");
   }
   for (const userId of [user.id, data.userId]) {
-    await refreshSpaceAuthorityInOpenMeetings(db, env, userId, data.spaceId, "space_role_changed");
+    await notifySpaceOpenMeetings(db, env, userId, data.spaceId, {
+      kind: "refreshAuthority",
+      userId,
+      reason: "space_role_changed",
+    });
   }
 
   await recordSpaceAuditEvent(db, {

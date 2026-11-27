@@ -1,4 +1,4 @@
-import { MAX_TIME_ZONE_LENGTH, currentTimeZoneName, isValidTimeZone } from "@orbmeet/public-api-contract/time-zone";
+import { MAX_TIME_ZONE_LENGTH, currentTimeZoneName, isValidTimeZone } from "@orbmeet/primitives/time-zone";
 
 // IANA time zones. The validator itself (`timeZoneSchema`) is shared with the
 // public API in `@orbmeet/public-api-contract/fields`; these are the app-side

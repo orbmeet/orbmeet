@@ -125,7 +125,7 @@ import {
 } from "@/modules/developer-api/server/personal-access-tokens.functions";
 import { getErrorMessage } from "@/lib/error-inspection";
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { personalAccessTokensQueryOptions } from "@/app/query-client/queries/settings";
 import { Button } from "@orbmeet/ui/react";
 import { Input } from "@orbmeet/ui/react";

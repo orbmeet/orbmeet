@@ -51,6 +51,7 @@ export function containsLikelySpeech(samples: Int16Array): boolean {
  */
 export class AudioSource {
   private readonly buffer: AudioChunk[] = [];
+  private bufferHead = 0;
   private bufferedDurationMs = 0;
   private attachment: Attachment | null = null;
   private waiters = new Set<() => void>();
@@ -100,6 +101,7 @@ export class AudioSource {
     this.accepting = accepting;
     if (accepting) return;
     this.buffer.length = 0;
+    this.bufferHead = 0;
     this.bufferedDurationMs = 0;
   }
 
@@ -109,12 +111,15 @@ export class AudioSource {
   }
 
   peek(): AudioChunk | undefined {
-    return this.buffer[0];
+    return this.buffer[this.bufferHead];
   }
 
   shift(): void {
-    const chunk = this.buffer.shift();
-    if (chunk) this.bufferedDurationMs -= chunk.durationMs;
+    if (this.bufferHead >= this.buffer.length) return;
+    const chunk = this.buffer[this.bufferHead];
+    this.bufferHead += 1;
+    this.bufferedDurationMs -= chunk.durationMs;
+    this.compactBuffer();
   }
 
   /**
@@ -124,7 +129,7 @@ export class AudioSource {
    * accumulate a waiter per wait.
    */
   ready(signal: AbortSignal, timeoutMs?: number): Promise<void> {
-    if (this.buffer.length > 0 || signal.aborted || this.closed) return Promise.resolve();
+    if (this.bufferHead < this.buffer.length || signal.aborted || this.closed) return Promise.resolve();
     return new Promise((resolve) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const done = () => {
@@ -150,6 +155,7 @@ export class AudioSource {
     this.stopReading();
     await attachment?.done;
     this.buffer.length = 0;
+    this.bufferHead = 0;
     this.bufferedDurationMs = 0;
     for (const wake of this.waiters) wake();
   }
@@ -187,13 +193,25 @@ export class AudioSource {
     this.bufferedDurationMs += chunk.durationMs;
     const maxBufferedMs = this.options.maxBufferedMs ?? MAX_BUFFERED_AUDIO_MS;
     let droppedMs = 0;
-    while (this.bufferedDurationMs > maxBufferedMs && this.buffer.length > 1) {
-      const dropped = this.buffer.shift()!;
+    while (this.bufferedDurationMs > maxBufferedMs && this.buffer.length - this.bufferHead > 1) {
+      const dropped = this.buffer[this.bufferHead];
+      this.bufferHead += 1;
       this.bufferedDurationMs -= dropped.durationMs;
       droppedMs += dropped.durationMs;
     }
+    this.compactBuffer();
     if (droppedMs > 0) this.reportDrop(droppedMs);
     for (const wake of this.waiters) wake();
+  }
+
+  private compactBuffer(): void {
+    if (this.bufferHead === this.buffer.length) {
+      this.buffer.length = 0;
+      this.bufferHead = 0;
+    } else if (this.bufferHead >= 256 && this.bufferHead * 2 >= this.buffer.length) {
+      this.buffer.splice(0, this.bufferHead);
+      this.bufferHead = 0;
+    }
   }
 
   private reportDrop(droppedMs: number): void {

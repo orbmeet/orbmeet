@@ -6,7 +6,7 @@ import * as stylex from "@stylexjs/stylex";
 import type { Thread } from "@/modules/meetings/contract/threads";
 import { archiveMeetingLink, updateMeetingLink } from "@/modules/meetings/server/history/dashboard.functions";
 import { getErrorMessage } from "@/lib/error-inspection";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import {
   MeetingEntryModeField,
   type EntryModeChoice,

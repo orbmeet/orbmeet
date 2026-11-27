@@ -12,7 +12,7 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useDocumentTitle } from "@/app/shell/use-document-title";
-import { sessionQueryOptions } from "@/app/query-client/queries/session";
+import { sessionQueryOptions } from "@/modules/identity/client/session.queries";
 
 const styles = stylex.create({
   screen: {

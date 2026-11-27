@@ -1,10 +1,12 @@
 export { decodeBase64Url, encodeBase64Url } from "./base64url.ts";
-export { bytesToHex, hmacSha256Hex, sha256Hex } from "./crypto.ts";
+export { bytesToHex, hmacSha256Hex, importHmacSha256Key, sha256Hex } from "./crypto.ts";
 export { mapWithConcurrency } from "./map-with-concurrency.ts";
 export { timingSafeEqual } from "./timing-safe-equal.ts";
 export { clamp, clampFinite, isRecord } from "./guards.ts";
 export {
+  keepsKeyringOrder,
   parseKeyring,
+  parseKeyringRecord,
   postSignedJson,
   SIGNATURE_HEADER,
   signatureTarget,

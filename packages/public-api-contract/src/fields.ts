@@ -1,7 +1,7 @@
 import * as v from "valibot";
 
 import { fitsD1ContainsPattern } from "./search-pattern.ts";
-import { MAX_TIME_ZONE_LENGTH, isValidTimeZone } from "./time-zone.ts";
+import { MAX_TIME_ZONE_LENGTH, isValidTimeZone } from "@orbmeet/primitives/time-zone";
 
 export { MAX_TIME_ZONE_LENGTH, isValidTimeZone };
 

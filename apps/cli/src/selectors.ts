@@ -1,11 +1,12 @@
+import type { AutomationMeetingContent } from "@orbmeet/public-api-contract";
 import { option, optionList, type ParsedArgs } from "./args.ts";
 import { assertTimeZone, requireLocalTimeZone } from "./time.ts";
 
 /** Meeting content kinds the API accepts in `include`. */
-export type MeetingInclude = "summary" | "transcript" | "recordings" | "whiteboard_pdf";
+export type MeetingInclude = AutomationMeetingContent;
 
 // Server IDs are a type prefix plus exactly 26 lowercase Crockford Base32
-// characters (apps/web/src/modules/meetings/client/code-generation.ts). Matching the full shape keeps
+// characters (apps/web/src/lib/ids.ts). Matching the full shape keeps
 // titles that merely start with "schedule_" usable as selectors.
 const SORTABLE_ID_BODY = "[0-9a-hjkmnp-tv-z]{26}";
 const SCHEDULE_ID = new RegExp(`^schedule_${SORTABLE_ID_BODY}$`);

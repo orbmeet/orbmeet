@@ -4,7 +4,7 @@ import {
   whiteboardAssetKeyOfSrc,
 } from "@orbmeet/whiteboard-core/whiteboard-asset-key";
 import { isPageFrameRecord } from "@orbmeet/whiteboard-core/page-frame-model";
-import { isSafeExternalBrowserUrl } from "@orbmeet/whiteboard-core/public-host";
+import { isSafeExternalBrowserUrl } from "@orbmeet/primitives/public-host";
 import { WHITEBOARD_CONFIG } from "@orbmeet/whiteboard-core/config";
 import { whiteboardTLSchema } from "@orbmeet/whiteboard-core/room-schema";
 import { isRecord } from "@orbmeet/primitives";

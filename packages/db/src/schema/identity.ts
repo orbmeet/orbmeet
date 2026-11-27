@@ -41,10 +41,6 @@ export const users = sqliteTable(
     role: text("role", { enum: USER_ROLE_VALUES })
       .default("user")
       .notNull(),
-    // Superseded by `spaces.transcribe_meetings` (`space_transcription`) and no
-    // longer read or written. Kept one release so the code still serving
-    // while that migration runs can read it; the next release drops it.
-    transcribeMeetings: integer("transcribe_meetings", { mode: "boolean" }).default(true).notNull(),
     // Light, dark, or the device's own setting. Kept on the account so it
     // follows the person to another device; each browser also keeps a copy in
     // a cookie, which is what the first paint reads.

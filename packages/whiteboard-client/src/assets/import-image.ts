@@ -11,7 +11,7 @@ import {
 } from "./whiteboard-image";
 import { readImageDimensionsFromFile } from "./read-image-dimensions";
 import { isPageFrameShape } from "@orbmeet/whiteboard-core/page-frame-model";
-import { isSafeExternalBrowserUrl } from "@orbmeet/whiteboard-core/public-host";
+import { isSafeExternalBrowserUrl } from "@orbmeet/primitives/public-host";
 import { commitUploadBeforePublish } from "./managed-upload";
 import { placeImageOnPage } from "./image-placement";
 

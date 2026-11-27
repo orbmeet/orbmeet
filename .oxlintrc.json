@@ -21,7 +21,6 @@
   "GitHub/**",
   "scratch/**",
   "packages/whiteboard-client/src/overrides/**",
-  "apps/web/src/overrides/**",
   "**/.cloudflare/**"
  ],
  "categories": {

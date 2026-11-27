@@ -129,9 +129,7 @@ export const WHITEBOARD_STATUSES = ["active", "archived"] as const;
 // so the person who restored can find their way back, and a label is the whole
 // value of a Snapshot nobody chose to take.
 export const WHITEBOARD_REVISION_KINDS = [
-  "checkpoint",
   "meeting_end",
-  "manual",
   "pre_restore",
 ] as const;
 export const MEETING_WHITEBOARD_CAPTURE_STATUSES = [

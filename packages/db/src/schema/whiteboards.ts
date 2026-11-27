@@ -75,17 +75,6 @@ export const whiteboards = sqliteTable(
      * and one the board has moved on from serves nothing more of it.
      */
     syncGeneration: integer("sync_generation").notNull().default(0),
-    /**
-     * Unused, and no longer written: a board's state is its room database on
-     * the node holding it, not an R2 pointer this row could describe. Dropping the
-     * columns means rebuilding this table, and a rebuild's DROP TABLE would
-     * cascade into every table that references a board on D1, so it waits for
-     * a migration that preserves child rows.
-     */
-    currentSnapshotR2Key: text("current_snapshot_r2_key"),
-    currentSnapshotHash: text("current_snapshot_hash"),
-    currentDocumentClock: integer("current_document_clock"),
-    currentSnapshotSize: integer("current_snapshot_size"),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -101,23 +90,6 @@ export const whiteboards = sqliteTable(
     check("whiteboards_title_length_check", requiredTrimmedTextLength(table.title, 200)),
     check("whiteboards_sync_room_id_length_check", requiredTrimmedTextLength(table.syncRoomId, 64)),
     check("whiteboards_status_check", oneOf(table.status, WHITEBOARD_STATUS_VALUES)),
-    check(
-      "whiteboards_snapshot_hash_check",
-      optionalExactTextLength(table.currentSnapshotHash, 32),
-    ),
-    check(
-      "whiteboards_snapshot_r2_key_check",
-      sql`${table.currentSnapshotR2Key} IS NULL
-        OR ${table.currentSnapshotR2Key} = 'internal/whiteboards/' || ${table.id} || '/state/current.json'`,
-    ),
-    check(
-      "whiteboards_document_clock_nonnegative_check",
-      sql`${table.currentDocumentClock} IS NULL OR ${table.currentDocumentClock} >= 0`,
-    ),
-    check(
-      "whiteboards_snapshot_size_nonnegative_check",
-      sql`${table.currentSnapshotSize} IS NULL OR ${table.currentSnapshotSize} >= 0`,
-    ),
     check(
       "whiteboards_status_shape_check",
       sql`(
@@ -225,17 +197,6 @@ export const meetingWhiteboards = sqliteTable(
     titleAtUse: text("title_at_use"),
     titleAtEnd: text("title_at_end"),
     /**
-     * Unused, and no longer written: capture now reuses a revision only when
-     * that revision's own hash matches what was shared. Dropping the columns
-     * means rebuilding this table, and a rebuild's DROP TABLE would cascade
-     * into meeting_whiteboard_pages on D1, so it waits for a migration that
-     * preserves child rows.
-     */
-    startRevisionId: text("start_revision_id").references(() => whiteboardRevisions.id, {
-      onDelete: "set null",
-    }),
-    startSnapshotHash: text("start_snapshot_hash"),
-    /**
      * One replaceable capture slot for the last state actually shared in this
      * Meeting. It is finalized into at most one numbered revision.
      */
@@ -289,11 +250,9 @@ export const meetingWhiteboards = sqliteTable(
     // Deleting a Space cascades here through space_id.
     index("meeting_whiteboards_space_idx").on(table.spaceId),
     index("meeting_whiteboards_board_attached_idx").on(table.whiteboardId, table.attachedAt),
-    index("meeting_whiteboards_start_revision_idx").on(table.startRevisionId),
     index("meeting_whiteboards_captured_revision_idx").on(table.capturedRevisionId),
     check("meeting_whiteboards_title_at_use_length_check", optionalTextLength(table.titleAtUse, 200)),
     check("meeting_whiteboards_title_at_end_length_check", optionalTextLength(table.titleAtEnd, 200)),
-    check("meeting_whiteboards_start_hash_check", optionalExactTextLength(table.startSnapshotHash, 32)),
     check("meeting_whiteboards_last_shared_hash_check", optionalExactTextLength(table.lastSharedSnapshotHash, 32)),
     check(
       "meeting_whiteboards_last_shared_clock_nonnegative_check",
@@ -566,118 +525,6 @@ export const whiteboardFileReferences = sqliteTable(
   ],
 );
 
-/**
- * Retired: board edit approval is now `meeting_admissions.whiteboard_edit_granted`,
- * decided by the Meeting's coordinator. Nothing reads or writes this table; it
- * stays only so the migration that stopped using it runs safely under the code
- * deployed before it, and is dropped by the next migration that reshapes the
- * Meeting tables.
- */
-
-export const whiteboardEditGrants = sqliteTable(
-  "whiteboard_edit_grants",
-  {
-    id: text("id").notNull().primaryKey(),
-    whiteboardId: text("whiteboard_id")
-      .notNull()
-      .references(() => whiteboards.id, { onDelete: "cascade" }),
-    meetingId: text("meeting_id")
-      .notNull()
-      .references(() => meetings.id, { onDelete: "cascade" }),
-    meetingWhiteboardId: text("meeting_whiteboard_id")
-      .notNull()
-      .references(() => meetingWhiteboards.id, { onDelete: "cascade" }),
-    // Exactly one of userId / admissionId — real FKs instead of a polymorphic
-    // principal pair, so revoking a guest's admission cascades their grant.
-    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
-    admissionId: text("admission_id").references(() => meetingAdmissions.id, {
-      onDelete: "cascade",
-    }),
-    grantedByUserId: text("granted_by_user_id").references(() => users.id, {
-      onDelete: "set null",
-    }),
-    grantedAt: integer("granted_at", { mode: "timestamp" })
-      .notNull()
-      .$defaultFn(() => new Date()),
-    revokedAt: integer("revoked_at", { mode: "timestamp" }),
-    updatedAt: integer("updated_at", { mode: "timestamp" })
-      .notNull()
-      .$defaultFn(() => new Date())
-      .$onUpdate(() => new Date()),
-  },
-  (table) => [
-    index("whiteboard_edit_grants_meeting_board_idx").on(table.meetingId, table.whiteboardId),
-    // Back the whiteboardId CASCADE FK. whiteboard_edit_grants_meeting_board_idx
-    // is led by meeting_id, so deleting a whiteboard (space/account teardown)
-    // would otherwise full-scan this table.
-    index("whiteboard_edit_grants_whiteboard_idx").on(table.whiteboardId),
-    index("whiteboard_edit_grants_usage_idx").on(table.meetingWhiteboardId),
-    index("whiteboard_edit_grants_user_idx").on(table.userId),
-    index("whiteboard_edit_grants_admission_idx").on(table.admissionId),
-    index("whiteboard_edit_grants_granted_by_idx").on(table.grantedByUserId),
-    uniqueIndex("whiteboard_edit_grants_active_user_unique_idx")
-      .on(table.meetingWhiteboardId, table.userId)
-      .where(sql`${table.revokedAt} IS NULL`),
-    uniqueIndex("whiteboard_edit_grants_active_admission_unique_idx")
-      .on(table.meetingWhiteboardId, table.admissionId)
-      .where(sql`${table.revokedAt} IS NULL`),
-    foreignKey({
-      columns: [table.meetingWhiteboardId, table.meetingId, table.whiteboardId],
-      foreignColumns: [meetingWhiteboards.id, meetingWhiteboards.meetingId, meetingWhiteboards.whiteboardId],
-      name: "whiteboard_edit_grants_usage_meeting_fk",
-    }).onDelete("cascade"),
-    check(
-      "whiteboard_edit_grants_principal_shape_check",
-      sql`(
-        (${table.userId} IS NOT NULL AND ${table.admissionId} IS NULL)
-        OR (${table.userId} IS NULL AND ${table.admissionId} IS NOT NULL)
-      )`,
-    ),
-    check(
-      "whiteboard_edit_grants_revoked_after_granted_check",
-      sql`${table.revokedAt} IS NULL OR ${table.revokedAt} >= ${table.grantedAt}`,
-    ),
-  ],
-);
-
-/**
- * Per-principal, per-day AI request and output-token reservations. Defined but
- * not yet read or written: the assistant is limited only by an in-memory rate
- * limiter on each sync node, and nothing yet charges AI use to a payer.
- */
-export const whiteboardAiUsage = sqliteTable(
-  "whiteboard_ai_usage",
-  {
-    id: text("id").notNull().primaryKey(),
-    principal: text("principal").notNull(),
-    usageDay: text("usage_day").notNull(),
-    requestCount: integer("request_count").default(0).notNull(),
-    reservedOutputTokens: integer("reserved_output_tokens").default(0).notNull(),
-    leaseExpiresAt: integer("lease_expires_at", { mode: "timestamp" }),
-    createdAt: integer("created_at", { mode: "timestamp" })
-      .notNull()
-      .$defaultFn(() => new Date()),
-    updatedAt: integer("updated_at", { mode: "timestamp" })
-      .notNull()
-      .$defaultFn(() => new Date())
-      .$onUpdate(() => new Date()),
-  },
-  (table) => [
-    uniqueIndex("whiteboard_ai_usage_principal_day_unique").on(
-      table.principal,
-      table.usageDay,
-    ),
-    index("whiteboard_ai_usage_day_idx").on(table.usageDay),
-    check("whiteboard_ai_usage_request_count_nonnegative_check", sql`${table.requestCount} >= 0`),
-    check(
-      "whiteboard_ai_usage_reserved_tokens_nonnegative_check",
-      sql`${table.reservedOutputTokens} >= 0`,
-    ),
-    check("whiteboard_ai_usage_principal_length_check", requiredTrimmedTextLength(table.principal, 255)),
-    check("whiteboard_ai_usage_day_length_check", sql`length(${table.usageDay}) = 10`),
-  ],
-);
-
 export type Whiteboard = typeof whiteboards.$inferSelect;
 export type WhiteboardRevision = typeof whiteboardRevisions.$inferSelect;
 export type MeetingWhiteboard = typeof meetingWhiteboards.$inferSelect;
@@ -685,5 +532,3 @@ export type MeetingWhiteboardPage = typeof meetingWhiteboardPages.$inferSelect;
 export type WhiteboardAsset = typeof whiteboardAssets.$inferSelect;
 export type WhiteboardAssetReference = typeof whiteboardAssetReferences.$inferSelect;
 export type WhiteboardFileReference = typeof whiteboardFileReferences.$inferSelect;
-export type WhiteboardEditGrant = typeof whiteboardEditGrants.$inferSelect;
-export type WhiteboardAiUsage = typeof whiteboardAiUsage.$inferSelect;

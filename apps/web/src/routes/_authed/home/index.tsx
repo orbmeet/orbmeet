@@ -1,9 +1,6 @@
 import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
-import {
-  homeRecentMeetingsQueryOptions,
-  myThreadsQueryOptions,
-  myUpcomingMeetingSchedulesQueryOptions,
-} from "@/app/query-client/queries/meetings";
+import { homeRecentMeetingsQueryOptions, myThreadsQueryOptions } from "@/modules/meetings/client/meetings.queries";
+import { myUpcomingMeetingSchedulesQueryOptions } from "@/modules/scheduling/client/schedules.queries";
 import { RouteError, RoutePending } from "@/app/shell/route-state";
 import { optionalString } from "@/lib/search-params";
 import { createPageHead, SITE_NAME } from "@/lib/seo";

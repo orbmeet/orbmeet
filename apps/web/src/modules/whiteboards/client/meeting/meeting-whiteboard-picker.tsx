@@ -21,7 +21,7 @@ import { radii } from "@orbmeet/ui/tokens/radii.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { leading, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
 import * as stylex from "@stylexjs/stylex";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { deviceTimeZone } from "@/lib/time-zone";
 import type { MeetingSurfaceState } from "@/modules/meetings/contract/live-state";
 import { createNewWhiteboard, listPresentableWhiteboards, presentWhiteboard } from "@/modules/whiteboards/server/api.functions";

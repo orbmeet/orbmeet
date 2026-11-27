@@ -4,7 +4,7 @@ import { listPasskeys } from "@/modules/identity/server/passkey.functions";
 import { getLinkedAccounts } from "@/modules/identity/server/oauth-google.functions";
 import { getMyStorageUsage } from "@/modules/assets/server/storage-usage.functions";
 import { listPersonalAccessTokens } from "@/modules/developer-api/server/personal-access-tokens.functions";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 
 export const sessionsListQueryOptions = () =>
   queryOptions({

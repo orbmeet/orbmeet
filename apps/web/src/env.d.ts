@@ -1,4 +1,4 @@
-import type { MeetingRoom } from "@/modules/meetings/server/runtime/meeting-room";
+import type { MeetingRoom } from "@/app/durable-objects/meeting-room";
 import type { SerialScope } from "@/app/serial/serial-scope";
 
 // Config-derived types bind Durable Object namespaces unparameterized; these

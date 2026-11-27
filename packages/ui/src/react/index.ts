@@ -12,6 +12,8 @@ export * from "./filter-input";
 export * from "./input";
 export * from "./menu";
 export * from "./popover";
+export * from "./query-error-notice";
+export * from "./section";
 export * from "./select";
 export * from "./spinner";
 export * from "./switch";

@@ -2,8 +2,8 @@ import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   endedMeetingQueryOptions,
-} from "@/app/query-client/queries/meeting-summary";
-import { queryKeys } from "@/app/query-client/query-keys";
+} from "@/modules/transcripts/client/transcripts.queries";
+import { queryKeys } from "@/lib/query-keys";
 import type { getEndedMeeting } from "@/modules/transcripts/server/meeting-summary.functions";
 
 export type EndedMeeting = NonNullable<

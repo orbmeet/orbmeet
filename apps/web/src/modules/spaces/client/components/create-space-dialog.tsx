@@ -4,8 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { createSpace } from "@/modules/spaces/server/crud.functions";
 import { getErrorMessage } from "@/lib/error-inspection";
-import { queryKeys } from "@/app/query-client/query-keys";
-import { myOrganizationsQueryOptions } from "@/app/query-client/queries/organizations";
+import { queryKeys } from "@/lib/query-keys";
+import { myOrganizationsQueryOptions } from "@/modules/organizations/client/organizations.queries";
 import {
   Button,
   Dialog,

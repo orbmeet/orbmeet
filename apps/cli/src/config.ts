@@ -38,6 +38,21 @@ async function readStoredToken(): Promise<string | undefined> {
   return token === undefined || token === null ? undefined : String(token);
 }
 
+function resolveApiUrl(): string {
+  const override = process.env.ORBMEET_API_URL?.trim();
+  if (!override) return CLOUD_API_URL;
+  let parsed: URL;
+  try {
+    parsed = new URL(override);
+  } catch {
+    throw new Error(`ORBMEET_API_URL is not a valid URL: ${override}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("ORBMEET_API_URL must use http:// or https://");
+  }
+  return parsed.toString().replace(/\/+$/, "");
+}
+
 export async function readConfig(): Promise<CliConfig> {
   // Trimmed as `configure` trims what it saves: a CI secret often ends in a
   // newline, which no HTTP header may carry.
@@ -45,7 +60,7 @@ export async function readConfig(): Promise<CliConfig> {
   if (!token) {
     throw new Error("Orb Meet is not configured. Pipe a token to: orbmeet configure");
   }
-  return { url: CLOUD_API_URL, token };
+  return { url: resolveApiUrl(), token };
 }
 
 /**

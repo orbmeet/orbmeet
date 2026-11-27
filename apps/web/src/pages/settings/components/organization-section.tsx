@@ -27,10 +27,11 @@ import {
   myOrganizationsQueryOptions,
   organizationMembersInfiniteQueryOptions,
   organizationSpacesQueryOptions,
-} from "@/app/query-client/queries/organizations";
-import { planPricesQueryOptions } from "@/app/query-client/queries/plan-prices";
-import { QueryErrorNotice } from "@/app/query-client/query-error-notice";
-import { queryKeys } from "@/app/query-client/query-keys";
+} from "@/modules/organizations/client/organizations.queries";
+import { planPricesQueryOptions } from "@/modules/billing/client/plan-prices.queries";
+import { QueryErrorNotice } from "@orbmeet/ui/react";
+import { logError } from "@/lib/logger";
+import { queryKeys } from "@/lib/query-keys";
 import { openBillingPortal, startSubscriptionCheckout } from "@/modules/billing/client/billing-client";
 import { isPaymentFailing, PaymentFailedNotice } from "@/modules/billing/client/payment-failed-notice";
 import { DEFAULT_PLAN_PRICES, formatPlanPrice } from "@/modules/billing/contract/plan-prices";
@@ -193,7 +194,7 @@ function OrganizationBilling({
       if (running) await openBillingPortal({ organizationId });
       else await startSubscriptionCheckout({ plan: "organization", organizationId });
     } catch (err) {
-      console.error("Organization billing failed:", err);
+      logError("[settings] Organization billing failed", err);
       setError("Something went wrong. Please try again or contact support.");
     } finally {
       setLoading(false);

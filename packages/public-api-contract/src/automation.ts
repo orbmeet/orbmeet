@@ -57,6 +57,8 @@ export const automationMeetingContentSchema = v.picklist([
   "whiteboard_pdf",
 ]);
 
+export const MAX_AUTOMATION_TRANSCRIPT_LIMIT = 500;
+
 /**
  * Find one Meeting either by its id or by human selectors in a time zone.
  * Transcript cursors only continue a lookup that already resolved to an id.
@@ -74,7 +76,7 @@ export const automationMeetingLookupSchema = v.pipe(
       startedAt: integerSchema(1),
       id: idSchema,
     })),
-    transcriptLimit: pageLimitSchema(500, 500),
+    transcriptLimit: pageLimitSchema(MAX_AUTOMATION_TRANSCRIPT_LIMIT, MAX_AUTOMATION_TRANSCRIPT_LIMIT),
   }),
   v.forward(
     v.partialCheck(

@@ -90,6 +90,10 @@ export class TranscriptJournal {
         if (!(error instanceof Error && error.message.includes("duplicate column"))) throw error;
       }
     }
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS segments_next_attempt_idx ON segments (next_attempt_at, id);
+      CREATE INDEX IF NOT EXISTS segments_meeting_idx ON segments (meeting_id);
+    `);
   }
 
   /** Durably record one final. Returns once SQLite has committed it. */

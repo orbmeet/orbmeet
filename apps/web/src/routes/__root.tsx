@@ -22,7 +22,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { PwaStatus } from "@/app/shell/pwa-status";
 import { DeadEnd } from "@/app/shell/dead-end";
 import { DOCUMENT_PATHNAME, crossesDocumentBoundary } from "@/app/shell/document-boundary";
-import { BillingCheckoutSync } from "@/modules/billing/client/billing-checkout-sync";
+import { BillingCheckoutSync } from "@/app/shell/billing-checkout-sync";
 import {
   SITE_DESCRIPTION,
   SITE_NAME,
@@ -39,9 +39,9 @@ import {
 } from "@/lib/telemetry/client-errors";
 import { installTelemetryOutbox } from "@/lib/telemetry/outbox";
 import { CSPProvider } from "@base-ui/react/csp-provider";
-import { resolveCspNonce } from "@/platform/http/csp-nonce";
+import { resolveCspNonce } from "@/lib/csp-nonce";
 import { APPEARANCE_SCRIPT, THEME_COLOR, applyThemeColor, readAppearance } from "@/app/appearance/appearance";
-import { IN_APP_BROWSER_SCRIPT } from "@/app/shell/in-app-browser";
+import { IN_APP_BROWSER_SCRIPT } from "@/lib/in-app-browser";
 import { UNSUPPORTED_BROWSER_SCRIPT } from "@/app/shell/browser-support";
 
 const styles = stylex.create({

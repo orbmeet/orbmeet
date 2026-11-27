@@ -4,7 +4,7 @@ import { createPageHead } from "@/lib/seo";
 import {
   standaloneWhiteboardAccessQueryOptions,
   whiteboardQueryOptions,
-} from "@/app/query-client/queries/whiteboards";
+} from "@/modules/whiteboards/client/whiteboards.queries";
 import { lazy } from "react";
 
 const WhiteboardDocumentPage = import.meta.env.SSR ? () => null : lazy(() => import("@/pages/whiteboards/whiteboard-document-page").then((page) => ({ default: page.WhiteboardDocumentPage })));

@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Monitor, Moon, Sun } from "lucide-react";
 import * as stylex from "@stylexjs/stylex";
 
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { applyAppearance, type Appearance } from "@/app/appearance/appearance";
 import { setAppearance } from "@/modules/identity/server/account.functions";
 import { motion } from "@orbmeet/ui/styles/atoms";

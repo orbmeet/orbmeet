@@ -14,7 +14,7 @@ import { useInstantMeeting } from "@/modules/meetings/client/use-instant-meeting
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
 import { useNow } from "@/lib/hooks/use-now";
 import { useAuthenticatedSession } from "@/app/query-client/use-authenticated-session";
-import { homeRecentMeetingsQueryOptions, myThreadsQueryOptions } from "@/app/query-client/queries/meetings";
+import { homeRecentMeetingsQueryOptions, myThreadsQueryOptions } from "@/modules/meetings/client/meetings.queries";
 import type { Thread } from "@/modules/meetings/contract/threads";
 import { Spinner } from "@orbmeet/ui/react";
 import { CreatePersonalMeetingLinkDialog } from "@/modules/meetings/client/dashboard/create-personal-meeting-link-dialog";

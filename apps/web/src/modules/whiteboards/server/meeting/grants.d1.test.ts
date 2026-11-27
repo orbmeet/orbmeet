@@ -115,9 +115,25 @@ describe("reading a board edit grant", () => {
     })).resolves.toMatchObject({ whiteboardEditGranted: false });
   });
 
-  it("does not honour a grant on an admission that is no longer approved", async () => {
+  it("forbids grants on revoked admissions and does not honour revoked admissions", async () => {
     await insertOpenMeeting("meeting_1", "usr_host");
-    await insertAdmission({ id: "adm_grantee", meetingId: "meeting_1", subject: { userId: "usr_grantee" }, status: "revoked", whiteboardEditGranted: true });
+    await expect(
+      insertAdmission({
+        id: "adm_grantee_bad",
+        meetingId: "meeting_1",
+        subject: { userId: "usr_grantee" },
+        status: "revoked",
+        whiteboardEditGranted: true,
+      }),
+    ).rejects.toThrow();
+
+    await insertAdmission({
+      id: "adm_grantee",
+      meetingId: "meeting_1",
+      subject: { userId: "usr_grantee" },
+      status: "revoked",
+      whiteboardEditGranted: false,
+    });
 
     await expect(resolveWhiteboardCapabilities(db, {
       meetingId: "meeting_1",

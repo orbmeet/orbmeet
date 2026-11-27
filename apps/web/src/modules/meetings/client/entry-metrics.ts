@@ -1,24 +1,15 @@
+import {
+  beginMeetingEntryFlow,
+  ENTRY_METRICS_STORAGE_KEY,
+  writeEntryMetricsState,
+  type EntryMetricKey,
+  type EntryMetricsState,
+} from "@/lib/telemetry/meeting-entry-flow";
 import { emitMeetingEntryDiagnostic } from "./entry/diagnostics";
 
-const STORAGE_KEY = "orbmeet.meeting-entry-metrics.v1";
+export { beginMeetingEntryFlow };
+
 const STALE_AFTER_MS = 10 * 60 * 1000;
-
-type EntryMetricKey =
-  | "intentAt"
-  | "routeMountedAt"
-  | "prejoinReadyAt"
-  | "joinRequestedAt"
-  | "joinCredentialsReadyAt"
-  | "liveKitConnectedAt"
-  | "whiteboardRequestedAt"
-  | "whiteboardReadyAt";
-
-type EntryMetricsState = Partial<Record<EntryMetricKey, number>> & {
-  code?: string;
-  source?: string;
-  flowId?: string;
-  loggedStages?: string[];
-};
 
 function now() {
   return Date.now();
@@ -29,7 +20,7 @@ function now() {
 // be what stops one.
 function readState(): EntryMetricsState | null {
   try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    const raw = window.sessionStorage.getItem(ENTRY_METRICS_STORAGE_KEY);
     if (!raw) return null;
 
     const parsed = JSON.parse(raw) as EntryMetricsState;
@@ -45,21 +36,13 @@ function readState(): EntryMetricsState | null {
     );
 
     if (!freshestTimestamp || now() - freshestTimestamp > STALE_AFTER_MS) {
-      window.sessionStorage.removeItem(STORAGE_KEY);
+      window.sessionStorage.removeItem(ENTRY_METRICS_STORAGE_KEY);
       return null;
     }
 
     return parsed;
   } catch {
     return null;
-  }
-}
-
-function writeState(state: EntryMetricsState) {
-  try {
-    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // Ignore storage failures.
   }
 }
 
@@ -81,7 +64,7 @@ function emitStage(stage: "livekit" | "whiteboard", state: EntryMetricsState) {
 
   loggedStages.add(stage);
   state.loggedStages = [...loggedStages];
-  writeState(state);
+  writeEntryMetricsState(state);
 
   emitMeetingEntryDiagnostic("meeting_entry_timing", {
     stage,
@@ -103,18 +86,6 @@ function emitStage(stage: "livekit" | "whiteboard", state: EntryMetricsState) {
   });
 }
 
-export function beginMeetingEntryFlow(options: { code?: string; source: string }) {
-  const state: EntryMetricsState = {
-    flowId: `${now()}-${Math.random().toString(36).slice(2, 8)}`,
-    source: options.source,
-    code: options.code,
-    intentAt: now(),
-    loggedStages: [],
-  };
-
-  writeState(state);
-}
-
 /**
  * Someone asked for a whiteboard.
  *
@@ -132,7 +103,7 @@ export function markMeetingWhiteboardRequested(options?: { code?: string }) {
     (stage) => stage !== "whiteboard",
   );
   if (options?.code) state.code = options.code;
-  writeState(state);
+  writeEntryMetricsState(state);
 }
 
 export function markMeetingEntryMetric(metric: EntryMetricKey, options?: { code?: string; source?: string }) {
@@ -144,7 +115,7 @@ export function markMeetingEntryMetric(metric: EntryMetricKey, options?: { code?
   if (options?.code) state.code = options.code;
   if (options?.source) state.source = options.source;
 
-  writeState(state);
+  writeEntryMetricsState(state);
 
   if (metric === "liveKitConnectedAt") {
     emitStage("livekit", state);

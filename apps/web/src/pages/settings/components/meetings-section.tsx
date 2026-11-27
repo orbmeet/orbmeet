@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Check, Copy, Settings2 } from "lucide-react";
 import * as stylex from "@stylexjs/stylex";
 
-import { myThreadsQueryOptions } from "@/app/query-client/queries/meetings";
+import { myThreadsQueryOptions } from "@/modules/meetings/client/meetings.queries";
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
 import { RoomLinkSettings } from "@/modules/meetings/client/components/links/room-link-settings";
 import { CreatePersonalMeetingLinkDialog } from "@/modules/meetings/client/dashboard/create-personal-meeting-link-dialog";

@@ -7,6 +7,7 @@ import * as stylex from "@stylexjs/stylex";
 import { ExternalLink } from "lucide-react";
 import * as React from "react";
 
+import { logError } from "@/lib/logger";
 import { settings } from "../settings-styles";
 
 const styles = stylex.create({
@@ -60,7 +61,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@orbmeet/ui/react";
 import { Badge } from "@orbmeet/ui/react";
 import { SettingsSection } from "./settings-section";
-import { QueryErrorNotice } from "@/app/query-client/query-error-notice";
+import { QueryErrorNotice } from "@orbmeet/ui/react";
 import { formatPlanDuration, getPlanLimits, type SubscriptionTier } from "@/modules/billing/contract/plan-limits";
 import type { SubscriptionStatus } from "@/modules/billing/contract/types";
 import {
@@ -69,7 +70,7 @@ import {
 } from "@/modules/billing/client/billing-client";
 import { isPaymentFailing, PaymentFailedNotice } from "@/modules/billing/client/payment-failed-notice";
 import { storageUsageQueryOptions } from "@/app/query-client/queries/settings";
-import { planPricesQueryOptions } from "@/app/query-client/queries/plan-prices";
+import { planPricesQueryOptions } from "@/modules/billing/client/plan-prices.queries";
 import { DEFAULT_PLAN_PRICES, formatPlanPrice } from "@/modules/billing/contract/plan-prices";
 
 function formatBytes(bytes: number | null): string {
@@ -101,7 +102,7 @@ export function PlanSection({
     try {
       await startSubscriptionCheckout({ plan: "pro" });
     } catch (err) {
-      console.error("Checkout failed:", err);
+      logError("[settings] Checkout failed", err);
       setError("Something went wrong. Please try again or contact support.");
     } finally {
       setLoading(null);
@@ -114,7 +115,7 @@ export function PlanSection({
     try {
       await openBillingPortal();
     } catch (err) {
-      console.error("Billing portal failed:", err);
+      logError("[settings] Billing portal failed", err);
       setError("Could not open the billing portal. Please try again or contact support.");
     } finally {
       setLoading(null);

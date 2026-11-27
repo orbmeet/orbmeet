@@ -4,7 +4,7 @@ import { AppPending } from "@/app/shell/app-pending";
 import { DeadEnd } from "@/app/shell/dead-end";
 import { markMeetingEntryMetric } from "@/modules/meetings/client/entry-metrics";
 import { isMeetingCode } from "@/modules/meetings/contract/meeting-path";
-import { sessionQueryOptions } from "@/app/query-client/queries/session";
+import { sessionQueryOptions } from "@/modules/identity/client/session.queries";
 import {lookupMeeting} from "@/modules/meetings/server/history/meeting-lookup.functions";
 import { SITE_NAME, createPageHead } from "@/lib/seo";
 import { MeetingCodeRetryForm } from "@/modules/meetings/client/components/meeting-code-retry-form";

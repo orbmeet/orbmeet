@@ -1,8 +1,8 @@
 import {
-  base64urlDecode,
-  base64urlEncode,
+  decodeBase64Url,
+  encodeBase64Url,
   importHmacSha256Key,
-} from "@orbmeet/whiteboard-core/crypto-utils";
+} from "@orbmeet/primitives";
 const enc = new TextEncoder();
 const MAX_RECORDER_BOOTSTRAP_CLOCK_SKEW_SECONDS = 60;
 /**
@@ -48,10 +48,10 @@ export async function createRecorderBootstrapToken(
     iat: now,
     exp: now + RECORDER_BOOTSTRAP_TOKEN_TTL_SECONDS,
   };
-  const payload = base64urlEncode(enc.encode(JSON.stringify(claims)));
+  const payload = encodeBase64Url(enc.encode(JSON.stringify(claims)));
   const key = await importHmacSha256Key(secret, ["sign"]);
   const signature = await crypto.subtle.sign("HMAC", key, enc.encode(payload));
-  return `${payload}.${base64urlEncode(new Uint8Array(signature))}`;
+  return `${payload}.${encodeBase64Url(new Uint8Array(signature))}`;
 }
 
 export async function verifyRecorderBootstrapToken(
@@ -63,10 +63,8 @@ export async function verifyRecorderBootstrapToken(
   if (parts.length !== 2) throw new Error("Invalid recorder bootstrap token format");
   const [payload, signature] = parts;
 
-  let signatureBytes: Uint8Array;
-  try {
-    signatureBytes = base64urlDecode(signature);
-  } catch {
+  const signatureBytes = decodeBase64Url(signature);
+  if (!signatureBytes) {
     throw new Error("Invalid recorder bootstrap token signature encoding");
   }
 
@@ -74,14 +72,16 @@ export async function verifyRecorderBootstrapToken(
   const valid = await crypto.subtle.verify(
     "HMAC",
     key,
-    signatureBytes as BufferSource,
+    signatureBytes,
     enc.encode(payload),
   );
   if (!valid) throw new Error("Invalid recorder bootstrap token signature");
 
   let claims: unknown;
   try {
-    claims = JSON.parse(new TextDecoder().decode(base64urlDecode(payload)));
+    const payloadBytes = decodeBase64Url(payload);
+    if (!payloadBytes) throw new Error("Invalid base64url");
+    claims = JSON.parse(new TextDecoder().decode(payloadBytes));
   } catch {
     throw new Error("Invalid recorder bootstrap token payload");
   }

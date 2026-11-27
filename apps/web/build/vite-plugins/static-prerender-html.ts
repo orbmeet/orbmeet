@@ -1,4 +1,4 @@
-import { CSP_NONCE_PLACEHOLDER } from "../../src/platform/http/csp-nonce.ts";
+import { CSP_NONCE_PLACEHOLDER } from "../../src/lib/csp-nonce.ts";
 
 const escapedPlaceholder = CSP_NONCE_PLACEHOLDER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const placeholderNonceAttribute = new RegExp(

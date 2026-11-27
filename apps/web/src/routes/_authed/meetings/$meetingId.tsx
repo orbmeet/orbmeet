@@ -1,5 +1,5 @@
 import { createFileRoute, notFound, lazyRouteComponent } from "@tanstack/react-router";
-import { endedMeetingQueryOptions } from "@/app/query-client/queries/meeting-summary";
+import { endedMeetingQueryOptions } from "@/modules/transcripts/client/transcripts.queries";
 import { createPageHead } from "@/lib/seo";
 import { meetingDisplayTitle } from "@/modules/meetings/client/components/meeting-format";
 import { optionalString } from "@/lib/search-params";

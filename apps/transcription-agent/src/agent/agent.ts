@@ -10,7 +10,7 @@ import {
   type Room,
   type TrackPublication,
 } from "@livekit/rtc-node";
-import { normalizeSpeechLanguage } from "@orbmeet/caption-protocol";
+import { CAPTION_ATTRIBUTE, normalizeSpeechLanguage } from "@orbmeet/caption-protocol";
 import { RoomServiceClient, ServerError } from "livekit-server-sdk";
 import { loadAgentConfig, type AgentConfig } from "../config.js";
 import { TranscriptJournal } from "../outbox/transcript-journal.js";
@@ -29,7 +29,7 @@ import { roomAllowsTranscription } from "@orbmeet/caption-protocol/room-transcri
 import { TranscriptionSupervisor } from "./transcription-supervisor.js";
 import { logError, logInfo, logWarn } from "../log.js";
 
-const LANGUAGE_ATTRIBUTE = "orbmeet.caption_language";
+const LANGUAGE_ATTRIBUTE = CAPTION_ATTRIBUTE.language;
 const PUBLISHER_WAIT_MS = 10_000;
 /** How long captions already offered may take to go out when the job stops. */
 const CAPTION_SHUTDOWN_GRACE_MS = 2_000;
@@ -75,7 +75,7 @@ export function waitForPublisher(
 /** Ask the LiveKit server whether `identity` is in `roomName`. */
 function serverPresence(config: AgentConfig, roomName: string, identity: string): PublisherPresence {
   const rooms = new RoomServiceClient(
-    config.livekitUrl.replace(/^wss:/, "https:"),
+    config.livekitUrl.replace(/^ws(s?):/, "http$1:"),
     config.livekitApiKey,
     config.livekitApiSecret,
   );

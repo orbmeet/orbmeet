@@ -3,7 +3,7 @@ import {
   isPublicBrowserHost,
   isPublicIpAddress,
   isSafeExternalBrowserUrl,
-} from "@orbmeet/whiteboard-core/public-host";
+} from "@orbmeet/primitives/public-host";
 import {
   classifyIncomingDiff,
   JsonMessageAssembler,

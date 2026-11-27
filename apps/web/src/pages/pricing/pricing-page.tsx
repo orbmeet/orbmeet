@@ -7,8 +7,8 @@ import {
   openBillingPortal,
   startSubscriptionCheckout,
 } from "@/modules/billing/client/billing-client";
-import { sessionQueryOptions } from "@/app/query-client/queries/session";
-import { planPricesQueryOptions } from "@/app/query-client/queries/plan-prices";
+import { sessionQueryOptions } from "@/modules/identity/client/session.queries";
+import { planPricesQueryOptions } from "@/modules/billing/client/plan-prices.queries";
 import { DEFAULT_PLAN_PRICES, formatPlanPrice, type PlanPrices } from "@/modules/billing/contract/plan-prices";
 import { Button, buttonStyles } from "@orbmeet/ui/react";
 import { enter, stagger } from "@orbmeet/ui/styles/animations";
@@ -24,6 +24,7 @@ import * as stylex from "@stylexjs/stylex";
 import { PublicNav } from "@/app/shell/public-nav";
 import { PublicFooter } from "@/app/shell/public-footer";
 import { MAIN_CONTENT_ID } from "@/app/shell/skip-link";
+import { logError } from "@/lib/logger";
 import { PRICING_FAQS } from "@/lib/seo";
 import { glass } from "@orbmeet/ui/tokens/wash.stylex";
 
@@ -373,7 +374,7 @@ function PricingCard({
       if (managesExistingSubscription) await openBillingPortal();
       else await startSubscriptionCheckout({ plan: "pro" });
     } catch (err) {
-      console.error("Checkout failed:", err);
+      logError("[pricing] Checkout failed", err);
       setError("Something went wrong. Please try again or contact support.");
     } finally {
       setLoading(false);

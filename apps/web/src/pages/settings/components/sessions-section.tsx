@@ -2,7 +2,7 @@ import { useMutation, useSuspenseQuery, useQueryClient } from "@tanstack/react-q
 import { useRouter } from "@tanstack/react-router";
 import { sessionsListQueryOptions } from "@/app/query-client/queries/settings";
 import { revokeSession, revokeAllOtherSessions } from "@/modules/identity/server/account.functions";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { resetAuthQueryCache } from "@/modules/identity/client/auth-query-cache";
 import { Button } from "@orbmeet/ui/react";
 import { Badge } from "@orbmeet/ui/react";

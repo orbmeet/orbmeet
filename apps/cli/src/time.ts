@@ -4,7 +4,7 @@ import {
   isValidTimeZone,
   resolveWallClockToIso,
   type WallClock,
-} from "@orbmeet/public-api-contract/time-zone";
+} from "@orbmeet/primitives/time-zone";
 
 export { formatInTimeZone };
 

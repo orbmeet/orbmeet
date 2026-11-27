@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { PopoverContent, PopoverRoot, PopoverTrigger } from "@orbmeet/ui/react/popover";
 import {
   ChevronLeft,
@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { accent, border, danger, ink, neutral, surface, violet } from "@orbmeet/ui/tokens/colors.stylex";
 import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
+import { boardZIndex } from "@orbmeet/ui/tokens/layers.stylex";
 import { duration, easing } from "@orbmeet/ui/tokens/motion.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";
 import { shadows } from "@orbmeet/ui/tokens/shadows.stylex";
@@ -35,7 +36,7 @@ const styles = stylex.create({
     position: "absolute",
     left: "50%",
     bottom: "var(--viewport-bottom, 1.5rem)",
-    zIndex: 200,
+    zIndex: boardZIndex.chrome,
     display: "flex",
     maxWidth: "calc(100% - 2rem)",
     transform: "translateX(-50%)",
@@ -614,10 +615,12 @@ export function WhiteboardViewportControls({
     !hasNavigationController &&
     Boolean(onSetNavigationController) &&
     handoffCandidates.length > 0;
-  // The menu closes with its trigger: someone taking control, or the last
-  // candidate leaving, would otherwise leave it open in state, and its
-  // full-screen scrim would come back with the trigger to swallow a click.
-  if (showHandoffMenu && !canHandOff) setShowHandoffMenu(false);
+  // Derived for immediate closure without render-time setState, plus an effect
+  // to reset the open flag so the menu stays closed if `canHandOff` returns later.
+  const handoffMenuOpen = showHandoffMenu && canHandOff;
+  useEffect(() => {
+    if (!canHandOff) setShowHandoffMenu(false);
+  }, [canHandOff]);
 
   const handleInsert = () => {
     if (isAddingPage) return;
@@ -682,7 +685,7 @@ export function WhiteboardViewportControls({
   );
 
   const handoff = canHandOff && (
-    <PopoverRoot open={showHandoffMenu} onOpenChange={setShowHandoffMenu}>
+    <PopoverRoot open={handoffMenuOpen} onOpenChange={setShowHandoffMenu}>
       {/* Labeled, not a bare broadcast glyph: this hands navigation
           control to a participant, and the words say so — except in an
           upright phone's capsule, which has no room for them. */}

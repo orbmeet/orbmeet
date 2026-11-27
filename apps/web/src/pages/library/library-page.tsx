@@ -1,14 +1,14 @@
 import { getRouteApi, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Presentation, Search, Video } from "lucide-react";
-import { myMeetingsQueryOptions, mySpokenLinesQueryOptions } from "@/app/query-client/queries/meetings";
+import { myMeetingsQueryOptions } from "@/modules/meetings/client/meetings.queries";
+import { mySpokenLinesQueryOptions } from "@/modules/transcripts/client/transcripts.queries";
 import { MIN_SPOKEN_SEARCH_LENGTH } from "@/modules/transcripts/server/spoken-search.functions";
-import { mySpacesQueryOptions } from "@/app/query-client/queries/spaces";
-import { myWhiteboardsQueryOptions } from "@/app/query-client/queries/whiteboards";
+import { mySpacesQueryOptions } from "@/modules/spaces/client/spaces.queries";
+import { myWhiteboardsQueryOptions } from "@/modules/whiteboards/client/whiteboards.queries";
 import { useAuthenticatedSession } from "@/app/query-client/use-authenticated-session";
-import { QueryErrorNotice } from "@/app/query-client/query-error-notice";
-import { sinceFor, toLibraryMeetingsInput, type LibrarySearch, type LibraryType } from "../../routes/_authed/library/index";
+import { sinceFor, toLibraryMeetingsInput, type LibrarySearch, type LibraryType } from "./library-search";
 import { groupMeetingsByDay, isShortCall, MeetingRow } from "@/modules/meetings/client/components/meeting-row";
 import { meetingDisplayTitle, formatMeetingDate } from "@/modules/meetings/client/components/meeting-format";
 import { beginMeetingEntryFlow } from "@/modules/meetings/client/entry-metrics";
@@ -17,12 +17,13 @@ import { findMeetingCode } from "@/modules/meetings/client/format-code";
 import { endMeeting } from "@/modules/meetings/server/runtime/live.functions";
 import { EndMeetingDialog } from "@/modules/meetings/client/components/end-meeting-dialog";
 import { boardDisplayTitle } from "@/modules/whiteboards/client/board-title";
-import { ArchivedBoardRow } from "@/modules/whiteboards/client/components/archived-board-row";
+import { ArchivedBoardRow } from "@/pages/library/archived-board-row";
 import { NewWhiteboardDialog } from "@/modules/whiteboards/client/components/new-whiteboard-dialog";
 import { List } from "@/app/shell/list";
 import { formatActivityDay } from "@/modules/whiteboards/client/whiteboard-activity";
 import { getErrorMessage } from "@/lib/error-inspection";
-import { Avatar, Button, Select, Spinner, useToast } from "@orbmeet/ui/react";
+import { queryKeys } from "@/lib/query-keys";
+import { Avatar, Button, QueryErrorNotice, Select, Spinner, useToast } from "@orbmeet/ui/react";
 import { enter } from "@orbmeet/ui/styles/animations";
 import { focus, layout, motion } from "@orbmeet/ui/styles/atoms";
 import { accent, border, ink, live, neutral, surface, warning } from "@orbmeet/ui/tokens/colors.stylex";
@@ -309,9 +310,13 @@ function EndMeetingButton({ meetingId, peopleCount, onEnded }: { meetingId: stri
  * would otherwise sit "live" for hours with only a way in; it has a way to end.
  */
 function HappeningNow() {
+  const queryClient = useQueryClient();
   const query = useInfiniteQuery(myMeetingsQueryOptions({ status: "open", limit: 100 }));
   const meetings = query.data?.pages.flatMap((page) => page.meetings) ?? [];
   if (meetings.length === 0) return null;
+  const handleEnded = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.meetings.lists() });
+  };
   return (
     <section aria-labelledby="library-live" {...stylex.props(styles.live)}>
       <h2 id="library-live" {...stylex.props(styles.sectionTitle)}>Happening now</h2>
@@ -329,7 +334,7 @@ function HappeningNow() {
             </div>
             <div {...stylex.props(styles.liveActions)}>
               {meeting.startedByMe ? (
-                <EndMeetingButton meetingId={meeting.id} peopleCount={inRoom} onEnded={() => void query.refetch()} />
+                <EndMeetingButton meetingId={meeting.id} peopleCount={inRoom} onEnded={handleEnded} />
               ) : null}
               <a
                 href={meetingEntryPath(meeting.code)}

@@ -8,20 +8,18 @@ import {
   useSuspenseInfiniteQuery,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-import { sessionQueryOptions } from "@/app/query-client/queries/session";
+import { sessionQueryOptions } from "@/modules/identity/client/session.queries";
 import { listSpaceMeetings, renameOpenMeeting } from "@/modules/meetings/server/history/space-meeting-queries.functions";
 import {
   replaceSpaceMeetingLink,
   type getSpaceDefaultMeetingLink,
 } from "@/modules/meetings/server/space-default-meeting-link.functions";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { getErrorMessage } from "@/lib/error-inspection";
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
-import { spaceDefaultMeetingLinkQueryOptions } from "@/app/query-client/queries/meetings";
-import {
-  spaceMeetingsQueryOptions,
-  spaceWhiteboardsQueryOptions,
-} from "@/app/query-client/queries/spaces";
+import { spaceDefaultMeetingLinkQueryOptions } from "@/modules/meetings/client/meetings.queries";
+import { spaceMeetingsQueryOptions } from "@/modules/meetings/client/meetings.queries";
+import { spaceWhiteboardsQueryOptions } from "@/modules/whiteboards/client/whiteboards.queries";
 import { boardDisplayTitle } from "@/modules/whiteboards/client/board-title";
 import { formatActivityDay } from "@/modules/whiteboards/client/whiteboard-activity";
 import {
@@ -51,7 +49,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { List, ListRow, WideOnly } from "@/app/shell/list";
-import { Section } from "@/app/shell/section";
+import { Section } from "@orbmeet/ui/react";
 import { focus, layout, motion, stack, status, touch } from "@orbmeet/ui/styles/atoms";
 import { accent, ink, neutral, success } from "@orbmeet/ui/tokens/colors.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";

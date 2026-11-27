@@ -23,6 +23,7 @@ describe("parseKeyring", () => {
     expect(parseKeyring("{}")).toBeNull();
     expect(parseKeyring("[]")).toBeNull();
     expect(parseKeyring(JSON.stringify({ "bad id": SECRET_A }))).toBeNull();
+    expect(parseKeyring(JSON.stringify({ "0": SECRET_A }))).toBeNull();
     expect(parseKeyring(JSON.stringify({ primary: "short" }))).toBeNull();
     expect(parseKeyring(JSON.stringify({ primary: ` ${SECRET_A}` }))).toBeNull();
   });

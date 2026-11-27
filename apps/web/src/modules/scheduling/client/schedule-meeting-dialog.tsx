@@ -7,7 +7,7 @@ import * as stylex from "@stylexjs/stylex";
 import { cancelMeetingSchedule, createMeetingSchedule, rescheduleMeeting } from "@/modules/scheduling/server/api.functions";
 import type { getMyUpcomingMeetingSchedules } from "@/modules/scheduling/server/queries.functions";
 import { getErrorMessage } from "@/lib/error-inspection";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
 import { Alert, Button } from "@orbmeet/ui/react";
 import {
@@ -29,9 +29,9 @@ import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { fonts, leading, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
-import { mySpacesQueryOptions } from "@/app/query-client/queries/spaces";
-import { myThreadsQueryOptions } from "@/app/query-client/queries/meetings";
-import { sessionQueryOptions } from "@/app/query-client/queries/session";
+import { mySpacesQueryOptions } from "@/modules/spaces/client/spaces.queries";
+import { myThreadsQueryOptions } from "@/modules/meetings/client/meetings.queries";
+import { sessionQueryOptions } from "@/modules/identity/client/session.queries";
 import {
   MeetingEntryModeField,
   type EntryModeChoice,

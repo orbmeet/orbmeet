@@ -1,5 +1,5 @@
 import { getRouteApi } from "@tanstack/react-router";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { lazy, Suspense, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,7 +19,7 @@ import { fonts, leading, text, weight } from "@orbmeet/ui/tokens/typography.styl
 import * as stylex from "@stylexjs/stylex";
 import {
   participantHandoffQueryOptions,
-} from "@/app/query-client/queries/meeting-summary";
+} from "@/modules/transcripts/client/transcripts.queries";
 import { getParticipantHandoffWhiteboard } from "@/modules/transcripts/server/participant-handoff.functions";
 import type { HandoffUnavailableReason } from "@/modules/transcripts/server/participant-handoff.server";
 import { useNow } from "@/lib/hooks/use-now";
@@ -561,10 +561,7 @@ export function PublicMeetingSummaryPage() {
       </div>
 
       <p {...stylex.props(styles.notice)}>
-        This private guest handoff includes the AI Summary and Whiteboard captures from the Meeting. The full Transcript and recordings are available only in the retained signed-in Meeting record.
-        {handoffQuery.data?.retainUntil
-          ? ` This handoff is available until ${new Date(handoffQuery.data.retainUntil).toLocaleDateString([], { year: "numeric", month: "long", day: "numeric" })}.`
-          : " This handoff has no scheduled expiry."}
+        This private guest handoff includes the AI Summary and Whiteboard captures from the Meeting. The full Transcript and recordings are available only in the signed-in Meeting record.
       </p>
 
       <Card variant="glass">

@@ -6,9 +6,9 @@ import {
 } from "@tanstack/react-query";
 import { openExternalUrl } from "@orbmeet/ui/react";
 import { deleteFile, getFileDownloadUrl } from "@/modules/spaces/server/files.functions";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { getErrorMessage } from "@/lib/error-inspection";
-import { filesInfiniteQueryOptions } from "@/app/query-client/queries/files";
+import { filesInfiniteQueryOptions } from "@/modules/spaces/client/spaces.queries";
 import { EmptyState } from "@orbmeet/ui/react";
 import { List, ListGlyph, ListRow } from "@/app/shell/list";
 import { Button, dialogLayout } from "@orbmeet/ui/react";

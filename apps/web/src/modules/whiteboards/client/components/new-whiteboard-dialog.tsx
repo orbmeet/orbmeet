@@ -25,7 +25,7 @@ import { getErrorMessage } from "@/lib/error-inspection";
 const styles = stylex.create({
   note: { margin: 0, fontSize: text.xs, lineHeight: leading.sm, color: ink.muted },
 });
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { createWhiteboard } from "@/modules/whiteboards/server/api.functions";
 
 /** The Space to create in. `null` means personal work and is never named. */

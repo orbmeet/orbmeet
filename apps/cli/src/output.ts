@@ -47,7 +47,6 @@ export interface PublicRetrievedMeeting {
     title: string | null;
     startedAt: string;
     endedAt: string | null;
-    retainUntil: string | null;
     space?: string;
     participants: string[];
   };
@@ -109,7 +108,6 @@ export function publicRetrievedMeeting(data: RetrievedMeeting): PublicRetrievedM
       title: data.meeting.title,
       startedAt: data.meeting.startedAt,
       endedAt: data.meeting.endedAt,
-      retainUntil: data.meeting.retainUntil,
       space: data.meeting.spaceName || undefined,
       participants: data.meeting.participants,
     },

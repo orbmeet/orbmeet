@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 
 /**
  * Seed the id-keyed space detail cache from a slug-keyed payload (both hold the

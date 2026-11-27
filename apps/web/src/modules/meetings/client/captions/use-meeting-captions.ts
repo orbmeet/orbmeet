@@ -2,7 +2,7 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Room } from "livekit-client";
 import { logError } from "@/lib/logger";
-import { clientMeetingHintsQueryOptions } from "@/app/query-client/queries/client-meeting-hints";
+import { clientMeetingHintsQueryOptions } from "@/modules/meetings/client/meetings.queries";
 import { updateCaptionLanguage } from "@/modules/meetings/server/room/caption-language.functions";
 import {
   loadCaptionsShown,

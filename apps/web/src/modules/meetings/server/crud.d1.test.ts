@@ -165,8 +165,6 @@ spaceKind: "personal" as const,
         maxConcurrentMeetings: null,
       });
 
-    // The starter's old account setting no longer decides anything.
-    await db.update(users).set({ transcribeMeetings: false }).where(eq(users.id, "host"));
     await expect(start("MEETING_DEFAULT", "LINK_DEFAULT", new Date("2026-01-01T01:00:00.000Z"))).resolves.toBe(true);
     await db.update(spaces).set({ transcribeMeetings: false }).where(eq(spaces.id, "host_space"));
     await expect(start("MEETING_PRIVATE", "LINK_PRIVATE", new Date("2026-01-01T02:00:00.000Z"))).resolves.toBe(true);

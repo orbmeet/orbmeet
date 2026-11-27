@@ -122,11 +122,6 @@ const styles = stylex.create({
     backgroundColor: { default: accent.a600, [env.hoverable]: { default: accent.a600, ":hover": accent.a700, ":disabled": neutral.n200 } },
     color: ink.onDark,
   },
-  handDismiss: {
-    backgroundColor: { default: surface.raised, [env.hoverable]: { default: surface.raised, ":hover": neutral.n100 } },
-    color: neutral.n600,
-    boxShadow: `inset 0 0 0 1px ${neutral.n200}`,
-  },
 
   /**
    * One stream, three kinds of entry told apart by their shape rather than by
@@ -624,24 +619,14 @@ function RaisedHands({
           <Avatar name={hand.userName} sizePx={24} />
           <span {...stylex.props(styles.handName, layout.truncate)}>{hand.userName}</span>
           <span {...stylex.props(styles.handWait)}>{waited(hand.raisedAt)}</span>
-          <Tooltip content={`Let ${hand.userName} speak`} side="bottom">
+          <Tooltip content={`Call on ${hand.userName} and lower their hand`} side="bottom">
             <button
               type="button"
-              aria-label={`Let ${hand.userName} speak`}
+              aria-label={`Call on ${hand.userName}`}
               onClick={() => onResolve(hand.userId)}
               {...stylex.props(pressable.base, motion.tint, focus.ring, styles.handAction, styles.handApprove)}
             >
               Call on
-            </button>
-          </Tooltip>
-          <Tooltip content="Lower their hand" side="bottom">
-            <button
-              type="button"
-              aria-label={`Lower ${hand.userName}'s hand`}
-              onClick={() => onResolve(hand.userId)}
-              {...stylex.props(pressable.base, motion.tint, focus.ring, styles.handAction, styles.handDismiss)}
-            >
-              Lower
             </button>
           </Tooltip>
         </div>

@@ -6,7 +6,7 @@ import {
   UnsafeUnfurlTargetError,
   assertSafeUnfurlTarget,
 } from "./net-security.ts";
-import { isPublicBrowserHost, stripIpv6Brackets } from "@orbmeet/whiteboard-core/public-host";
+import { isPublicBrowserHost, stripIpv6Brackets } from "@orbmeet/primitives/public-host";
 import {
   MAX_HTTP_BODY_BYTES,
   getContentLength,

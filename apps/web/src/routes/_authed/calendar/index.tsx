@@ -1,5 +1,5 @@
 import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
-import { myUpcomingMeetingSchedulesQueryOptions } from "@/app/query-client/queries/meetings";
+import { myUpcomingMeetingSchedulesQueryOptions } from "@/modules/scheduling/client/schedules.queries";
 import { optionalString } from "@/lib/search-params";
 import { createPageHead, SITE_NAME } from "@/lib/seo";
 

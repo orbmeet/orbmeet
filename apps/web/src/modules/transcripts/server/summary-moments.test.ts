@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/platform/ai/gemini", () => ({ generateGeminiJson: vi.fn() }));
 
-const { toMoments } = await import("./generate-summary.server");
+const { toMoments } = await import("./summary-prompts");
 
 describe("toMoments", () => {
   it("reads mm:ss into seconds and keeps the moments in order", () => {

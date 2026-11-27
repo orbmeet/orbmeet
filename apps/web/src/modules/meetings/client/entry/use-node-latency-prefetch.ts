@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { clientMeetingHintsQueryOptions } from "@/app/query-client/queries/client-meeting-hints";
+import { clientMeetingHintsQueryOptions } from "@/modules/meetings/client/meetings.queries";
 import { prefetchNodeLatencies } from "./node-latency";
 
 /**

@@ -4,11 +4,8 @@ import {
   useSuspenseInfiniteQuery,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-import {
-  spaceMembersInfiniteQueryOptions,
-  spaceQueryOptions,
-} from "@/app/query-client/queries/spaces";
-import { spaceDefaultMeetingLinkQueryOptions } from "@/app/query-client/queries/meetings";
+import { spaceMembersInfiniteQueryOptions, spaceQueryOptions } from "@/modules/spaces/client/spaces.queries";
+import { spaceDefaultMeetingLinkQueryOptions } from "@/modules/meetings/client/meetings.queries";
 import { MembersList } from "@/modules/spaces/client/components/members-list";
 import { SpaceHeader } from "@/modules/spaces/client/components/space-header";
 import { Spinner } from "@orbmeet/ui/react";

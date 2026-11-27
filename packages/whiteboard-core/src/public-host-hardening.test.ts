@@ -7,7 +7,7 @@ import {
   isStrictIpv4,
   isSuspiciousHostname,
   normalizeIpv6,
-} from "./public-host.ts";
+} from "@orbmeet/primitives/public-host";
 import { isWhiteboardRoomId, toWhiteboardRoomId } from "./whiteboard-room-id.ts";
 import {
   createEmptyWhiteboardRoomSnapshot,

@@ -7,17 +7,13 @@ import {
 } from "@orbmeet/whiteboard-core/whiteboard-jwt";
 import type { WhiteboardGrantPrincipal } from "@orbmeet/whiteboard-core/whiteboard-grant-principal";
 import { toWhiteboardRoomId } from "@orbmeet/whiteboard-core/whiteboard-room-id";
-import {
-  setWhiteboardAssetCookies,
-  clearWhiteboardAssetCookie,
-} from "@/modules/whiteboards/server/cookies";
+import { setWhiteboardAssetCookies } from "@/platform/http/whiteboard-cookies.server";
 import { buildRecorderUrl } from "@/modules/whiteboards/server/recorder-url";
 import { createRecorderBootstrapToken } from "@/modules/whiteboards/server/recorder-bootstrap-token";
 import { isWhiteboardConfigured, whiteboardNodes } from "@/modules/whiteboards/server/config.server";
 import { mediaNodes } from "@/platform/realtime/nodes";
 import { placeBoard } from "@/modules/whiteboards/server/board-placement.server";
 import { createDb } from "@orbmeet/db";
-import { findMeetingWhiteboardDocument } from "@/modules/whiteboards/server/documents";
 
 export {
   whiteboardCapabilitiesForMeetingRole,
@@ -162,15 +158,4 @@ export async function getWhiteboardRecorderCustomBaseUrl(
     egressMode: options.egressMode,
     meetingCode: options.meetingCode,
   });
-}
-
-export async function clearWhiteboardMeetingCookies(env: Env, meetingId: string): Promise<void> {
-  const document = await findMeetingWhiteboardDocument(createDb(env.DB), meetingId);
-  const scopeIds = document ? [meetingId, document.syncRoomId, document.whiteboardId] : [meetingId];
-  for (const scopeId of new Set(scopeIds)) {
-    clearWhiteboardAssetCookie(scopeId, {
-      appUrl: env.APP_URL,
-      environment: env.ENVIRONMENT,
-    });
-  }
 }

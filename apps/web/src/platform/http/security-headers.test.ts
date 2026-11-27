@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CSP_NONCE_PLACEHOLDER } from "./csp-nonce";
+import { CSP_NONCE_PLACEHOLDER } from "@/lib/csp-nonce";
 import { buildMeetRouteCsp, buildProductionCsp } from "./csp";
 import { addPrivateHtmlSecurityHeaders, secureApiResponse } from "./security-headers";
 

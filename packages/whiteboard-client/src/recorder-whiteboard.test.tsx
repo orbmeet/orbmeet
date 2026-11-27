@@ -2,7 +2,7 @@
 
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { base64urlEncode } from "@orbmeet/whiteboard-core/crypto-utils";
+import { encodeBase64Url as base64urlEncode } from "@orbmeet/primitives";
 import { RecorderWhiteboard } from "./recorder-whiteboard";
 
 const connect = vi.hoisted(() => ({

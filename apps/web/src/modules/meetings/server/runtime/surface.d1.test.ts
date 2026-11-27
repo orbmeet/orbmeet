@@ -26,6 +26,7 @@ vi.mock("@/platform/realtime/livekit-clients.server", () => ({
 }));
 
 const { MeetingRoomHost } = await import("./room.server");
+const { meetingWhiteboardEffects } = await import("@/app/adapters/meeting-whiteboard.server");
 
 let db: TestDb;
 const T0 = new Date(Math.floor((Date.now() - 60_000) / 1000) * 1000);
@@ -79,7 +80,10 @@ const focus = (id: "a" | "b") => ({ usageId: `usage_${id}`, whiteboardId: `wb_${
 
 async function openRoom() {
   const clock = { now: Date.now() };
-  const host = new MeetingRoomHost(env(), "meeting_1", new MemoryStorage(), { now: () => clock.now });
+  const host = new MeetingRoomHost(env(), "meeting_1", new MemoryStorage(), {
+    now: () => clock.now,
+    whiteboardEffects: meetingWhiteboardEffects,
+  });
   const send = (request: RoomRequest): Promise<CoordinatorReply> => host.handle({ ...request, meetingId: "meeting_1" });
   const reply = await send({
     kind: "join",

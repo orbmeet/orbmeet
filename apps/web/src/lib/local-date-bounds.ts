@@ -3,6 +3,8 @@ const MAX_CACHED_DATE_FORMATTERS = 128;
 const dateFormatters = new Map<string, Intl.DateTimeFormat>();
 
 function dateFormatter(timeZone: string): Intl.DateTimeFormat {
+  const direct = dateFormatters.get(timeZone);
+  if (direct) return direct;
   // resolvedOptions() canonicalizes aliases/casing before they can become cache
   // keys. The LRU bound protects the isolate even across many valid zones.
   const candidate = new Intl.DateTimeFormat("en", {
@@ -22,12 +24,18 @@ function dateFormatter(timeZone: string): Intl.DateTimeFormat {
   return candidate;
 }
 
-export function localDateInTimeZone(instant: Date | string, timeZone: string): string {
-  const parts = dateFormatter(timeZone)
-    .formatToParts(typeof instant === "string" ? new Date(instant) : instant);
+function formatDateWith(formatter: Intl.DateTimeFormat, instant: Date): string {
+  const parts = formatter.formatToParts(instant);
   const read = (type: Intl.DateTimeFormatPartTypes) =>
     parts.find((part) => part.type === type)?.value ?? "";
   return `${read("year")}-${read("month")}-${read("day")}`;
+}
+
+export function localDateInTimeZone(instant: Date | string, timeZone: string): string {
+  return formatDateWith(
+    dateFormatter(timeZone),
+    typeof instant === "string" ? new Date(instant) : instant,
+  );
 }
 
 function nextCalendarDate(date: string): string {
@@ -46,14 +54,14 @@ function nextCalendarDate(date: string): string {
  * changes, so a bounded binary search handles fractional offsets, repeated
  * hours, and skipped dates without trying to guess the zone's UTC offset.
  */
-function firstInstantOnOrAfterLocalDate(date: string, timeZone: string): Date {
+function firstInstantOnOrAfterLocalDate(date: string, formatter: Intl.DateTimeFormat): Date {
   const midnightUtc = Date.parse(`${date}T00:00:00.000Z`);
   let low = midnightUtc - SEARCH_PADDING_MS;
   let high = midnightUtc + SEARCH_PADDING_MS;
 
   while (low < high) {
     const middle = Math.floor((low + high) / 2);
-    if (localDateInTimeZone(new Date(middle), timeZone) < date) {
+    if (formatDateWith(formatter, new Date(middle)) < date) {
       low = middle + 1;
     } else {
       high = middle;
@@ -67,8 +75,9 @@ export function utcBoundsForLocalDate(
   date: string,
   timeZone: string,
 ): { earliest: Date; latest: Date } {
+  const formatter = dateFormatter(timeZone);
   return {
-    earliest: firstInstantOnOrAfterLocalDate(date, timeZone),
-    latest: firstInstantOnOrAfterLocalDate(nextCalendarDate(date), timeZone),
+    earliest: firstInstantOnOrAfterLocalDate(date, formatter),
+    latest: firstInstantOnOrAfterLocalDate(nextCalendarDate(date), formatter),
   };
 }

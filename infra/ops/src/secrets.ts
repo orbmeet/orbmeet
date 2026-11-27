@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, renameSync, rmSync } from "node:fs";
-import { keepsKeyringOrder, MAX_KEYRING_KEYS } from "@orbmeet/nodes";
-import { parseKeyring } from "@orbmeet/primitives";
+import { MAX_KEYRING_KEYS } from "@orbmeet/nodes";
+import { keepsKeyringOrder, parseKeyring, parseKeyringRecord } from "@orbmeet/primitives";
 import { AGE_IDENTITY, RECIPIENTS_FILE, SECRETS_FILE } from "./catalog.ts";
 import type { Inventory } from "./inventory.ts";
 import { mediaNodes } from "./inventory.ts";
@@ -97,7 +97,7 @@ function checkValue(label: string, value: unknown, minimum = 1): void {
 }
 
 function keyringSecrets(label: string, value: string | Record<string, string>): string[] {
-  const keyring = parseKeyring(typeof value === "string" ? value : JSON.stringify(value));
+  const keyring = typeof value === "string" ? parseKeyring(value) : parseKeyringRecord(value);
   if (!keyring) throw new OpsError(`${label} must be a JSON object of key ids to secrets of 32-512 characters`);
   return [...keyring.values()];
 }

@@ -2,9 +2,10 @@ import { QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
 import { setupRouterSsrQueryIntegration } from "@tanstack/react-router-ssr-query";
 import { AppPending } from "./app/shell/app-pending";
+import { isRetryableErrorCode } from "./lib/app-errors";
 import { getServerErrorCode, getServerErrorStatusCode } from "./lib/error-inspection";
 import { routeTree } from "./routeTree.gen";
-import { CSP_NONCE_PLACEHOLDER } from "@/platform/http/csp-nonce";
+import { CSP_NONCE_PLACEHOLDER } from "@/lib/csp-nonce";
 
 // Link-hover preloading makes Vite eagerly transform lazy route graphs on every
 // hover/focus, which can make localhost feel randomly slow — so dev defaults to
@@ -28,12 +29,13 @@ export const getRouter = () => {
         retry: (failureCount, error) => {
           // No retries during SSR to keep server rendering fast
           if (typeof window === "undefined") return false;
-          // Don't retry errors that will always fail
+          // Rate limits should back off manually rather than auto-retrying immediately.
           const code = getServerErrorCode(error);
           const statusCode = getServerErrorStatusCode(error);
-          if (code === "UNAUTHORIZED" || code === "FORBIDDEN" || code === "VALIDATION_ERROR" || code === "NOT_FOUND" || code === "RATE_LIMITED" || statusCode === 429) {
-            return false;
-          }
+          if (code === "RATE_LIMITED" || statusCode === 429) return false;
+          // When the server gave a structured code, honor the canonical retryable set.
+          if (code) return isRetryableErrorCode(code) && failureCount < 2;
+          if (statusCode !== undefined && statusCode >= 400 && statusCode < 500) return false;
           return failureCount < 2;
         },
       },

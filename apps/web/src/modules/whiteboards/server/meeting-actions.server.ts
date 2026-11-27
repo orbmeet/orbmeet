@@ -12,7 +12,7 @@ import { Errors } from "@/lib/app-errors";
 import { parseWhiteboardGrantPrincipalKey, whiteboardGrantPrincipalKey } from "@orbmeet/whiteboard-core/whiteboard-grant-principal";
 import { createWhiteboardJWT } from "@orbmeet/whiteboard-core/whiteboard-jwt";
 import { toWhiteboardRoomId } from "@orbmeet/whiteboard-core/whiteboard-room-id";
-import { setWhiteboardAssetCookies } from "@/modules/whiteboards/server/cookies";
+import { setWhiteboardAssetCookies } from "@/platform/http/whiteboard-cookies.server";
 import { logWarn } from "@/lib/logger";
 import type { AuthFnContext, RequestFnContext } from "@/app/bootstrap/middleware";
 import { enforceRateLimit } from "@/platform/http/rate-limit.server";

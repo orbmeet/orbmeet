@@ -51,7 +51,7 @@ import type {
   FinishPasskeyRegistrationInput,
   StartPasskeyRegistrationInput,
 } from "./passkey.functions";
-import { timingSafeEqual } from "@orbmeet/primitives";
+import { sha256Hex, timingSafeEqual } from "@orbmeet/primitives";
 
 const PASSKEY_CHALLENGE_TTL_MS = 10 * 60 * 1000;
 const RP_NAME = "Orb Meet";
@@ -83,13 +83,7 @@ export const MAX_ACTIVE_PASSKEY_AUTH_CHALLENGES_PER_SOURCE = 200;
  * outlive the request by the challenge TTL.
  */
 async function passkeyChallengeSourceBucket(): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(`passkey-auth-source:${getClientIP()}`),
-  );
-  return Array.from(new Uint8Array(digest).slice(0, 16), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
+  return (await sha256Hex(`passkey-auth-source:${getClientIP()}`)).slice(0, 32);
 }
 
 function getRpConfig(env: Env): { rpID: string; origin: string } {
@@ -348,13 +342,18 @@ export async function finishPasskeyRegistrationImpl({
   if (!challengeRow) throw Errors.VALIDATION("Passkey registration expired");
 
   const { rpID, origin } = getRpConfig(env);
-  const verification = await verifyRegistrationResponse({
-    response: data.response as Parameters<typeof verifyRegistrationResponse>[0]["response"],
-    expectedChallenge: challengeRow.value,
-    expectedOrigin: origin,
-    expectedRPID: rpID,
-    requireUserVerification: REQUIRE_PASSKEY_USER_VERIFICATION,
-  });
+  let verification: Awaited<ReturnType<typeof verifyRegistrationResponse>>;
+  try {
+    verification = await verifyRegistrationResponse({
+      response: data.response as Parameters<typeof verifyRegistrationResponse>[0]["response"],
+      expectedChallenge: challengeRow.value,
+      expectedOrigin: origin,
+      expectedRPID: rpID,
+      requireUserVerification: REQUIRE_PASSKEY_USER_VERIFICATION,
+    });
+  } catch {
+    throw Errors.VALIDATION("Passkey registration failed");
+  }
   if (!verification.verified || !verification.registrationInfo) {
     throw Errors.VALIDATION("Passkey registration failed");
   }
@@ -512,14 +511,19 @@ export async function finishPasskeyAuthenticationImpl({
   };
 
   const { rpID, origin } = getRpConfig(env);
-  const verification = await verifyAuthenticationResponse({
-    response: data.response as Parameters<typeof verifyAuthenticationResponse>[0]["response"],
-    expectedChallenge: challengeRow.value,
-    expectedOrigin: origin,
-    expectedRPID: rpID,
-    credential,
-    requireUserVerification: REQUIRE_PASSKEY_USER_VERIFICATION,
-  });
+  let verification: Awaited<ReturnType<typeof verifyAuthenticationResponse>>;
+  try {
+    verification = await verifyAuthenticationResponse({
+      response: data.response as Parameters<typeof verifyAuthenticationResponse>[0]["response"],
+      expectedChallenge: challengeRow.value,
+      expectedOrigin: origin,
+      expectedRPID: rpID,
+      credential,
+      requireUserVerification: REQUIRE_PASSKEY_USER_VERIFICATION,
+    });
+  } catch {
+    throw Errors.UNAUTHORIZED();
+  }
 
   if (!verification.verified) {
     throw Errors.UNAUTHORIZED();

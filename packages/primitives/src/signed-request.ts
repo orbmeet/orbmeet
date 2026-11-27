@@ -24,15 +24,18 @@ const MIN_SECRET_LENGTH = 32;
 const MAX_SECRET_LENGTH = 512;
 const DEFAULT_MAX_SKEW_SECONDS = 60;
 
-/** Parse a serialized keyring, or null when it is absent or malformed. */
-export function parseKeyring(serialized: string | undefined | null): Keyring | null {
-  if (!serialized) return null;
-  let value: unknown;
-  try {
-    value = JSON.parse(serialized);
-  } catch {
-    return null;
-  }
+/**
+ * Whether a key id keeps its written place in a keyring. JavaScript orders an
+ * object's integer-like keys ahead of every other, whatever order they were
+ * written in, so a numeric id would silently become the first key: the one
+ * that signs.
+ */
+export function keepsKeyringOrder(keyId: string): boolean {
+  return !/^(?:0|[1-9][0-9]*)$/.test(keyId);
+}
+
+/** Parse a keyring object, or null when it is absent or malformed. */
+export function parseKeyringRecord(value: unknown): Keyring | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const entries = Object.entries(value);
   if (entries.length === 0 || entries.length > MAX_KEYS) return null;
@@ -40,6 +43,7 @@ export function parseKeyring(serialized: string | undefined | null): Keyring | n
   for (const [keyId, secret] of entries) {
     if (
       !KEY_ID_RE.test(keyId)
+      || !keepsKeyringOrder(keyId)
       || typeof secret !== "string"
       || secret.length < MIN_SECRET_LENGTH
       || secret.length > MAX_SECRET_LENGTH
@@ -50,6 +54,18 @@ export function parseKeyring(serialized: string | undefined | null): Keyring | n
     keys.set(keyId, secret);
   }
   return keys;
+}
+
+/** Parse a serialized keyring, or null when it is absent or malformed. */
+export function parseKeyring(serialized: string | undefined | null): Keyring | null {
+  if (!serialized) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(serialized);
+  } catch {
+    return null;
+  }
+  return parseKeyringRecord(value);
 }
 
 /** The key that signs outgoing requests: the keyring's first entry. */

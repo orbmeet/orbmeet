@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getDeletionPendingAccount } from "@/modules/identity/server/account.functions";

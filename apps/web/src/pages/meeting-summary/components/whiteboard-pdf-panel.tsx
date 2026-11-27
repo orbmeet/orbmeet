@@ -1,4 +1,5 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Button, buttonStyles, openExternalUrl } from "@orbmeet/ui/react";
 import { AlertTriangle, Copy, Download, FileDown, Loader2, RefreshCw, SquarePen } from "lucide-react";
@@ -6,16 +7,14 @@ import * as stylex from "@stylexjs/stylex";
 import type { Editor, TLAssetId, TLAssetStore, TLShapeId } from "tldraw";
 import {
   buildWhiteboardPdfBlob,
-  mergeWhiteboardPdfBlobs,
-  roomSnapshotToStoreSnapshot,
-} from "@orbmeet/whiteboard-client/react";
-import { whiteboardShapeUtils } from "@orbmeet/whiteboard-client/react";
-import { WHITEBOARD_TLDRAW_OPTIONS } from "@orbmeet/whiteboard-client/react";
-import { isPageFrameShape } from "@orbmeet/whiteboard-core/page-frame-model";
-import {
   getDrawableShapeEntries,
   getFrameExportContent,
+  mergeWhiteboardPdfBlobs,
+  roomSnapshotToStoreSnapshot,
+  WHITEBOARD_TLDRAW_OPTIONS,
+  whiteboardShapeUtils,
 } from "@orbmeet/whiteboard-client/react";
+import { isPageFrameShape, sortPageFrames } from "@orbmeet/whiteboard-core/page-frame-model";
 import { progress } from "@orbmeet/ui/styles/animations";
 import { focus, motion, pressable } from "@orbmeet/ui/styles/atoms";
 import { accent, border, danger, ink, neutral, surface } from "@orbmeet/ui/tokens/colors.stylex";
@@ -24,16 +23,18 @@ import { radii } from "@orbmeet/ui/tokens/radii.stylex";
 import { shadows } from "@orbmeet/ui/tokens/shadows.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { text, weight } from "@orbmeet/ui/tokens/typography.stylex";
+import { getWhiteboardPdfDownloadUrl } from "@/modules/meetings/server/history/output-downloads.functions";
 import {
-  getWhiteboardPdfDownloadUrl,
-  getWhiteboardSnapshot,
   getMeetingWhiteboardHistory,
   getMeetingWhiteboardSnapshots,
+  getWhiteboardSnapshot,
   saveMeetingWhiteboardCopy,
 } from "@/modules/whiteboards/server/export.functions";
 import { retryWhiteboardCapture } from "@/modules/whiteboards/server/meeting-actions.functions";
 import { WhiteboardTldraw } from "@/modules/whiteboards/client/surface/whiteboard-canvas";
+import { uploadMeetingWhiteboardPdf } from "@/modules/whiteboards/client/upload-meeting-whiteboard-pdf";
 import { getWhiteboardClientCapabilities } from "@/lib/browser-capabilities";
+import { queryKeys } from "@/lib/query-keys";
 import { reportBoundaryError } from "@/lib/telemetry/client-errors";
 import type { getEndedMeeting } from "@/modules/transcripts/server/meeting-summary.functions";
 import { setMeetingWhiteboardCopyPolicy } from "@/modules/whiteboards/server/api.functions";
@@ -41,21 +42,22 @@ import { publishMeetingPreview } from "@/modules/whiteboards/client/publish-meet
 import { revisionAssetUrl, type RevisionAssetScope } from "./revision-asset-url";
 
 const PREVIEW_DELAY_MS = 2_500;
+const PDF_RENDERER_READY_TIMEOUT_MS = 15_000;
 
 type EndedMeeting = NonNullable<
   Awaited<ReturnType<typeof getEndedMeeting>>["meeting"]
 >;
 
 type StoreSnapshot = ReturnType<typeof roomSnapshotToStoreSnapshot>;
+type MeetingWhiteboardHistoryResult = Awaited<ReturnType<typeof getMeetingWhiteboardHistory>>;
 
-interface PdfExportJob {
+interface ActivePdfRender {
   id: number;
   snapshot: StoreSnapshot;
-  scope: RevisionAssetScope;
-  pageIds: string[];
+  assets: TLAssetStore;
+  onEditorReady: (editor: Editor) => void;
+  onError: (error: Error) => void;
 }
-
-const PDF_RENDERER_READY_TIMEOUT_MS = 15_000;
 
 class PdfRendererErrorBoundary extends Component<{
   children: ReactNode;
@@ -202,19 +204,12 @@ const styles = stylex.create({
 
 function getPdfPageIds(editor: Editor, includedPageIds: readonly string[]): TLShapeId[] {
   const included = new Set(includedPageIds);
-  return editor
-    .getCurrentPageShapesSorted()
-    .filter(isPageFrameShape)
-    .filter((shape) => included.has(shape.id))
-    .sort((a, b) => {
-      const ay = typeof a.y === "number" ? a.y : 0;
-      const by = typeof b.y === "number" ? b.y : 0;
-      if (ay !== by) return ay - by;
-      const ax = typeof a.x === "number" ? a.x : 0;
-      const bx = typeof b.x === "number" ? b.x : 0;
-      return ax - bx;
-    })
-    .map((shape) => shape.id);
+  return sortPageFrames(
+    editor
+      .getCurrentPageShapesSorted()
+      .filter(isPageFrameShape)
+      .filter((shape) => included.has(shape.id)),
+  ).map((shape) => shape.id);
 }
 
 function limitViewerToHandoutPages(editor: Editor, pageIds: readonly string[]): void {
@@ -267,6 +262,10 @@ function fitViewerToHandout(editor: Editor, pageIds: readonly string[]): void {
   editor.zoomToBounds(bounds, { inset: 16 });
 }
 
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
 function useWhiteboardPdfActions(
   meetingId: string,
   hasCapturedWhiteboards: boolean,
@@ -276,60 +275,74 @@ function useWhiteboardPdfActions(
     "idle" | "loading" | "rendering" | "uploading" | "opening"
   >("idle");
   const [error, setError] = useState<string | null>(null);
-  const [exportJob, setExportJob] = useState<PdfExportJob | null>(null);
-  const nextExportJobIdRef = useRef(0);
-  const runningExportJobIdRef = useRef<number | null>(null);
-  const queuedExportJobsRef = useRef<PdfExportJob[]>([]);
-  const renderedPdfBlobsRef = useRef<Blob[]>([]);
-  const prefetchOverrideRef = useRef<Map<TLAssetId, string> | null>(null);
-  const assetScopeRef = useRef<RevisionAssetScope | null>(null);
-  const exportJobPageIdsRef = useRef<string[]>([]);
+  const [activeRender, setActiveRender] = useState<ActivePdfRender | null>(null);
+  const nextRenderIdRef = useRef(0);
   const operationInFlightRef = useRef(false);
-  const rendererReadyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const failExportJob = useCallback((jobId: number, error: unknown) => {
-    if (rendererReadyTimerRef.current) clearTimeout(rendererReadyTimerRef.current);
-    rendererReadyTimerRef.current = null;
-    if (runningExportJobIdRef.current === jobId) runningExportJobIdRef.current = null;
-    setExportJob((current) => (current?.id === jobId ? null : current));
-    prefetchOverrideRef.current = null;
-    queuedExportJobsRef.current = [];
-    renderedPdfBlobsRef.current = [];
-    operationInFlightRef.current = false;
-    setError(error instanceof Error ? error.message : "Could not generate whiteboard PDF.");
-    setPhase("idle");
-  }, []);
+  const renderBoardPdf = useCallback(
+    async (
+      snapshot: StoreSnapshot,
+      scope: RevisionAssetScope,
+      includedPageIds: readonly string[],
+    ): Promise<Blob> => {
+      let prefetchOverride: Map<TLAssetId, string> | null = null;
+      const assets: TLAssetStore = {
+        async upload() {
+          return { src: "" };
+        },
+        resolve(asset) {
+          const cached = prefetchOverride?.get(asset.id);
+          if (cached) return cached;
+          return revisionAssetUrl(asset.props.src ?? null, scope);
+        },
+      };
 
-  useEffect(() => {
-    if (!exportJob) return;
-    // A child may call onMount before this parent's passive effect runs. In
-    // that ordering the renderer is already ready and no watchdog is needed.
-    if (runningExportJobIdRef.current === exportJob.id) return;
-    if (rendererReadyTimerRef.current) clearTimeout(rendererReadyTimerRef.current);
-    rendererReadyTimerRef.current = setTimeout(() => {
-      failExportJob(
-        exportJob.id,
-        new Error("The Whiteboard renderer did not become ready. Please try again."),
-      );
-    }, PDF_RENDERER_READY_TIMEOUT_MS);
-    return () => {
-      if (rendererReadyTimerRef.current) clearTimeout(rendererReadyTimerRef.current);
-      rendererReadyTimerRef.current = null;
-    };
-  }, [exportJob, failExportJob]);
+      const renderId = ++nextRenderIdRef.current;
+      const editor = await new Promise<Editor>((resolve, reject) => {
+        let settled = false;
+        const finish = (cb: () => void) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          cb();
+        };
+        const timer = setTimeout(() => {
+          finish(() => {
+            setActiveRender((current) => (current?.id === renderId ? null : current));
+            reject(new Error("The Whiteboard renderer did not become ready. Please try again."));
+          });
+        }, PDF_RENDERER_READY_TIMEOUT_MS);
 
-  const assetStore = useMemo<TLAssetStore>(() => ({
-    async upload(_asset, _file, _abortSignal) {
-      return { src: "" };
+        setActiveRender({
+          id: renderId,
+          snapshot,
+          assets,
+          onEditorReady: (mountedEditor) => finish(() => resolve(mountedEditor)),
+          onError: (err) => finish(() => {
+            setActiveRender((current) => (current?.id === renderId ? null : current));
+            reject(err);
+          }),
+        });
+      });
+
+      try {
+        const pageIds = getPdfPageIds(editor, includedPageIds);
+        if (pageIds.length === 0) {
+          throw new Error("The saved Whiteboard pages are not present in this version.");
+        }
+        return await buildWhiteboardPdfBlob(editor, pageIds, {
+          capabilities: getWhiteboardClientCapabilities(),
+          setPrefetchOverride: (map) => {
+            prefetchOverride = map;
+          },
+        });
+      } finally {
+        prefetchOverride = null;
+        setActiveRender((current) => (current?.id === renderId ? null : current));
+      }
     },
-    resolve(asset, _ctx) {
-      const cached = prefetchOverrideRef.current?.get(asset.id);
-      if (cached) return cached;
-      return revisionAssetUrl(asset.props.src ?? null, assetScopeRef.current);
-    },
-  }), []);
-
-  const isBusy = phase !== "idle";
+    [],
+  );
 
   const openExistingPdf = useCallback(async () => {
     if (operationInFlightRef.current) return;
@@ -341,7 +354,7 @@ function useWhiteboardPdfActions(
       const { downloadUrl } = await getWhiteboardPdfDownloadUrl({ data: { meetingId } });
       openExternalUrl(downloadUrl);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not open PDF.");
+      setError(errorMessage(err, "Could not open PDF."));
     } finally {
       operationInFlightRef.current = false;
       setPhase("idle");
@@ -370,143 +383,50 @@ function useWhiteboardPdfActions(
             : "No Whiteboard pages were presented or edited during this Meeting.",
         );
       }
-      const jobs = available.map((item) => ({
-        id: ++nextExportJobIdRef.current,
-        snapshot: roomSnapshotToStoreSnapshot(item.snapshot),
-        scope: { whiteboardId: item.whiteboard.whiteboardId, revisionId: item.whiteboard.revisionId },
-        pageIds: item.pageIds,
-      }));
-      renderedPdfBlobsRef.current = [];
-      queuedExportJobsRef.current = jobs.slice(1);
-      assetScopeRef.current = jobs[0].scope;
-      exportJobPageIdsRef.current = jobs[0].pageIds;
-      setExportJob(jobs[0]);
+
+      setPhase("rendering");
+      const blobs: Blob[] = [];
+      for (const item of available) {
+        blobs.push(
+          await renderBoardPdf(
+            roomSnapshotToStoreSnapshot(item.snapshot),
+            {
+              whiteboardId: item.whiteboard.whiteboardId,
+              revisionId: item.whiteboard.revisionId,
+            },
+            item.pageIds,
+          ),
+        );
+      }
+
+      const pdf = blobs.length === 1 ? blobs[0] : await mergeWhiteboardPdfBlobs(blobs);
+      setPhase("uploading");
+      await uploadMeetingWhiteboardPdf(meetingId, pdf);
+      onGenerated?.();
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Could not load the Meeting capture.",
-      );
+      setError(errorMessage(err, "Could not generate whiteboard PDF."));
+    } finally {
       operationInFlightRef.current = false;
       setPhase("idle");
     }
-  }, [hasCapturedWhiteboards, meetingId]);
-
-  const handleEditorMount = useCallback(
-    (editor: Editor, jobId: number) => {
-      if (runningExportJobIdRef.current === jobId) return;
-      if (rendererReadyTimerRef.current) clearTimeout(rendererReadyTimerRef.current);
-      rendererReadyTimerRef.current = null;
-      runningExportJobIdRef.current = jobId;
-
-      void (async () => {
-        setPhase("rendering");
-        try {
-          const pageIds = getPdfPageIds(editor, exportJobPageIdsRef.current);
-          if (pageIds.length === 0) {
-            throw new Error("The saved Whiteboard pages are not present in this version.");
-          }
-          const boardPdf = await buildWhiteboardPdfBlob(
-            editor,
-            pageIds,
-            {
-              capabilities: getWhiteboardClientCapabilities(),
-              setPrefetchOverride: (map) => {
-                prefetchOverrideRef.current = map;
-              },
-            },
-          );
-          renderedPdfBlobsRef.current.push(boardPdf);
-          const nextJob = queuedExportJobsRef.current.shift();
-          if (nextJob) {
-            assetScopeRef.current = nextJob.scope;
-            exportJobPageIdsRef.current = nextJob.pageIds;
-            runningExportJobIdRef.current = null;
-            setExportJob(nextJob);
-            return;
-          }
-
-          const pdf = renderedPdfBlobsRef.current.length === 1
-            ? renderedPdfBlobsRef.current[0]
-            : await mergeWhiteboardPdfBlobs(renderedPdfBlobsRef.current);
-          setPhase("uploading");
-          const uploadEndpoint =
-            `/api/whiteboard/pdf-upload?meetingId=${encodeURIComponent(meetingId)}`;
-          const grantResponse = await fetch(`${uploadEndpoint}&phase=grant`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ fileSize: pdf.size }),
-            credentials: "same-origin",
-          });
-          if (!grantResponse.ok) {
-            throw new Error(`PDF upload grant failed: ${grantResponse.status}`);
-          }
-          const grant = await grantResponse.json() as {
-            uploadId: string;
-            uploadUrl: string;
-          };
-
-          const uploadResponse = await fetch(grant.uploadUrl, {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/pdf",
-            },
-            body: pdf,
-          });
-          if (!uploadResponse.ok) {
-            throw new Error(`PDF upload failed: ${uploadResponse.status}`);
-          }
-
-          const finalizeResponse = await fetch(`${uploadEndpoint}&phase=finalize`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ fileSize: pdf.size, uploadId: grant.uploadId }),
-            credentials: "same-origin",
-          });
-          if (!finalizeResponse.ok) {
-            throw new Error(`PDF finalize failed: ${finalizeResponse.status}`);
-          }
-
-          setExportJob((current) => (current?.id === jobId ? null : current));
-          onGenerated?.();
-        } catch (err) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Could not generate whiteboard PDF.",
-          );
-        } finally {
-          if (runningExportJobIdRef.current === jobId) {
-            runningExportJobIdRef.current = null;
-            setExportJob((current) => (current?.id === jobId ? null : current));
-            prefetchOverrideRef.current = null;
-            queuedExportJobsRef.current = [];
-            renderedPdfBlobsRef.current = [];
-            operationInFlightRef.current = false;
-            setPhase("idle");
-          }
-        }
-      })();
-    },
-    [meetingId, onGenerated],
-  );
+  }, [hasCapturedWhiteboards, meetingId, onGenerated, renderBoardPdf]);
 
   const hiddenRenderer = useMemo(() => {
-    if (!exportJob) return null;
+    if (!activeRender) return null;
     return (
       <div
         aria-hidden="true"
         {...stylex.props(styles.hiddenRenderer)}
       >
         <PdfRendererErrorBoundary
-          key={exportJob.id}
-          onError={(error) => failExportJob(exportJob.id, error)}
+          key={activeRender.id}
+          onError={activeRender.onError}
         >
           <WhiteboardTldraw
-            snapshot={exportJob.snapshot}
-            assets={assetStore}
+            snapshot={activeRender.snapshot}
+            assets={activeRender.assets}
             shapeUtils={whiteboardShapeUtils}
-            onMount={(editor) => handleEditorMount(editor, exportJob.id)}
+            onMount={activeRender.onEditorReady}
             hideUi
             options={WHITEBOARD_TLDRAW_OPTIONS}
             licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY || undefined}
@@ -514,12 +434,12 @@ function useWhiteboardPdfActions(
         </PdfRendererErrorBoundary>
       </div>
     );
-  }, [assetStore, exportJob, failExportJob, handleEditorMount]);
+  }, [activeRender]);
 
   return {
     error,
     phase,
-    isBusy,
+    isBusy: phase !== "idle",
     hiddenRenderer,
     openExistingPdf,
     startGenerate,
@@ -543,18 +463,32 @@ export function MeetingWhiteboardPanel({
   /** Fired after a PDF is generated so callers can refresh meeting lists. */
   onGenerated?: () => void;
 }) {
-  const [whiteboards, setWhiteboards] = useState<Array<{
-    meetingWhiteboardId: string;
-    whiteboardId: string;
-    revisionId: string;
-    title: string;
-    capturedAt: string | null;
-    attachedAt: string;
-    hasPdf: boolean;
-    allowParticipantCopy: boolean;
-  }>>([]);
+  const queryClient = useQueryClient();
   const [selectedWhiteboardId, setSelectedWhiteboardId] = useState<string | null>(null);
-  const [hasCapturedWhiteboards, setCanReadDocuments] = useState(false);
+  const [captureOverride, setCaptureOverride] = useState<{
+    meetingId: string;
+    state: EndedMeeting["whiteboardCaptureState"];
+  } | null>(null);
+  const captureState = captureOverride?.meetingId === meeting.meetingId
+    ? captureOverride.state
+    : meeting.whiteboardCaptureState;
+
+  const historyQueryKey = useMemo(
+    () => queryKeys.whiteboards.meetingHistory(meeting.meetingId),
+    [meeting.meetingId],
+  );
+  const historyQuery = useQuery({
+    queryKey: historyQueryKey,
+    queryFn: () => getMeetingWhiteboardHistory({ data: { meetingId: meeting.meetingId } }),
+    enabled: captureState === "captured",
+  });
+
+  const whiteboards = useMemo(
+    () => historyQuery.data?.whiteboards ?? [],
+    [historyQuery.data],
+  );
+  const hasCapturedWhiteboards = historyQuery.data?.hasCapturedWhiteboards ?? false;
+
   const selectedWhiteboard = whiteboards.find(
     (item) => item.whiteboardId === selectedWhiteboardId,
   ) ?? whiteboards[0] ?? null;
@@ -569,6 +503,7 @@ export function MeetingWhiteboardPanel({
       : null),
     [selectedDocumentId, selectedRevisionId],
   );
+
   const [localPdfState, setLocalPdfState] = useState(() => ({
     meetingId: meeting.meetingId,
     hasGeneratedPdf: false,
@@ -578,80 +513,105 @@ export function MeetingWhiteboardPanel({
   const hasGeneratedPdf = whiteboards.some((item) => item.hasPdf)
     || meeting.hasWhiteboardPdf
     || (localPdfState.meetingId === meeting.meetingId && localPdfState.hasGeneratedPdf);
-  const actions = useWhiteboardPdfActions(meeting.meetingId, whiteboards.length > 0, () => {
-    setLocalPdfState({ meetingId: meeting.meetingId, hasGeneratedPdf: true });
-    setWhiteboards((current) => current.map((item) => ({ ...item, hasPdf: true })));
-    onGenerated?.();
-  });
-  const [captureOverride, setCaptureOverride] = useState<{
-    meetingId: string;
-    state: EndedMeeting["whiteboardCaptureState"];
-  } | null>(null);
-  const captureState = captureOverride?.meetingId === meeting.meetingId
-    ? captureOverride.state
-    : meeting.whiteboardCaptureState;
-  const [captureRetryState, setCaptureRetryState] = useState<"idle" | "retrying">("idle");
-  const [captureRetryError, setCaptureRetryError] = useState<string | null>(null);
-  const [copyState, setCopyState] = useState<"idle" | "saving" | "saved">("idle");
-  const [copyError, setCopyError] = useState<string | null>(null);
-  const [copyPolicyState, setCopyPolicyState] = useState<"idle" | "saving">("idle");
-  const [copyPolicyError, setCopyPolicyError] = useState<string | null>(null);
-  const autoGenerateMeetingIdRef = useRef<string | null>(null);
-  const [viewerState, setViewerState] = useState<
-    | { phase: "loading"; snapshot: null; error: null }
-    | { phase: "ready"; snapshot: StoreSnapshot; pageIds: string[]; error: null }
-    | { phase: "error"; snapshot: null; error: string }
-  >({ phase: "loading", snapshot: null, error: null });
-  const viewerAssets = useMemo<TLAssetStore>(() => ({
-    async upload() {
-      return { src: "" };
-    },
-    resolve(asset) {
-      return revisionAssetUrl(asset.props.src ?? null, selectedAssetScope);
-    },
-  }), [selectedAssetScope]);
 
+  const handlePdfGenerated = useCallback(() => {
+    setLocalPdfState({ meetingId: meeting.meetingId, hasGeneratedPdf: true });
+    queryClient.setQueryData<MeetingWhiteboardHistoryResult>(historyQueryKey, (current) => {
+      if (!current || current.whiteboard === null) return current;
+      return {
+        ...current,
+        whiteboards: current.whiteboards.map((item) => ({ ...item, hasPdf: true })),
+      };
+    });
+    onGenerated?.();
+  }, [historyQueryKey, meeting.meetingId, onGenerated, queryClient]);
+
+  const actions = useWhiteboardPdfActions(
+    meeting.meetingId,
+    whiteboards.length > 0,
+    handlePdfGenerated,
+  );
+
+  const snapshotQuery = useQuery({
+    queryKey: queryKeys.whiteboards.meetingSnapshot(
+      meeting.meetingId,
+      selectedDocumentId,
+      selectedRevisionId,
+    ),
+    queryFn: async () => {
+      const result = await getWhiteboardSnapshot({
+        data: {
+          meetingId: meeting.meetingId,
+          whiteboardId: selectedDocumentId,
+        },
+      });
+      if (!result.snapshot) {
+        throw new Error("The Meeting Whiteboard is not available.");
+      }
+      if (result.pageIds.length === 0) {
+        throw new Error("No pages from this Whiteboard were presented or edited during the Meeting.");
+      }
+      return {
+        snapshot: roomSnapshotToStoreSnapshot(result.snapshot),
+        pageIds: result.pageIds,
+      };
+    },
+    enabled: captureState === "captured" && Boolean(selectedDocumentId) && hasCapturedWhiteboards,
+  });
+
+  const retryCaptureMutation = useMutation({
+    mutationFn: () => retryWhiteboardCapture({ data: { meetingId: meeting.meetingId } }),
+    onSuccess: (result) => {
+      setCaptureOverride({ meetingId: meeting.meetingId, state: result.captureState });
+    },
+  });
+
+  const saveCopyMutation = useMutation({
+    mutationFn: (whiteboardId: string) =>
+      saveMeetingWhiteboardCopy({
+        data: { meetingId: meeting.meetingId, whiteboardId },
+      }),
+  });
+
+  const copyPolicyMutation = useMutation({
+    mutationFn: ({
+      whiteboardId,
+      allowParticipantCopy,
+    }: {
+      meetingWhiteboardId: string;
+      whiteboardId: string;
+      allowParticipantCopy: boolean;
+    }) =>
+      setMeetingWhiteboardCopyPolicy({
+        data: { meetingId: meeting.meetingId, whiteboardId, allowParticipantCopy },
+      }),
+    onSuccess: (_, { meetingWhiteboardId, allowParticipantCopy }) => {
+      queryClient.setQueryData<MeetingWhiteboardHistoryResult>(historyQueryKey, (current) => {
+        if (!current || current.whiteboard === null) return current;
+        return {
+          ...current,
+          whiteboards: current.whiteboards.map((item) =>
+            item.meetingWhiteboardId === meetingWhiteboardId
+              ? { ...item, allowParticipantCopy }
+              : item,
+          ),
+        };
+      });
+    },
+  });
+
+  const { reset: resetSaveCopy } = saveCopyMutation;
+  const { reset: resetCopyPolicy } = copyPolicyMutation;
   const resetCopyFeedback = useCallback(() => {
-    setCopyState("idle");
-    setCopyError(null);
-    setCopyPolicyError(null);
-  }, []);
+    resetSaveCopy();
+    resetCopyPolicy();
+  }, [resetSaveCopy, resetCopyPolicy]);
 
   useEffect(() => {
-    if (captureState !== "captured") return;
-    let active = true;
-    void getMeetingWhiteboardHistory({ data: { meetingId: meeting.meetingId } })
-      .then(({ whiteboards: history, hasCapturedWhiteboards: canRead }) => {
-        if (!active) return;
-        resetCopyFeedback();
-        setWhiteboards(history);
-        setCanReadDocuments(canRead ?? false);
-        setSelectedWhiteboardId((current) =>
-          history.some((item) => item.whiteboardId === current)
-            ? current
-            : history[0]?.whiteboardId ?? null,
-        );
-        if (history.length === 0) {
-          setViewerState({
-            phase: "error",
-            snapshot: null,
-            error: "This Meeting has no completed Whiteboard.",
-          });
-        }
-      })
-      .catch((error: unknown) => {
-        if (!active) return;
-        setViewerState({
-          phase: "error",
-          snapshot: null,
-          error: error instanceof Error ? error.message : "Could not load Whiteboard history.",
-        });
-      });
-    return () => {
-      active = false;
-    };
-  }, [captureState, meeting.meetingId, resetCopyFeedback]);
+    resetCopyFeedback();
+  }, [meeting.meetingId, resetCopyFeedback]);
 
+  const autoGenerateMeetingIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (
       captureState !== "captured" ||
@@ -674,127 +634,34 @@ export function MeetingWhiteboardPanel({
     meeting.meetingId,
   ]);
 
-  useEffect(() => {
-    if (captureState !== "captured" || !selectedDocumentId) return;
-    if (!hasCapturedWhiteboards) {
-      setViewerState({
-        phase: "error",
-        snapshot: null,
-        error: "The Meeting PDF is available to attendees; the editable Whiteboard remains private.",
-      });
-      return;
-    }
-    let active = true;
-    setViewerState({ phase: "loading", snapshot: null, error: null });
-    void getWhiteboardSnapshot({
-      data: {
-        meetingId: meeting.meetingId,
-        whiteboardId: selectedDocumentId,
-      },
-    })
-      .then((result) => {
-        if (!active) return;
-        if (!result.snapshot) {
-          setViewerState({
-            phase: "error",
-            snapshot: null,
-            error: "The Meeting Whiteboard is not available.",
-          });
-          return;
-        }
-        if (result.pageIds.length === 0) {
-          setViewerState({
-            phase: "error",
-            snapshot: null,
-            error: "No pages from this Whiteboard were presented or edited during the Meeting.",
-          });
-          return;
-        }
-        setViewerState({
-          phase: "ready",
-          snapshot: roomSnapshotToStoreSnapshot(result.snapshot),
-          pageIds: result.pageIds,
-          error: null,
-        });
-      })
-      .catch((error: unknown) => {
-        if (!active) return;
-        setViewerState({
-          phase: "error",
-          snapshot: null,
-          error: error instanceof Error ? error.message : "Could not load the Whiteboard.",
-        });
-      });
-    return () => {
-      active = false;
-    };
-  }, [
-    hasCapturedWhiteboards,
-    captureState,
-    meeting.meetingId,
-    selectedDocumentId,
-    selectedRevisionId,
-  ]);
+  const viewerAssets = useMemo<TLAssetStore>(() => ({
+    async upload() {
+      return { src: "" };
+    },
+    resolve(asset) {
+      return revisionAssetUrl(asset.props.src ?? null, selectedAssetScope);
+    },
+  }), [selectedAssetScope]);
 
   if (captureState === "none") return null;
 
-  const retryCapture = async () => {
-    setCaptureRetryError(null);
-    setCaptureRetryState("retrying");
-    try {
-      const result = await retryWhiteboardCapture({ data: { meetingId: meeting.meetingId } });
-      setCaptureOverride({ meetingId: meeting.meetingId, state: result.captureState });
-    } catch (error) {
-      setCaptureRetryError(error instanceof Error ? error.message : "Could not retry saving the Whiteboard.");
-    } finally {
-      setCaptureRetryState("idle");
-    }
-  };
-
-  const saveCopy = async () => {
-    if (!selectedWhiteboard) return;
-    setCopyError(null);
-    setCopyState("saving");
-    try {
-      await saveMeetingWhiteboardCopy({
-        data: {
-          meetingId: meeting.meetingId,
-          whiteboardId: selectedWhiteboard.whiteboardId,
-        },
-      });
-      setCopyState("saved");
-    } catch (error) {
-      setCopyState("idle");
-      setCopyError(error instanceof Error ? error.message : "Could not save a copy.");
-    }
-  };
-
-  const toggleCopyPolicy = async () => {
-    if (!selectedWhiteboard) return;
-    const allowParticipantCopy = !selectedWhiteboard.allowParticipantCopy;
-    setCopyPolicyError(null);
-    setCopyPolicyState("saving");
-    try {
-      await setMeetingWhiteboardCopyPolicy({
-        data: {
-          meetingId: meeting.meetingId,
-          whiteboardId: selectedWhiteboard.whiteboardId,
-          allowParticipantCopy,
-        },
-      });
-      setWhiteboards((current) => current.map((item) =>
-        item.meetingWhiteboardId === selectedWhiteboard.meetingWhiteboardId
-          ? { ...item, allowParticipantCopy }
-          : item
-      ));
-    } catch (error) {
-      setCopyPolicyError(
-        error instanceof Error ? error.message : "Could not update copy access.",
-      );
-    } finally {
-      setCopyPolicyState("idle");
-    }
-  };
+  const viewerStatus:
+    | { phase: "loading" }
+    | { phase: "error"; error: string }
+    | { phase: "ready"; snapshot: StoreSnapshot; pageIds: string[] } =
+    historyQuery.isPending
+      ? { phase: "loading" }
+      : historyQuery.isError
+        ? { phase: "error", error: errorMessage(historyQuery.error, "Could not load Whiteboard history.") }
+        : whiteboards.length === 0
+          ? { phase: "error", error: "This Meeting has no completed Whiteboard." }
+          : !hasCapturedWhiteboards
+            ? { phase: "error", error: "The Meeting PDF is available to attendees; the editable Whiteboard remains private." }
+            : snapshotQuery.isPending
+              ? { phase: "loading" }
+              : snapshotQuery.isError
+                ? { phase: "error", error: errorMessage(snapshotQuery.error, "Could not load the Whiteboard.") }
+                : { phase: "ready", snapshot: snapshotQuery.data.snapshot, pageIds: snapshotQuery.data.pageIds };
 
   return (
     <div {...stylex.props(styles.panel)}>
@@ -817,13 +684,23 @@ export function MeetingWhiteboardPanel({
                   ? "Saving the Meeting Whiteboards. They will become available here shortly."
                   : "The Meeting Whiteboards could not be saved. Retry before this Meeting's temporary history is cleaned up."}
             </p>
-            {captureRetryError ? <p role="alert" {...stylex.props(styles.failure)}>{captureRetryError}</p> : null}
+            {retryCaptureMutation.error ? (
+              <p role="alert" {...stylex.props(styles.failure)}>
+                {errorMessage(retryCaptureMutation.error, "Could not retry saving the Whiteboard.")}
+              </p>
+            ) : null}
             {actions.error ? (
               <p role="alert" {...stylex.props(styles.failure)}>{actions.error}</p>
             ) : null}
-            {copyError ? <p role="alert" {...stylex.props(styles.failure)}>{copyError}</p> : null}
-            {copyPolicyError ? (
-              <p role="alert" {...stylex.props(styles.failure)}>{copyPolicyError}</p>
+            {saveCopyMutation.error ? (
+              <p role="alert" {...stylex.props(styles.failure)}>
+                {errorMessage(saveCopyMutation.error, "Could not save a copy.")}
+              </p>
+            ) : null}
+            {copyPolicyMutation.error ? (
+              <p role="alert" {...stylex.props(styles.failure)}>
+                {errorMessage(copyPolicyMutation.error, "Could not update copy access.")}
+              </p>
             ) : null}
             {captureState === "captured" && (meeting.canManageMeeting || selectedWhiteboard?.allowParticipantCopy || selectedBoardOpenable) && selectedWhiteboard ? (
               <div {...stylex.props(styles.textActions)}>
@@ -840,12 +717,18 @@ export function MeetingWhiteboardPanel({
                 {meeting.canManageMeeting ? (
                   <Button
                     variant="link"
-                    onClick={() => void toggleCopyPolicy()}
-                    disabled={copyPolicyState === "saving"}
+                    onClick={() =>
+                      copyPolicyMutation.mutate({
+                        meetingWhiteboardId: selectedWhiteboard.meetingWhiteboardId,
+                        whiteboardId: selectedWhiteboard.whiteboardId,
+                        allowParticipantCopy: !selectedWhiteboard.allowParticipantCopy,
+                      })
+                    }
+                    disabled={copyPolicyMutation.isPending}
                     aria-pressed={selectedWhiteboard.allowParticipantCopy}
                     sx={[styles.textAction, styles.copyPolicy]}
                   >
-                    {copyPolicyState === "saving" ? (
+                    {copyPolicyMutation.isPending ? (
                       <Loader2 size={13} {...stylex.props(progress.spin)} />
                     ) : (
                       <Copy size={13} />
@@ -856,16 +739,16 @@ export function MeetingWhiteboardPanel({
                 {selectedWhiteboard.allowParticipantCopy ? (
                   <Button
                     variant="link"
-                    onClick={() => void saveCopy()}
-                    disabled={copyState !== "idle"}
+                    onClick={() => saveCopyMutation.mutate(selectedWhiteboard.whiteboardId)}
+                    disabled={saveCopyMutation.isPending || saveCopyMutation.isSuccess}
                     sx={styles.textAction}
                   >
-                    {copyState === "saving" ? (
+                    {saveCopyMutation.isPending ? (
                       <Loader2 size={13} {...stylex.props(progress.spin)} />
                     ) : (
                       <Copy size={13} />
                     )}
-                    {copyState === "saved" ? "Saved to my Whiteboards" : "Save a copy"}
+                    {saveCopyMutation.isSuccess ? "Saved to my Whiteboards" : "Save a copy"}
                   </Button>
                 ) : null}
               </div>
@@ -877,10 +760,10 @@ export function MeetingWhiteboardPanel({
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => void retryCapture()}
-            loading={captureRetryState === "retrying"}
+            onClick={() => retryCaptureMutation.mutate()}
+            loading={retryCaptureMutation.isPending}
           >
-            {captureRetryState === "retrying" ? "Retrying…" : <><RefreshCw size={14} /> Retry capture</>}
+            {retryCaptureMutation.isPending ? "Retrying…" : <><RefreshCw size={14} /> Retry capture</>}
           </Button>
         ) : captureState !== "captured" ? null : hasGeneratedPdf ? (
           <Button
@@ -945,28 +828,29 @@ export function MeetingWhiteboardPanel({
             <AlertTriangle size={22} {...stylex.props(styles.failureGlyph)} />
             The Meeting Whiteboards could not be saved. The editable originals remain unchanged in their Spaces.
           </div>
-        ) : viewerState.phase === "loading" ? (
+        ) : viewerStatus.phase === "loading" ? (
           <div {...stylex.props(styles.statusRow)}>
             <Loader2 size={16} {...stylex.props(progress.spin)} /> Loading Whiteboard…
           </div>
-        ) : viewerState.phase === "error" ? (
+        ) : viewerStatus.phase === "error" ? (
           <div {...stylex.props(styles.statusError)}>
-            {viewerState.error}
+            {viewerStatus.error}
           </div>
         ) : (
           <WhiteboardTldraw
-            snapshot={viewerState.snapshot}
+            key={selectedDocumentId}
+            snapshot={viewerStatus.snapshot}
             assets={viewerAssets}
             shapeUtils={whiteboardShapeUtils}
             onMount={(editor) => {
-              limitViewerToHandoutPages(editor, viewerState.pageIds);
+              limitViewerToHandoutPages(editor, viewerStatus.pageIds);
               // After the trim, so the fit measures the handout rather than the
               // pages that were just removed from it.
-              fitViewerToHandout(editor, viewerState.pageIds);
+              fitViewerToHandout(editor, viewerStatus.pageIds);
               editor.updateInstanceState({ isReadonly: true });
               // The meeting's first board stands for it in lists. A moment's
               // wait lets the page's images arrive before it is drawn.
-              const [firstPage] = getPdfPageIds(editor, viewerState.pageIds);
+              const [firstPage] = getPdfPageIds(editor, viewerStatus.pageIds);
               if (!meeting.canManageMeeting || !firstPage || selectedDocumentId !== whiteboards[0]?.whiteboardId) return;
               const timer = window.setTimeout(() => {
                 publishMeetingPreview(editor, meeting.meetingId, firstPage).catch(() => {});

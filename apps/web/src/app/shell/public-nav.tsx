@@ -10,7 +10,7 @@ import { Link } from "@tanstack/react-router";
 import * as stylex from "@stylexjs/stylex";
 import { ArrowLeft } from "lucide-react";
 
-import { sessionQueryOptions } from "@/app/query-client/queries/session";
+import { sessionQueryOptions } from "@/modules/identity/client/session.queries";
 import { SkipLink } from "./skip-link";
 
 const styles = stylex.create({

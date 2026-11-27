@@ -1,60 +1,84 @@
 import { Errors } from "@/lib/app-errors";
-import type { MeetingRole } from "@/modules/meetings/contract/constants";
 import { getTerminalAdmissionError } from "@/modules/meetings/server/lifecycle/join-results";
 import {
-  ABSENT_GRACE_MS,
   ADMISSION_PENDING_TTL_MS,
-  BARRED_MEMORY,
   EFFECT_RETRY_BASE_MS,
   EFFECT_RETRY_MAX_MS,
-  EGRESS_START_TIMEOUT_MS,
   EMPTY_MEETING_GRACE_MS,
   MAX_PENDING_ADMISSIONS,
-  ISSUE_GRACE_MS,
-  MEDIA_NODE_UNREACHABLE_GRACE_MS,
   PRUNED_ATTEMPT_MEMORY,
   SCREEN_SHARE_ASK_TTL_MS,
   SETTLED_ATTEMPT_RETENTION_MS,
-  WHITEBOARD_PIN_GIVE_UP_MS,
-  canManage,
-  canModerate,
-  grantFor,
   holdsSeat,
   initialState,
   isCurrentPlacement,
   isOpen,
-  placementOf,
   roleOf,
   roleOnArrival,
-  roomMetadataFor,
   seatAvailable,
   surfaceViewFor,
-  tokenExpiresAt,
   whiteboardAuthorityHash,
   type Admission,
   type Attempt,
-  type EgressMode,
-  type EgressState,
-  type EndReason,
   type MeetingState,
-  type SurfaceFocus,
 } from "./model";
 import type {
   Command,
   EffectResult,
   EgressStartEffect,
-  EgressView,
   Input,
-  KeptOut,
-  Observation,
-  ObservedEgress,
-  ObservedParticipant,
   Outcome,
-  ParticipantView,
   Reply,
-  Subject,
 } from "./protocol";
 import { wantedEffectKeys } from "./plan";
+import {
+  addStrayEgress,
+  bumpRoom,
+  egressView,
+  isAdmin,
+  liveAdmissionOf,
+  ownApprovedAdmission,
+  ownAttempt,
+  ownPrunedAttempt,
+  ownsAdmission,
+  requireHost,
+  requireModerator,
+  setScreenShare,
+  touch,
+  view,
+} from "./state/access";
+import {
+  applyAuthority,
+  bar,
+  decide,
+  endAttempt,
+  keptOutBy,
+  refuseBarred,
+  revokeUser,
+  strongestRole,
+} from "./state/authority";
+import {
+  failEgress,
+  planEgressStart,
+  setEgress,
+  settleEgress,
+  startStillWanted,
+  stopEgressWhenEnded,
+} from "./state/egress";
+import {
+  abandonNode,
+  endMeeting,
+  nodeUnreachable,
+  observe,
+  place,
+  reconcilePresence,
+} from "./state/presence";
+import {
+  answerAsks,
+  giveUpStalePins,
+  present,
+  setSurface,
+} from "./state/surface";
 
 export interface Applied {
   state: MeetingState;
@@ -725,309 +749,6 @@ function join(
   return { kind: "admitted", participant: view(state, admission, attempt), newGuestAdmission };
 }
 
-function setEgress(
-  state: MeetingState,
-  mode: EgressMode,
-  on: boolean,
-  target: string | null,
-  now: number,
-  outcome: Outcome,
-): void {
-  if (!isOpen(state)) throw Errors.MEETING_ENDED();
-  const egress = state.egress;
-  const label = mode === "recording" ? "Recording" : "Stream";
-  if (on) {
-    if (mode === "recording" && !state.meta.recordingEnabled) throw Errors.FORBIDDEN();
-    if (egress.desired === mode) {
-      // The same request again. A different destination is not: the stream
-      // already wanted keeps its own until it is stopped.
-      if (egress.target === (mode === "streaming" ? target : null)) return;
-      throw Errors.VALIDATION("Stop the current stream before changing its destination.");
-    }
-    const other = egress.desired ?? egress.mode;
-    if (other && other !== mode) {
-      throw Errors.VALIDATION(
-        mode === "recording"
-          ? "Cannot record while streaming is active"
-          : "Cannot stream while recording is active",
-      );
-    }
-    if (egress.egressId) throw Errors.VALIDATION(`${label} is still stopping, please try again`);
-    if (mode === "streaming" && !target) throw Errors.VALIDATION("Platform and stream key are required");
-    egress.desired = mode;
-    egress.target = mode === "streaming" ? target : null;
-    egress.lastFailure = null;
-    planEgressStart(state, now, outcome);
-    return;
-  }
-  // Off already, whether asked before or never on.
-  if (egress.desired !== mode && egress.mode !== mode) return;
-  egress.desired = null;
-  egress.target = null;
-}
-
-// ─── Observations ────────────────────────────────────────────────────────────
-
-function observe(state: MeetingState, input: Observation, now: number): void {
-  switch (input.kind) {
-    case "participantJoined": {
-      const attempt = attemptByIdentity(state, input.identity);
-      if (!attempt || attempt.endedAt !== null) {
-        addStray(state, input.identity);
-        return;
-      }
-      markJoined(state, attempt, { sid: input.sid, joinedAt: input.joinedAt, requestedAt: null }, input.at, now);
-      return;
-    }
-    case "participantLeft": {
-      const attempt = attemptByIdentity(state, input.identity);
-      if (!attempt || attempt.endedAt !== null) return;
-      // LiveKit reports a full client reconnect as a departure followed by a
-      // join. The departure only marks the attempt absent; the next presence
-      // check decides.
-      if (input.sid && attempt.sid && input.sid !== attempt.sid) return;
-      attempt.absentSince ??= now;
-      state.room.lastPresenceCheckAt = null;
-      return;
-    }
-    case "roomStarted":
-      newRoomInstance(state);
-      state.room.deleted = false;
-      return;
-    case "roomFinished":
-      newRoomInstance(state);
-      state.room.lastPresenceCheckAt = null;
-      for (const attempt of Object.values(state.attempts)) {
-        if (attempt.endedAt === null && attempt.joinedAt !== null) attempt.absentSince ??= now;
-      }
-      return;
-    case "egressObserved":
-      // A listing from a placement the meeting has left describes another room.
-      if (input.placement && !isCurrentPlacement(state, input.placement)) return;
-      observeEgress(state, input.egresses, input.complete ? input.requestedAt : null, now);
-      return;
-  }
-}
-
-/**
- * A report that the attempt is in the room: the session `sid` LiveKit has for
- * it, when that session joined on LiveKit's clock if LiveKit said, and for a
- * listing, when it was requested on this coordinator's.
- *
- * `at` is when it joined, on the clock of whichever machine heard it. A join
- * is never recorded before the attempt's token was issued: the room may have
- * moved to a machine whose clock is behind the one that issued it, and D1
- * refuses a connection that joined before its token existed.
- */
-function markJoined(
-  state: MeetingState,
-  attempt: Attempt,
-  report: { sid: string | null; joinedAt: number | null; requestedAt: number | null },
-  at: number,
-  now: number,
-): void {
-  const { sid, joinedAt: sessionJoinedAt } = report;
-  const admission = state.admissions[attempt.admissionId];
-  if (!admission || admission.status !== "approved" || !isOpen(state)) {
-    endAttempt(state, attempt, "admission_revoked", now);
-    addStray(state, attempt.identity);
-    return;
-  }
-  if (sid && sid !== attempt.sid) {
-    // A report of a session that joined before the current one (a listing
-    // taken before a reconnect, applied after it) is old news about it. Each
-    // clock is compared only with itself: LiveKit's join times when it gave
-    // both, otherwise when the listing was asked for against when this
-    // coordinator first knew of the current session.
-    const current = attempt.sessionJoinedAt;
-    const stale = current !== null && sessionJoinedAt !== null
-      ? sessionJoinedAt < current
-      : report.requestedAt !== null && attempt.sidKnownSince !== null && report.requestedAt < attempt.sidKnownSince;
-    if (stale) return;
-    // A new session, first or after a full reconnect, was admitted on one of
-    // the attempt's join tokens: which one, and so which grant it holds, is
-    // not known here. Whatever was applied to an earlier session is gone.
-    attempt.appliedGrant = null;
-    attempt.sid = sid;
-    attempt.sessionJoinedAt = sessionJoinedAt;
-    attempt.sidKnownSince = report.requestedAt ?? now;
-  }
-  attempt.absentSince = null;
-  if (attempt.joinedAt !== null) return;
-  const joinedAt = Math.max(at, attempt.issuedAt);
-  attempt.joinedAt = joinedAt;
-
-  // The newest attempt to join is the participant: it ends every earlier one
-  // of theirs. Issue order decides, not the order joins are heard in — a
-  // webhook can be lost, and one listing can report several joins at once.
-  for (const other of Object.values(state.attempts)) {
-    if (
-      other.id !== attempt.id &&
-      other.admissionId === attempt.admissionId &&
-      other.endedAt === null &&
-      issuedBefore(state, other, attempt)
-    ) {
-      endAttempt(state, other, "superseded", now);
-    }
-  }
-
-  if (state.meta.phase === "provisional") {
-    state.meta.phase = "live";
-    state.meta.firstJoinedAt = joinedAt;
-  }
-  state.room.emptySince = null;
-}
-
-/**
- * Whether `a` was issued before `b`. Attempts are recorded as they are issued,
- * so the record's order settles two issued within the same millisecond.
- */
-function issuedBefore(state: MeetingState, a: Attempt, b: Attempt): boolean {
-  if (a.issuedAt !== b.issuedAt) return a.issuedAt < b.issuedAt;
-  const order = Object.keys(state.attempts);
-  return order.indexOf(a.id) < order.indexOf(b.id);
-}
-
-/**
- * What a look at the room's egresses says. `listedAt` is when a complete
- * listing was asked for, null for a webhook's word on one egress. A listing
- * lands whenever it lands, so what it does not show is taken as gone only
- * when it was asked for after this coordinator knew of it: a listing from
- * before a restart says nothing of the restarted recording.
- */
-function observeEgress(
-  state: MeetingState,
-  observed: ObservedEgress[],
-  listedAt: number | null,
-  now: number,
-): void {
-  const egress = state.egress;
-  const complete = listedAt !== null;
-  egress.lastPolledAt = now;
-  if (complete) state.room.unreachableSince = null;
-
-  // A start whose result never arrived: adopt what it created, or give it up.
-  // Only a listing asked for after the start began can know what it created.
-  if (egress.op && !egress.egressId && listedAt !== null && listedAt >= egress.op.startedAt) {
-    // One already being stopped is not it.
-    const orphan = observed.find(
-      (info) => (info.status === "starting" || info.status === "active") && !egress.strays.includes(info.egressId),
-    );
-    // One that no longer matches what is wanted is left untracked, and so
-    // stopped below.
-    if (orphan && startStillWanted(egress, egress.op)) {
-      egress.egressId = orphan.egressId;
-      egress.mode = egress.desired;
-      egress.status = "starting";
-      egress.startedAt = egress.op.startedAt;
-      egress.knownSince = listedAt;
-    } else if ((state.retries["egress.start"]?.failures ?? 0) >= 3) {
-      failEgress(state, "LiveKit egress could not be started.");
-    }
-    egress.op = null;
-  }
-
-  // While a start is unanswered, the egress it created may already be
-  // reported (LiveKit's `egress_started` webhook can beat the start's own
-  // reply). Only a complete listing may decide an untracked egress is left
-  // over; the orphan adoption above has already cleared the op when it did.
-  const startUnanswered = egress.op !== null && !egress.egressId;
-  for (const info of observed) {
-    if (info.egressId === egress.egressId) continue;
-    // A stray that ended on its own needs no stop: LiveKit would refuse one.
-    if (info.status === "complete" || info.status === "failed") {
-      egress.strays = egress.strays.filter((egressId) => egressId !== info.egressId);
-      continue;
-    }
-    if (startUnanswered) continue;
-    // Every egress in the room is this coordinator's: one it no longer tracks
-    // is left over from a lost result or an earlier failure.
-    if (info.status === "starting" || info.status === "active") addStrayEgress(state, info.egressId);
-  }
-
-  const current = egress.egressId
-    ? observed.find((info) => info.egressId === egress.egressId)
-    : undefined;
-  if (!egress.egressId) return;
-  if (!current) {
-    if (listedAt !== null && (egress.knownSince === null || listedAt >= egress.knownSince)) {
-      settleEgress(state, "The recording service lost track of this egress.");
-    }
-    return;
-  }
-
-  switch (current.status) {
-    case "starting":
-    case "active": {
-      const ready =
-        current.status === "active" && (egress.mode !== "streaming" || current.streamActive);
-      const failure = current.streamFailure;
-      if (failure) {
-        failEgress(state, failure);
-      } else if (ready && egress.status === "starting") {
-        egress.status = "active";
-        egress.transition = "started";
-        bumpEgress(state);
-      } else if (
-        egress.status === "starting" &&
-        egress.startedAt !== null &&
-        now - egress.startedAt > EGRESS_START_TIMEOUT_MS
-      ) {
-        failEgress(state, "LiveKit egress did not become active in time.");
-      }
-      return;
-    }
-    case "ending":
-      egress.status = "stopping";
-      return;
-    case "complete":
-    case "failed":
-      settleEgress(state, current.error);
-      return;
-  }
-}
-
-/**
- * The tracked egress is over; say whether that was asked for. One already
- * reported failed (`lastFailure`, cleared by every start) was announced when
- * the failure was decided: the room only stops showing it.
- */
-function settleEgress(state: MeetingState, error: string | null): void {
-  const egress = state.egress;
-  const announced = egress.lastFailure !== null;
-  const expected = egress.desired === null;
-  egress.egressId = null;
-  egress.mode = null;
-  egress.status = null;
-  egress.startedAt = null;
-  egress.knownSince = null;
-  if (announced) {
-    bumpRoom(state);
-    return;
-  }
-  egress.transition = expected ? "stopped" : "failed";
-  if (!expected) {
-    egress.desired = null;
-    egress.target = null;
-    egress.lastFailure = error ?? "The egress ended unexpectedly.";
-  }
-  bumpEgress(state);
-}
-
-/** Whether what a start asked for is still what is wanted. */
-function startStillWanted(egress: EgressState, op: NonNullable<EgressState["op"]>): boolean {
-  return egress.desired === op.mode && egress.target === op.target;
-}
-
-function failEgress(state: MeetingState, message: string): void {
-  const egress = state.egress;
-  egress.desired = null;
-  egress.target = null;
-  egress.lastFailure = message;
-  egress.transition = "failed";
-  bumpEgress(state);
-}
-
 // ─── Effect results ──────────────────────────────────────────────────────────
 
 function applyResult(state: MeetingState, input: EffectResult, now: number): void {
@@ -1039,8 +760,6 @@ function applyResult(state: MeetingState, input: EffectResult, now: number): voi
   }
   switch (input.kind) {
     case "grantApplied": {
-      // Applied to the session it was planned for. A session that has
-      // replaced it since holds an unknown grant, which is planned anew.
       const attempt = state.attempts[input.attemptId];
       if (attempt && attempt.sid === input.sid) attempt.appliedGrant = input.hash;
       return;
@@ -1061,7 +780,6 @@ function applyResult(state: MeetingState, input: EffectResult, now: number): voi
       }
       return;
     case "metadataApplied":
-      // Written to a room that has since gone: the current one holds none of it.
       if (input.room !== state.room.instance) return;
       state.room.appliedVersion = Math.max(state.room.appliedVersion, input.version);
       return;
@@ -1073,8 +791,6 @@ function applyResult(state: MeetingState, input: EffectResult, now: number): voi
       }
       const op = egress.op;
       egress.op = null;
-      // Asked for before the host changed their mind: a refusal of it says
-      // nothing about what is wanted now, and what it started is not that.
       const wanted = startStillWanted(egress, op);
       if (!input.egressId) {
         if (wanted) failEgress(state, input.error ?? "LiveKit egress did not start.");
@@ -1100,7 +816,6 @@ function applyResult(state: MeetingState, input: EffectResult, now: number): voi
       }
       return;
     case "roomDeleted":
-      // Nobody is left in a deleted room.
       for (const attempt of Object.values(state.attempts)) attempt.removed = true;
       state.room.strays = [];
       state.room.deleted = true;
@@ -1113,8 +828,6 @@ function applyResult(state: MeetingState, input: EffectResult, now: number): voi
       state.postMeetingDone = true;
       return;
     case "whiteboardPinned": {
-      // A newer boundary of the same board replaced this pin meanwhile; that
-      // one still has to land.
       if (state.surface.pins[input.usageId]?.commandId === input.commandId) {
         delete state.surface.pins[input.usageId];
       }
@@ -1135,8 +848,6 @@ function applyResult(state: MeetingState, input: EffectResult, now: number): voi
       recordFailure(state, input.key, now);
       giveUpStalePins(state, now);
       if (ROOM_LOOKS.has(input.key)) state.room.unreachableSince ??= now;
-      // A start that failed without an answer may still have created an
-      // egress: its op stays, and the room lookup adopts or clears it.
       return;
     }
   }
@@ -1149,644 +860,4 @@ function recordFailure(state: MeetingState, key: string, now: number): void {
     failures,
     retryAt: now + Math.min(EFFECT_RETRY_BASE_MS * 2 ** (failures - 1), EFFECT_RETRY_MAX_MS),
   };
-}
-
-/**
- * Compare the room, as a listing requested at `requestedAt` saw it, with the
- * attempts. The listing is the only evidence about a token that was handed
- * out: LiveKit does not guarantee its webhooks, so an attempt never reported
- * to have joined ends as unused only when a listing requested after its grace
- * does not find it.
- */
-function reconcilePresence(
-  state: MeetingState,
-  participants: ObservedParticipant[],
-  roomExists: boolean,
-  requestedAt: number,
-  now: number,
-): void {
-  state.room.unreachableSince = null;
-  if (!roomExists) newRoomInstance(state);
-  const present = new Map(participants.filter((p) => p.standard).map((p) => [p.identity, p]));
-  // A listing asked for before a departure was heard cannot speak to it: the
-  // person may have left after it was taken. The attempt stays absent, and
-  // the listing is not the fresh look the departure asked for.
-  let predatesDeparture = false;
-  // One listing can end several attempts at once.
-  const roles = liveRoles(state);
-
-  for (const attempt of Object.values(state.attempts)) {
-    if (attempt.endedAt !== null) continue;
-    const seen = present.get(attempt.identity);
-    if (seen !== undefined) {
-      if (attempt.absentSince !== null && requestedAt < attempt.absentSince) {
-        predatesDeparture = true;
-        continue;
-      }
-      markJoined(state, attempt, { sid: seen.sid, joinedAt: seen.joinedAt, requestedAt }, now, now);
-      continue;
-    }
-    if (attempt.joinedAt === null) {
-      // If it arrives later anyway, its join is refused and it is removed.
-      if (requestedAt - attempt.issuedAt >= ISSUE_GRACE_MS) endAttempt(state, attempt, "unused", now, roles.get(attempt.id));
-      continue;
-    }
-    attempt.absentSince ??= now;
-    if (now - attempt.absentSince >= ABSENT_GRACE_MS) {
-      endAttempt(state, attempt, "participant_left", now, roles.get(attempt.id));
-      attempt.removed = true;
-    }
-  }
-
-  for (const [identity] of present) {
-    const attempt = attemptByIdentity(state, identity);
-    if (!attempt || attempt.endedAt !== null) addStray(state, identity);
-  }
-  state.room.lastPresenceCheckAt = predatesDeparture ? null : requestedAt;
-}
-
-// ─── Transitions ─────────────────────────────────────────────────────────────
-
-function decide(
-  state: MeetingState,
-  admission: Admission,
-  status: "approved" | "denied" | "revoked" | "expired",
-  decidedByUserId: string | null,
-  reason: string | null,
-  now: number,
-): void {
-  const wasPending = admission.status === "pending";
-  // What its connections were, before this decision changes what it resolves to.
-  const roleBefore = roleOf(state, admission);
-  admission.status = status;
-  admission.decidedByUserId = decidedByUserId;
-  admission.decidedAt = admissionTime(admission, now);
-  admission.decisionReason = reason;
-  if (status !== "approved") {
-    admission.moderator = false;
-    setScreenShare(admission, "none", now);
-    admission.boardEdit = false;
-    admission.boardRequested = false;
-    admission.transcriptionStopRequested = false;
-    admission.hand = null;
-    for (const attempt of Object.values(state.attempts)) {
-      if (attempt.admissionId === admission.id && attempt.endedAt === null) {
-        endAttempt(state, attempt, reason ?? status, now, roleBefore);
-      }
-    }
-  }
-  touch(admission, now);
-  if (wasPending) {
-    state.admissionsVersion += 1;
-    bumpRoom(state);
-  }
-}
-
-/**
- * End an attempt. `role` is the role it held, read before anything this
- * change ends unseats it; by default, as the meeting stands now.
- */
-/**
- * Each live attempt's role as the meeting stands now. A change that ends
- * several attempts reads them first: ending one before reading the next could
- * move the stand-in to an attempt ending in the same change, and record it as
- * the host it never was.
- */
-function liveRoles(state: MeetingState): Map<string, MeetingRole> {
-  return new Map(Object.values(state.attempts)
-    .filter((attempt) => attempt.endedAt === null)
-    .map((attempt) => [attempt.id, roleOf(state, state.admissions[attempt.admissionId])]));
-}
-
-function endAttempt(
-  state: MeetingState,
-  attempt: Attempt,
-  reason: string,
-  now: number,
-  role: MeetingRole = roleOf(state, state.admissions[attempt.admissionId]),
-): void {
-  if (attempt.endedAt !== null) return;
-  attempt.endedRole = role;
-  attempt.endedAt = Math.max(now, attempt.joinedAt ?? attempt.issuedAt);
-  attempt.endReason = reason;
-  // Only an attempt that reached the room has anything to remove from it.
-  attempt.removed = attempt.joinedAt === null;
-}
-
-/**
- * Stop the meeting, whatever stops it. One nobody ever joined did not happen:
- * it is discarded rather than ended, so it leaves no history and gives back
- * the one-time link that started it.
- */
-function endMeeting(state: MeetingState, reason: EndReason, now: number): void {
-  const { meta } = state;
-  meta.phase = "ended";
-  meta.endedAt = now;
-  meta.endReason = meta.firstJoinedAt === null ? "discarded" : reason;
-  // The room is told first (`ended` in its metadata), so the removals below
-  // read as the end rather than as a kick to rejoin from.
-  bumpRoom(state);
-  // Everyone still in the room is removed now, not when the room is
-  // deleted: deleting it waits for a running egress to stop.
-  const roles = liveRoles(state);
-  for (const attempt of Object.values(state.attempts)) {
-    endAttempt(state, attempt, "meeting_finalized", now, roles.get(attempt.id));
-  }
-  for (const admission of Object.values(state.admissions)) {
-    if (admission.status === "pending") decide(state, admission, "expired", null, "meeting_ended", now);
-  }
-  stopEgressWhenEnded(state);
-  // The end is a boundary like a close: what the board showed is owed a pin.
-  // A surface already closed was pinned when it closed; edits since are not
-  // the meeting's.
-  if (state.surface.open) closeSurface(state, now);
-}
-
-// ─── Whiteboard surface ──────────────────────────────────────────────────────
-
-function setSurface(state: MeetingState, open: boolean, fallback: SurfaceFocus | null, now: number): void {
-  if (!isOpen(state)) throw Errors.MEETING_ENDED();
-  const { surface } = state;
-  if (!open) {
-    if (surface.open) closeSurface(state, now);
-    return;
-  }
-  if (surface.open) return;
-  const focus = surface.focus ?? fallback;
-  if (!focus) throw Errors.VALIDATION("There is no whiteboard to show yet.");
-  surface.focus = focus;
-  surface.open = true;
-  surface.revision += 1;
-  surface.openRevision = surface.revision;
-  answerAsks(state, "boardRequested", now);
-  bumpRoom(state);
-}
-
-function present(state: MeetingState, focus: SurfaceFocus, now: number): void {
-  if (!isOpen(state)) throw Errors.MEETING_ENDED();
-  const { surface } = state;
-  if (surface.open && surface.focus?.usageId === focus.usageId) return;
-  // Leaving a shared board is its boundary. A closed one was pinned when it
-  // closed.
-  if (surface.open && surface.focus) owePin(state, surface.focus, now);
-  const wasOpen = surface.open;
-  surface.focus = focus;
-  surface.open = true;
-  surface.revision += 1;
-  // Switching boards while open is not a new opening: whoever hid the surface
-  // for themselves stays hidden.
-  if (!wasOpen) surface.openRevision = surface.revision;
-  answerAsks(state, "boardRequested", now);
-  bumpRoom(state);
-}
-
-/**
- * What an ask wanted happened — the board opened, transcription turned off —
- * so every ask for it has its answer.
- */
-function answerAsks(
-  state: MeetingState,
-  ask: "boardRequested" | "transcriptionStopRequested",
-  now: number,
-): void {
-  for (const admission of Object.values(state.admissions)) {
-    if (!admission[ask]) continue;
-    admission[ask] = false;
-    touch(admission, now);
-  }
-}
-
-function closeSurface(state: MeetingState, now: number): void {
-  const { surface } = state;
-  if (surface.focus) owePin(state, surface.focus, now);
-  surface.open = false;
-  surface.revision += 1;
-  bumpRoom(state);
-}
-
-function owePin(state: MeetingState, focus: SurfaceFocus, now: number): void {
-  const { surface } = state;
-  surface.pins[focus.usageId] = {
-    ...focus,
-    // Unique per boundary; the sync server and the capture key both accept it.
-    commandId: `wbpin-${surface.revision + 1}-${focus.usageId}`,
-    owedAt: now,
-  };
-}
-
-/**
- * A pin the sync server could not take for a day is given up: the capture
- * then keeps the board's previous pin, or records that nothing was shared.
- */
-function giveUpStalePins(state: MeetingState, now: number): void {
-  for (const [usageId, pin] of Object.entries(state.surface.pins)) {
-    if (now - pin.owedAt >= WHITEBOARD_PIN_GIVE_UP_MS) delete state.surface.pins[usageId];
-  }
-}
-
-function stopEgressWhenEnded(state: MeetingState): void {
-  state.egress.desired = null;
-  state.egress.target = null;
-}
-
-function place(state: MeetingState, nodeId: string, now: number): void {
-  const { meta } = state;
-  if (meta.nodeId === nodeId || !isOpen(state)) return;
-  if (meta.nodeId !== null) {
-    // The meeting leaves a node its participants lost.
-    abandonNode(state, "media_node_moved", now);
-    state.room.deleted = false;
-  }
-  meta.nodeId = nodeId;
-  meta.placement += 1;
-}
-
-/**
- * Let go of the meeting's media node: nothing on it can be reached. Its
- * attempts end there with nothing left to remove, and so does any egress.
- */
-function abandonNode(state: MeetingState, reason: string, now: number): void {
-  const roles = liveRoles(state);
-  for (const attempt of Object.values(state.attempts)) {
-    if (attempt.nodeId !== state.meta.nodeId) continue;
-    endAttempt(state, attempt, reason, now, roles.get(attempt.id));
-    attempt.removed = true;
-  }
-  const egress = state.egress;
-  if (egress.egressId || egress.op || egress.desired) {
-    egress.egressId = null;
-    egress.mode = null;
-    egress.status = null;
-    egress.startedAt = null;
-    egress.knownSince = null;
-    egress.op = null;
-    failEgress(state, "The media server hosting this meeting became unreachable.");
-  }
-  state.room.strays = [];
-  egress.strays = [];
-  newRoomInstance(state);
-  state.room.lastPresenceCheckAt = null;
-  state.room.unreachableSince = null;
-}
-
-/**
- * The meeting's LiveKit room is gone, or a new one replaced it: it holds no
- * metadata, and a write still in flight for the old one says nothing about it.
- */
-function newRoomInstance(state: MeetingState): void {
-  state.room.appliedVersion = 0;
-  state.room.instance += 1;
-}
-
-/** Whether every look at the room has failed for as long as it may. */
-function nodeUnreachable(state: MeetingState, now: number): boolean {
-  const since = state.room.unreachableSince;
-  return since !== null && now - since >= MEDIA_NODE_UNREACHABLE_GRACE_MS;
-}
-
-function planEgressStart(state: MeetingState, now: number, outcome: Outcome): void {
-  const egress = state.egress;
-  if (!isOpen(state) || !egress.desired || egress.egressId || egress.op) return;
-  if (state.retries["egress.start"] && state.retries["egress.start"].retryAt > now) return;
-  const anyoneInRoom = Object.values(state.attempts).some(
-    (attempt) => attempt.endedAt === null && attempt.joinedAt !== null,
-  );
-  const placement = placementOf(state);
-  if (!anyoneInRoom || !placement) return;
-  egress.opSeq += 1;
-  egress.op = {
-    id: `${state.meta.meetingId}:${egress.opSeq}`,
-    kind: "start",
-    startedAt: now,
-    mode: egress.desired,
-    target: egress.target,
-  };
-  outcome.once.push({
-    key: "egress.start",
-    kind: "livekit.startEgress",
-    placement,
-    opId: egress.op.id,
-    mode: egress.desired,
-    target: egress.target,
-  });
-}
-
-/**
- * Apply a user's Space authority as read no earlier than `readAt`. A read
- * requested before an admission's role last changed (a periodic check that
- * was in flight when a change was pushed) is not applied over it. Only a
- * change is stamped, so a read that finds the role as it was keeps nothing.
- */
-function applyAuthority(
-  state: MeetingState,
-  userId: string,
-  spaceRole: Admission["spaceRole"],
-  reason: string,
-  readAt: number,
-  now: number,
-): void {
-  const revoked = state.meta.spaceKind === "shared" && spaceRole === "visitor";
-  for (const admission of Object.values(state.admissions)) {
-    if (admission.userId !== userId || admission.spaceRoleAt > readAt) continue;
-    if (revoked) {
-      if (admission.status === "approved" || admission.status === "pending") {
-        decide(state, admission, "revoked", null, reason, now);
-      }
-      continue;
-    }
-    if (admission.spaceRole !== spaceRole) {
-      admission.spaceRole = spaceRole;
-      admission.spaceRoleAt = readAt;
-      touch(admission, now);
-    }
-  }
-}
-
-function revokeUser(state: MeetingState, userId: string, reason: string, now: number): void {
-  for (const admission of Object.values(state.admissions)) {
-    if (admission.userId !== userId) continue;
-    if (admission.status === "approved" || admission.status === "pending") {
-      decide(state, admission, "revoked", null, reason, now);
-    }
-  }
-}
-
-/**
- * Keep a removed participant out: a user by id, a guest by their network.
- * A guest whose network was unknown cannot be kept out, and the caller is told.
- */
-/**
- * Keep out whoever `admission` belongs to, for the rest of the meeting: a
- * user by account, a guest by the network they joined from. Every live
- * admission the bar covers is revoked with it, so none of them is a way back
- * in; {@link refuseBarred} turns away whatever asks afterwards.
- */
-function bar(state: MeetingState, admission: Admission, decidedByUserId: string | null, now: number): KeptOut {
-  const { barred } = state;
-  let keptOut: KeptOut = "none";
-  if (admission.userId) {
-    remember(barred.userIds, admission.userId);
-    keptOut = "account";
-  } else if (admission.networkKey) {
-    remember(barred.guestNetworks, admission.networkKey);
-    keptOut = "network";
-  }
-  for (const covered of keptOutBy(state, admission)) {
-    if (covered.status === "approved" || covered.status === "pending") {
-      decide(state, covered, "revoked", decidedByUserId, "removed_by_moderator", now);
-    }
-  }
-  return keptOut;
-}
-
-/**
- * The admissions a bar on `admission`'s owner reaches: every one of the
- * user's, or every guest's that came from the same network. A guest a
- * moderator made a moderator was let in deliberately and is not reached
- * through a network they share.
- */
-function keptOutBy(state: MeetingState, admission: Admission): Admission[] {
-  return Object.values(state.admissions).filter((candidate) => {
-    if (candidate.id === admission.id) return true;
-    if (admission.userId) return candidate.userId === admission.userId;
-    return admission.networkKey !== null &&
-      candidate.userId === null &&
-      candidate.networkKey === admission.networkKey &&
-      roleOf(state, candidate) === "attendee";
-  });
-}
-
-/** The strongest role any of `admissions` holds in the meeting now. */
-function strongestRole(state: MeetingState, admissions: readonly Admission[]): MeetingRole {
-  let strongest: MeetingRole = "attendee";
-  for (const admission of admissions) {
-    if (admission.status !== "approved") continue;
-    const role = roleOf(state, admission);
-    if (role === "host") return role;
-    if (role === "moderator") strongest = role;
-  }
-  return strongest;
-}
-
-function remember(list: string[], value: string): void {
-  if (list.includes(value)) return;
-  list.push(value);
-  if (list.length > BARRED_MEMORY) list.shift();
-}
-
-/**
- * Refuse a join by someone a moderator removed, whichever admission it names.
- * A barred network turns away only attendee guests: whoever signs in is known
- * by their own account, and a guest made moderator was let in deliberately.
- */
-function refuseBarred(
-  state: MeetingState,
-  subject: Subject,
-  admission: Admission | undefined,
-  guestNetworkKey: string | null,
-): void {
-  const { barred } = state;
-  if (subject.kind === "user" && barred.userIds.includes(subject.userId)) {
-    throw Errors.MEETING_ADMISSION_DENIED("A moderator removed you from this meeting.");
-  }
-  if (
-    subject.kind === "guest" &&
-    guestNetworkKey &&
-    barred.guestNetworks.includes(guestNetworkKey) &&
-    (!admission || roleOf(state, admission) === "attendee")
-  ) {
-    throw Errors.MEETING_ADMISSION_DENIED(
-      "This meeting isn't accepting guests from your network. Sign in to ask to join.",
-    );
-  }
-}
-
-// ─── Access ──────────────────────────────────────────────────────────────────
-
-function ownsAdmission(subject: Subject, admission: Admission): boolean {
-  switch (subject.kind) {
-    case "user":
-      return admission.userId === subject.userId;
-    case "guest":
-      return admission.userId === null && subject.admissionId === admission.id && subject.verified;
-    case "system":
-      return false;
-  }
-}
-
-/** A user's newest admission still waiting or admitted, if any. */
-function liveAdmissionOf(state: MeetingState, userId: string): Admission | undefined {
-  let live: Admission | undefined;
-  for (const admission of Object.values(state.admissions)) {
-    if (admission.userId !== userId) continue;
-    if (admission.status !== "pending" && admission.status !== "approved") continue;
-    if (!live || admission.createdAt > live.createdAt) live = admission;
-  }
-  return live;
-}
-
-/** Whether `attemptId` is one of the subject's own attempts that pruning forgot. */
-function ownPrunedAttempt(state: MeetingState, subject: Subject, attemptId: string): boolean {
-  const admissionId = state.attempts[attemptId] ? undefined : state.prunedAttempts[attemptId]?.admissionId;
-  const admission = admissionId ? state.admissions[admissionId] : undefined;
-  if (!admission) return false;
-  if (!ownsAdmission(subject, admission)) throw Errors.FORBIDDEN();
-  return true;
-}
-
-function ownAttempt(state: MeetingState, subject: Subject, attemptId: string): Attempt {
-  // A forgotten attempt of the subject's own is over, which is what any
-  // request naming it is told.
-  if (ownPrunedAttempt(state, subject, attemptId)) throw Errors.MEETING_CONNECTION_CLOSED();
-  const attempt = state.attempts[attemptId];
-  const admission = attempt ? state.admissions[attempt.admissionId] : undefined;
-  if (!attempt || !admission) throw Errors.NOT_FOUND("Participant");
-  if (!ownsAdmission(subject, admission)) throw Errors.FORBIDDEN();
-  return attempt;
-}
-
-function ownApprovedAdmission(state: MeetingState, subject: Subject, attemptId: string): Admission {
-  if (!isOpen(state)) throw Errors.MEETING_ENDED();
-  const attempt = ownAttempt(state, subject, attemptId);
-  const admission = state.admissions[attempt.admissionId];
-  if (attempt.endedAt !== null || admission.status !== "approved") {
-    throw Errors.MEETING_CONNECTION_CLOSED();
-  }
-  return admission;
-}
-
-/** The subject's admission that is in the meeting, approved and seated. */
-function seatedAdmissionOf(state: MeetingState, subject: Subject): Admission | undefined {
-  return Object.values(state.admissions).find(
-    (admission) =>
-      ownsAdmission(subject, admission) &&
-      admission.status === "approved" &&
-      holdsSeat(state, admission.id),
-  );
-}
-
-/** Running a meeting is done from a seat in it, as a host or moderator. */
-function requireModerator(state: MeetingState, subject: Subject): { userId: string | null; host: boolean } {
-  if (!isOpen(state)) throw Errors.NOT_FOUND("Meeting");
-  const seated = seatedAdmissionOf(state, subject);
-  if (!seated || !canModerate(state, seated)) throw Errors.FORBIDDEN();
-  return { userId: seated.userId, host: roleOf(state, seated) === "host" };
-}
-
-/** One of the Space's owner and admins, as the Worker read them for this request. */
-function isAdmin(subject: Subject): subject is Extract<Subject, { kind: "user" }> {
-  return subject.kind === "user" && subject.spaceRole === "admin";
-}
-
-/**
- * A host acts from their seat. With `fromOutside`, the Space's owner and
- * admins may also act without one: ending or renaming their Space's meeting
- * is Space authority, used from the Space's pages.
- */
-function requireHost(
-  state: MeetingState,
-  subject: Subject,
-  options: { fromOutside?: boolean } = {},
-): { userId: string } {
-  if (!isOpen(state)) throw Errors.NOT_FOUND("Meeting");
-  if (options.fromOutside && isAdmin(subject)) return { userId: subject.userId };
-  const seated = seatedAdmissionOf(state, subject);
-  if (!seated?.userId || !canManage(state, seated)) throw Errors.FORBIDDEN();
-  return { userId: seated.userId };
-}
-
-// ─── Views ───────────────────────────────────────────────────────────────────
-
-function egressView(state: MeetingState, forModerator: boolean): EgressView {
-  const egress = state.egress;
-  const active = egress.status === "active";
-  return {
-    recordingActive: active && egress.mode === "recording",
-    streamingActive: active && egress.mode === "streaming",
-    egressId: forModerator ? egress.egressId : null,
-    mode: egress.desired ?? egress.mode,
-    status: egress.op ? "starting" : egress.status,
-    revision: egress.revision,
-    lastFailure: forModerator ? egress.lastFailure : null,
-  };
-}
-
-function view(state: MeetingState, admission: Admission, attempt: Attempt): ParticipantView {
-  return {
-    meetingId: state.meta.meetingId,
-    meetingStartedAt: state.meta.startedAt,
-    attemptId: attempt.id,
-    identity: attempt.identity,
-    admissionId: admission.id,
-    displayName: admission.displayName,
-    userId: admission.userId,
-    role: roleOf(state, admission),
-    canModerate: canModerate(state, admission),
-    canManageMeeting: canManage(state, admission),
-    joinPolicy: state.meta.joinPolicy,
-    nodeId: attempt.nodeId,
-    captionLanguage: attempt.captionLanguage,
-    tokenExpiresAt: tokenExpiresAt(attempt),
-    grant: grantFor(state, admission),
-    room: roomMetadataFor(state),
-    recordingEnabled: state.meta.recordingEnabled,
-    egress: egressView(state, canModerate(state, admission)),
-  };
-}
-
-// ─── Small helpers ───────────────────────────────────────────────────────────
-
-function attemptByIdentity(state: MeetingState, identity: string): Attempt | undefined {
-  return Object.values(state.attempts).find((attempt) => attempt.identity === identity);
-}
-
-function addStray(state: MeetingState, identity: string): void {
-  if (!state.room.strays.includes(identity)) state.room.strays.push(identity);
-}
-
-/**
- * An egress the meeting tracks is never a stray: a start's late reply naming
- * the egress a room lookup already adopted for it describes the same egress.
- */
-function addStrayEgress(state: MeetingState, egressId: string): void {
-  if (egressId === state.egress.egressId) return;
-  if (!state.egress.strays.includes(egressId)) state.egress.strays.push(egressId);
-}
-
-function setScreenShare(
-  admission: Admission,
-  next: Admission["screenShare"],
-  now: number,
-  ask: Admission["screenShareAsk"] = null,
-): void {
-  if (admission.screenShare === next) return;
-  admission.screenShare = next;
-  admission.screenShareRevision += 1;
-  admission.screenShareAsk = ask;
-  touch(admission, now);
-}
-
-/**
- * A time stamped on an admission. Its row holds every stamp at or after
- * `created_at` (`meeting_admissions_timestamps_check`), and `created_at` was
- * read from the clock of whichever machine created the admission; this commit
- * may run on one whose clock is behind it. A stamp under it would fail the
- * projection on every retry — the state is already kept, so the same values
- * replay — and wedge the meeting. Every admission time goes through here.
- */
-function admissionTime(admission: Admission, now: number): number {
-  return Math.max(now, admission.createdAt);
-}
-
-function touch(admission: Admission, now: number): void {
-  admission.updatedAt = admissionTime(admission, now);
-}
-
-function bumpRoom(state: MeetingState): void {
-  state.room.version += 1;
-}
-
-function bumpEgress(state: MeetingState): void {
-  state.egress.revision += 1;
-  bumpRoom(state);
 }

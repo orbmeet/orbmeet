@@ -8,7 +8,7 @@ import { text, weight } from "@orbmeet/ui/tokens/typography.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import * as stylex from "@stylexjs/stylex";
 import { getErrorMessage } from "@/lib/error-inspection";
-import { getWhiteboardPdfDownloadUrl } from "@/modules/whiteboards/server/export.functions";
+import { getWhiteboardPdfDownloadUrl } from "@/modules/meetings/server/history/output-downloads.functions";
 
 /** What a past meeting left behind, as far as a list of meetings knows. */
 export interface MeetingOutputs {

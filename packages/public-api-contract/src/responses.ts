@@ -164,6 +164,13 @@ export const publicMeetingTranscriptPageResponseSchema = v.looseObject({
   }),
 });
 
+export const publicMeetingSummarySchema = v.looseObject({
+  summary: v.string(),
+  durationSeconds: v.nullable(integer),
+  participantCount: count,
+  createdAt: v.string(),
+});
+
 export const publicMeetingResponseSchema = v.looseObject({
   data: v.looseObject({
     meeting: v.looseObject({
@@ -171,7 +178,6 @@ export const publicMeetingResponseSchema = v.looseObject({
       title: nullableString,
       startedAt: v.string(),
       endedAt: nullableString,
-      retainUntil: nullableString,
       spaceName: nullableString,
       participants: v.array(v.string()),
     }),
@@ -181,7 +187,7 @@ export const publicMeetingResponseSchema = v.looseObject({
       recordings: v.boolean(),
       whiteboardPdf: v.boolean(),
     }),
-    summary: v.optional(v.unknown()),
+    summary: v.nullish(publicMeetingSummarySchema),
     transcript: v.optional(v.unknown()),
     recordings: v.optional(v.array(downloadableArtifactSchema)),
     whiteboardPdf: v.nullish(downloadableArtifactSchema),
@@ -208,4 +214,5 @@ export type PublicTranscriptCursor = v.InferOutput<typeof publicTranscriptCursor
 export type PublicTranscript = v.InferOutput<typeof publicTranscriptSchema>;
 export type PublicMeetingTranscriptPageResponse =
   v.InferOutput<typeof publicMeetingTranscriptPageResponseSchema>;
+export type PublicMeetingSummary = v.InferOutput<typeof publicMeetingSummarySchema>;
 export type PublicMeetingResponse = v.InferOutput<typeof publicMeetingResponseSchema>;

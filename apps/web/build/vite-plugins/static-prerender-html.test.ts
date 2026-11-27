@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CSP_NONCE_PLACEHOLDER } from "../../src/platform/http/csp-nonce";
+import { CSP_NONCE_PLACEHOLDER } from "../../src/lib/csp-nonce";
 import { sanitizeStaticPrerenderHtml } from "./static-prerender-html";
 
 describe("sanitizeStaticPrerenderHtml", () => {

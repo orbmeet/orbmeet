@@ -18,7 +18,7 @@ import type {
   SubjectInput,
 } from "./api";
 import { spaceRoleFor } from "./client.server";
-import { executeEffect, publishSources } from "./effects.server";
+import { executeEffect, publishSources, type MeetingWhiteboardEffects } from "./effects.server";
 import {
   EFFECT_RETRY_BASE_MS,
   initialState,
@@ -62,6 +62,7 @@ export interface MeetingRoomStorage {
 
 export interface MeetingRoomOptions {
   now?: () => number;
+  whiteboardEffects?: MeetingWhiteboardEffects;
 }
 
 /**
@@ -83,6 +84,7 @@ export interface MeetingRoomOptions {
 export class MeetingRoomHost {
   private readonly db: Database;
   private readonly now: () => number;
+  private readonly whiteboardEffects?: MeetingWhiteboardEffects;
   /** Undefined until loaded; null for a meeting with no state. */
   private state: MeetingState | null | undefined;
   /**
@@ -103,6 +105,7 @@ export class MeetingRoomHost {
   ) {
     this.db = createDb(env.DB);
     this.now = options.now ?? Date.now;
+    this.whiteboardEffects = options.whiteboardEffects;
   }
 
   async handle(request: CoordinatorRequest): Promise<CoordinatorReply> {
@@ -347,7 +350,12 @@ export class MeetingRoomHost {
       result = {
         kind: "effectSucceeded",
         key: effect.key,
-        result: await executeEffect(effect, { env: this.env, db: this.db, state }),
+        result: await executeEffect(effect, {
+          env: this.env,
+          db: this.db,
+          state,
+          whiteboardEffects: this.whiteboardEffects,
+        }),
       };
     } catch (error) {
       logError("[meetings] Effect failed", { effect: effect.key }, error);

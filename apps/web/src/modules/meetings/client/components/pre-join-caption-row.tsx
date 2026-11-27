@@ -42,7 +42,7 @@ import {
   PopoverRoot,
   PopoverTrigger,
 } from "@orbmeet/ui/react";
-import { clientMeetingHintsQueryOptions } from "@/app/query-client/queries/client-meeting-hints";
+import { clientMeetingHintsQueryOptions } from "@/modules/meetings/client/meetings.queries";
 import { scrim } from "@orbmeet/ui/tokens/wash.stylex";
 import {
   DEFAULT_SPEECH_LANGUAGE,

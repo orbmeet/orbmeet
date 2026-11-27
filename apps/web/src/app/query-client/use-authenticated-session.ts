@@ -4,7 +4,7 @@ import { useRouter } from "@tanstack/react-router";
 import {
   sessionQueryOptions,
   type AuthenticatedSession,
-} from "@/app/query-client/queries/session";
+} from "@/modules/identity/client/session.queries";
 
 /**
  * Keep authenticated UI subscribed to the session cache seeded by beforeLoad.

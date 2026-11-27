@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { updateSpace } from "@/modules/spaces/server/crud.functions";
 import { deleteSpace } from "@/workflows/space-deletion/delete-space.functions";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { evictSpaceQueryCache } from "@/modules/spaces/client/space-query-cache";
 import { getErrorMessage } from "@/lib/error-inspection";
 import { Button, dialogLayout, Switch, TimeZoneSelect } from "@orbmeet/ui/react";

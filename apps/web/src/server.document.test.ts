@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CSP_NONCE_PLACEHOLDER } from "@/platform/http/csp-nonce";
+import { CSP_NONCE_PLACEHOLDER } from "@/lib/csp-nonce";
 
 // What Start renders is beside the point here: these tests cover the headers
 // every document leaves the Worker with.

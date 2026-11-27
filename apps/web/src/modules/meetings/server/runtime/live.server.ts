@@ -1,6 +1,8 @@
 import "@tanstack/react-start/server-only";
 import type * as v from "valibot";
 import type { Database } from "@orbmeet/db";
+import { meetingWhiteboards, whiteboards } from "@orbmeet/db/schema";
+import { desc, eq } from "drizzle-orm";
 import { Errors } from "@/lib/app-errors";
 import type { AuthFnContext, RequestFnContext } from "@/app/bootstrap/middleware";
 import { resolveMeetingEntitlement } from "@/modules/billing/server/entitlements.server";
@@ -20,12 +22,29 @@ import type {
   setRecordingSchema,
   setStreamingSchema,
 } from "@/modules/meetings/contract/schemas";
-import { clearWhiteboardMeetingCookies } from "@/modules/whiteboards/server/orchestration.server";
 import { enforceRateLimit } from "@/platform/http/rate-limit.server";
+import { clearWhiteboardAssetCookie } from "@/platform/http/whiteboard-cookies.server";
 import { buildRtmpUrl } from "../media/rtmp-destination.server";
 import type { CoordinatorCommand, SubjectInput } from "./api";
 import { callCoordinator, requestSubject } from "./client.server";
 import type { EgressView, Reply } from "./protocol";
+
+async function clearMeetingWhiteboardCookies(db: Database, env: Env, meetingId: string): Promise<void> {
+  const [board] = await db
+    .select({ whiteboardId: whiteboards.id, syncRoomId: whiteboards.syncRoomId })
+    .from(meetingWhiteboards)
+    .innerJoin(whiteboards, eq(whiteboards.id, meetingWhiteboards.whiteboardId))
+    .where(eq(meetingWhiteboards.meetingId, meetingId))
+    .orderBy(desc(meetingWhiteboards.focusedAt), desc(meetingWhiteboards.lastPresentedAt), desc(meetingWhiteboards.attachedAt))
+    .limit(1);
+  const scopeIds = board ? [meetingId, board.syncRoomId, board.whiteboardId] : [meetingId];
+  for (const scopeId of new Set(scopeIds)) {
+    clearWhiteboardAssetCookie(scopeId, {
+      appUrl: env.APP_URL,
+      environment: env.ENVIRONMENT,
+    });
+  }
+}
 
 type Input<S extends v.GenericSchema> = v.InferOutput<S>;
 
@@ -88,7 +107,7 @@ export async function leaveMeeting(data: Input<typeof ownConnectionSchema>, cont
     await send(context, "leave", data, (subject) => ({ kind: "leave", subject, attemptId: data.connectionId })),
     "left",
   );
-  if (reply.found) await clearWhiteboardMeetingCookies(context.env, data.meetingId);
+  if (reply.found) await clearMeetingWhiteboardCookies(context.db, context.env, data.meetingId);
   return { success: true, found: reply.found };
 }
 
@@ -103,7 +122,7 @@ export async function endMeeting(data: Input<typeof endMeetingSchema>, context: 
     // Ended meanwhile, by this request's retry or anyone: what was asked is done.
     if ((error as { code?: unknown } | null)?.code !== "MEETING_ENDED") throw error;
   });
-  await clearWhiteboardMeetingCookies(context.env, data.meetingId);
+  await clearMeetingWhiteboardCookies(context.db, context.env, data.meetingId);
   return { success: true };
 }
 

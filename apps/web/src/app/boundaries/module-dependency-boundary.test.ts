@@ -26,46 +26,24 @@ import {
 const modulesRoot = fileURLToPath(new URL("../../modules/", import.meta.url));
 
 /**
- * Where cross-domain code lives, so that it does not create new cycles:
+ * Where cross-domain code lives, so that feature modules stay strictly acyclic:
  *
  * - Screens that compose several feature modules live in `src/pages/`.
  * - Cron composition, including cleanup that sweeps several domains, lives in
  *   `app/bootstrap/scheduled.server.ts`.
  * - Workflows that act on several modules (deleting an account or a Space) live in
  *   `src/workflows/`, which no module may import.
+ * - Cross-module server adapters, Durable Object shells, and RPC composition live
+ *   in `app/adapters/`, `app/durable-objects/`, and `app/rpc/`.
  * - Small pure helpers other modules need belong in the owner's `contract/`.
- *
- * The two pairs that remain are each one fact read on one side and changed
- * on the other, and are kept on purpose:
- *
- * - `meetings ↔ spaces` — Space membership is an input to meeting authority.
- *   Meetings read it; a membership change (removal, role change, ownership
- *   transfer) pushes the change into open meetings at once, since their own
- *   periodic re-read (AUTHORITY_CHECK_MS) would leave a removed member in for
- *   up to a minute. The membership endpoints are called from spaces/client,
- *   so the push cannot move up to workflows/.
- * - `meetings ↔ whiteboards` — an active participant of a meeting presenting
- *   a board is one of the ways to be authorized for it, so reading, opening,
- *   uploading to and exporting a board consult meetings; a meeting's join,
- *   runtime effects and leave drive its board. Moving the meeting side into
- *   meetings would carry most of whiteboards with it, since those checks sit
- *   under nearly every board operation.
- *
- * Breaking either would mean injecting one side into the other from the app
- * layer: more wiring than the few direct calls it replaces. This list may
- * shrink — never grow.
  */
-const KNOWN_CYCLES = [
-  "meetings <-> spaces",
-  "meetings <-> whiteboards",
-];
+const KNOWN_CYCLES: string[] = [];
 
 /**
- * Every set of modules joined by an import loop of any length, which the pairs
- * above cannot show (`a -> b -> c -> a` has no mutually importing pair).
- * Shrinks with the pairs, never grows.
+ * Every set of modules joined by an import loop of any length (`a -> b -> c -> a`).
+ * Must remain empty.
  */
-const KNOWN_LOOPS = ["meetings, spaces, whiteboards"];
+const KNOWN_LOOPS: string[] = [];
 
 function collectSourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -222,7 +200,6 @@ const PUBLISHED_SERVER_FILES: Record<string, readonly string[]> = {
     "server/history/summary-generation-policy",
     "server/room/connection-queries",
     "server/runtime/client.server",
-    "server/runtime/revoke.server",
     "server/space-default-meeting-link.server",
   ],
   organizations: [
@@ -235,15 +212,9 @@ const PUBLISHED_SERVER_FILES: Record<string, readonly string[]> = {
     "server/transcription.server",
   ],
   whiteboards: [
-    "server/config.server",
-    "server/document-revisions",
     "server/documents",
-    "server/export.functions",
     "server/handout-pages",
-    "server/meeting/authority.server",
     "server/meeting/capture",
-    "server/meeting/grants",
-    "server/orchestration.server",
     "server/sync-commands.server",
   ],
 };

@@ -1,5 +1,5 @@
 import { redirect, isRedirect } from "@tanstack/react-router";
-import { sessionQueryOptions } from "@/app/query-client/queries/session";
+import { sessionQueryOptions } from "@/modules/identity/client/session.queries";
 import { onlineManager, type QueryClient } from "@tanstack/react-query";
 
 interface SessionGateContext {

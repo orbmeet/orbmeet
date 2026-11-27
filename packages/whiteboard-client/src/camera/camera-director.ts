@@ -255,9 +255,17 @@ export class CameraDirector {
     editor.on("event", onEvent);
 
     // The board's size: the container, the window, the visual viewport
-    // (mobile browser bars), and the end of any transition or animation in
-    // the meeting shell that moves the board without resizing it.
+    // (mobile browser bars), and the end of any transition or animation on
+    // the container or one of its ancestors that moves the board without
+    // resizing it. Ignore unrelated transitions elsewhere in the document
+    // (button hovers, tooltips, dock animations).
     const syncGeometry = () => this.syncGeometry();
+    const syncAncestorGeometry = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Node && target.contains(container)) {
+        this.syncGeometry();
+      }
+    };
     const doc = container.ownerDocument;
     const win = doc.defaultView ?? window;
     const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(syncGeometry) : null;
@@ -266,8 +274,8 @@ export class CameraDirector {
     win.addEventListener("orientationchange", syncGeometry);
     win.visualViewport?.addEventListener("resize", syncGeometry);
     win.visualViewport?.addEventListener("scroll", syncGeometry);
-    doc.addEventListener("transitionend", syncGeometry, { capture: true });
-    doc.addEventListener("animationend", syncGeometry, { capture: true });
+    doc.addEventListener("transitionend", syncAncestorGeometry, { capture: true });
+    doc.addEventListener("animationend", syncAncestorGeometry, { capture: true });
     this.syncGeometry();
 
     return () => {
@@ -279,8 +287,8 @@ export class CameraDirector {
       win.removeEventListener("orientationchange", syncGeometry);
       win.visualViewport?.removeEventListener("resize", syncGeometry);
       win.visualViewport?.removeEventListener("scroll", syncGeometry);
-      doc.removeEventListener("transitionend", syncGeometry, { capture: true });
-      doc.removeEventListener("animationend", syncGeometry, { capture: true });
+      doc.removeEventListener("transitionend", syncAncestorGeometry, { capture: true });
+      doc.removeEventListener("animationend", syncAncestorGeometry, { capture: true });
       this.clearPullTimer();
       this.moving.set(false);
     };

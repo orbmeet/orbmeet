@@ -301,6 +301,9 @@ importers:
 
   apps/cli:
     devDependencies:
+      '@orbmeet/primitives':
+        specifier: workspace:*
+        version: link:../../packages/primitives
       '@orbmeet/public-api-contract':
         specifier: workspace:*
         version: link:../../packages/public-api-contract
@@ -432,9 +435,6 @@ importers:
       '@stylexjs/stylex':
         specifier: 'catalog:'
         version: 0.19.1
-      '@tanstack/ai':
-        specifier: ^0.64.0
-        version: 0.64.1(@opentelemetry/api@1.9.1)(zod@4.6.7)
       '@tanstack/react-query':
         specifier: 5.107.1
         version: 5.107.1(@types/react@19.3.0)(react@19.3.1)
@@ -714,6 +714,9 @@ importers:
       '@orbmeet/domain-model':
         specifier: workspace:*
         version: link:../domain-model
+      '@orbmeet/primitives':
+        specifier: workspace:*
+        version: link:../primitives
       valibot:
         specifier: 'catalog:'
         version: 1.5.0(typescript@7.0.2)
@@ -730,9 +733,9 @@ importers:
       '@base-ui/react':
         specifier: 'catalog:'
         version: 1.9.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@orbmeet/public-api-contract':
+      '@orbmeet/primitives':
         specifier: workspace:*
-        version: link:../public-api-contract
+        version: link:../primitives
       '@stylexjs/stylex':
         specifier: 'catalog:'
         version: 0.19.1
@@ -894,14 +897,6 @@ importers:
         version: 5.1.0(@opentelemetry/api@1.9.1)(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.7(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
 
 packages:
-
-  '@ag-ui/core@1.0.0':
-    resolution: {integrity: sha512-yCRhsQvb4+lmGMrDsi4TOJxqKpm/kb3H64wwL+Z90jNVrkhy17RErfzsNgybfbjNKLM0nenEDYDVJsZHJJSigQ==}
-    peerDependencies:
-      zod: ^3.25.18 || ^4.0.0
-    peerDependenciesMeta:
-      zod:
-        optional: true
 
   '@anthropic-ai/sdk@0.129.0':
     resolution: {integrity: sha512-MH7LB20kNpGLUpPTe2OG5XvL/KhX8HUO9XyBaFjgFk6TLS4Xjt0VPIuMKywe7POKKPslX+QxSlVok9e+8kG5Nw==}
@@ -4534,9 +4529,6 @@ packages:
   '@stablelib/base64@1.0.1':
     resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
 
-  '@standard-schema/spec@1.1.0':
-    resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
-
   '@stylexjs/babel-plugin@0.19.1':
     resolution: {integrity: sha512-Ig3crX6MuGWDEAx+f89aLxTQUWVeEc2Aco2moIdcObyvo7hZJgU26rxJN3k7geFjhi+5dfna6TNR8iTRK0PQGA==}
 
@@ -4556,26 +4548,6 @@ packages:
 
   '@swc/helpers@0.5.24':
     resolution: {integrity: sha512-6tcXo4kA8HgGO7AVmawB57RYi/piBPYVHVcO6dXjX+SZw8GoHmi262sp4v2Ha2kNP9Cx84qei27yT+fjS1lxgg==}
-
-  '@tanstack/ai-event-client@0.13.1':
-    resolution: {integrity: sha512-lCPcshu6Sd4tFNeMSr+HXgdqCGupYU2cpJZVUent4GkFx41dXzrBaKkwOgkji6olDBT99OBagWCce1NZ15XeJA==}
-
-  '@tanstack/ai-utils@0.4.2':
-    resolution: {integrity: sha512-ucSgSK9kLloInqr/7s0VZlp1IFtbpgPnskISvnLXti/hc8koqXc4Zv9pfTTc8V80WzIKYWMf+ZgSIDeFM50eCw==}
-
-  '@tanstack/ai@0.64.1':
-    resolution: {integrity: sha512-ohCqVVd6mbD6KzFfgOBjAIl5ftIkehiTpWlg9uLfv6qGiXyf7vZhNVCJ5LNiwfNnj6Mz+TzK3IO0ztBrhV0Rgw==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      '@opentelemetry/api': ~1.9.1
-    peerDependenciesMeta:
-      '@opentelemetry/api':
-        optional: true
-
-  '@tanstack/devtools-event-client@0.4.4':
-    resolution: {integrity: sha512-6T5Yop/793YI+H+5J8Hsyj4kCih9sl4t3ElLgKioW5hk3ocn+ZdSJ94tT7vL7uabxSugWYBZlOTMPzEw2puvQw==}
-    engines: {node: '>=18'}
-    hasBin: true
 
   '@tanstack/eslint-plugin-query@5.107.1':
     resolution: {integrity: sha512-ouojB8ML40E9+Kbxao52IKU0x3528FXHnQlMS5d8fpV/fVnsCRYmfg2PMaMzYEvgCqdxTtvZfrfbSOGf2qoCpw==}
@@ -8139,10 +8111,6 @@ packages:
 
 snapshots:
 
-  '@ag-ui/core@1.0.0(zod@4.6.7)':
-    optionalDependencies:
-      zod: 4.6.7
-
   '@anthropic-ai/sdk@0.129.0(zod@4.6.7)':
     dependencies:
       json-schema-to-ts: 3.1.1
@@ -11591,8 +11559,6 @@ snapshots:
 
   '@stablelib/base64@1.0.1': {}
 
-  '@standard-schema/spec@1.1.0': {}
-
   '@stylexjs/babel-plugin@0.19.1(supports-color@10.2.2)':
     dependencies:
       '@babel/core': 7.29.13(supports-color@10.2.2)
@@ -11635,26 +11601,6 @@ snapshots:
       - supports-color
 
   '@swc/helpers@0.5.24': {}
-
-  '@tanstack/ai-event-client@0.13.1':
-    dependencies:
-      '@tanstack/devtools-event-client': 0.4.4
-
-  '@tanstack/ai-utils@0.4.2': {}
-
-  '@tanstack/ai@0.64.1(@opentelemetry/api@1.9.1)(zod@4.6.7)':
-    dependencies:
-      '@ag-ui/core': 1.0.0(zod@4.6.7)
-      '@standard-schema/spec': 1.1.0
-      '@tanstack/ai-event-client': 0.13.1
-      '@tanstack/ai-utils': 0.4.2
-      partial-json: 0.1.7
-    optionalDependencies:
-      '@opentelemetry/api': 1.9.1
-    transitivePeerDependencies:
-      - zod
-
-  '@tanstack/devtools-event-client@0.4.4': {}
 
   '@tanstack/eslint-plugin-query@5.107.1(@typescript/typescript6@6.0.2)(eslint@10.14.0(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)':
     dependencies:

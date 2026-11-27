@@ -6,6 +6,7 @@ import { and, asc, eq, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import { boundedStatements } from "@/platform/database/db-batching";
 import { withD1Retry } from "@/platform/database/db-utils";
 import { logError, logInfo } from "@/lib/logger";
+import { settleAllOrThrow } from "@/lib/settle-all-or-throw";
 import { closeUserBilling } from "@/modules/billing/server/account-closure.server";
 import { revokeAccountAuthenticationExceptCurrent } from "@/modules/identity/server/account-deletion-auth.server";
 import { findPersonalSpaceId } from "@/modules/spaces/server/personal";
@@ -203,14 +204,19 @@ export async function resumeStrandedAccountDeletions(
     .orderBy(asc(users.deletionStartedAt))
     .limit(STRANDED_DELETION_BATCH_LIMIT);
 
-  for (const account of stranded) {
-    await startJob(env, {
-      kind: "deleteAccount",
-      userId: account.id,
-      deletionStartedAt: account.deletionStartedAt!.getTime(),
-      exceptSessionId: null,
-    }, { restartFailed: true });
-    logInfo("[auth] Restarted a stranded account deletion", { userId: account.id });
-  }
+  await settleAllOrThrow(
+    "Could not resume stranded account deletions",
+    stranded.map((account) => ({
+      label: account.id,
+      promise: startJob(env, {
+        kind: "deleteAccount",
+        userId: account.id,
+        deletionStartedAt: account.deletionStartedAt!.getTime(),
+        exceptSessionId: null,
+      }, { restartFailed: true }).then(() => {
+        logInfo("[auth] Restarted a stranded account deletion", { userId: account.id });
+      }),
+    })),
+  );
   return stranded.length;
 }

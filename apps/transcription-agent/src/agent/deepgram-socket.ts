@@ -14,8 +14,8 @@ import { logError } from "../log.js";
  * one with its own timeline.
  */
 export function deepgramSocketFactory(config: Pick<AgentConfig, "deepgramApiKey" | "deepgramBaseUrl">): OpenDeepgramSocket {
+  const client = new DeepgramClient({ apiKey: config.deepgramApiKey, baseUrl: config.deepgramBaseUrl });
   return async (language) => {
-    const client = new DeepgramClient({ apiKey: config.deepgramApiKey, baseUrl: config.deepgramBaseUrl });
     const socket = await client.listen.v1.connect({
       Authorization: `Token ${config.deepgramApiKey}`,
       model: "nova-3",

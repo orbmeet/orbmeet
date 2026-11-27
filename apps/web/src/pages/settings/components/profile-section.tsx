@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { updateProfile } from "@/modules/identity/server/account.functions";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { Input } from "@orbmeet/ui/react";
 import { TimeZoneSelect } from "@orbmeet/ui/react";
 import { Avatar } from "@orbmeet/ui/react";

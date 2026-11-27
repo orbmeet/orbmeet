@@ -372,10 +372,11 @@ static int run_helper(const struct slot *slot, int as_slot, const char *const *a
   if (pid < 0) return -1;
   if (pid == 0) {
     restore_signals();
-    int null_fd = open("/dev/null", O_RDWR);
+    int null_fd = open("/dev/null", O_RDWR | O_CLOEXEC);
     if (null_fd >= 0) {
       dup2(null_fd, STDIN_FILENO);
       dup2(null_fd, STDOUT_FILENO);
+      if (null_fd != STDIN_FILENO && null_fd != STDOUT_FILENO) close(null_fd);
     }
     if (as_slot) {
       if (become(slot) != 0) _exit(126);
@@ -766,18 +767,20 @@ static void exec_phase(const struct slot *slot, const struct language *language,
                        const char *const *argv, int out, int err) {
   restore_signals();
   if (dup2(out, STDOUT_FILENO) < 0 || dup2(err, STDERR_FILENO) < 0) jail_fail("redirect output");
-  int null_fd = open("/dev/null", O_RDONLY);
+  int null_fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
   if (null_fd < 0 || dup2(null_fd, STDIN_FILENO) < 0) jail_fail("close stdin");
+  if (null_fd != STDIN_FILENO) close(null_fd);
   if (chdir(slot->dir) != 0) jail_fail("enter run directory");
 
   /*
    * Address space is deliberately unlimited: the JVM and the Go runtime reserve
    * large ranges up front and die under RLIMIT_AS. The container's memory is
    * the bound there. These cap what a cgroup does not: one enormous file, a
-   * fork bomb (per uid, so per slot), and core dumps.
+   * fork bomb (per uid, so per slot), runaway open descriptors, and core dumps.
    */
   set_limit(RLIMIT_FSIZE, FILE_SIZE_LIMIT);
   set_limit(RLIMIT_NPROC, PROCESS_LIMIT);
+  set_limit(RLIMIT_NOFILE, 2048);
   set_limit(RLIMIT_CORE, 0);
 
   if (become(slot) != 0) jail_fail("drop to the slot's uid");

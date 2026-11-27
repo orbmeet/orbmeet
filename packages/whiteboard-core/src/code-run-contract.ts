@@ -1,6 +1,6 @@
 import * as v from "valibot";
 import { CODE_LANGUAGES, MAX_CODE_CHARS } from "./code-shape-schema.ts";
-import { sha256Hex } from "./crypto-utils.ts";
+import { sha256Hex } from "@orbmeet/primitives";
 
 /** Stable endpoint the whiteboard posts a code cell's source to. */
 export const CODE_RUN_PATH = "/api/whiteboard/run-code";
@@ -185,7 +185,7 @@ export const codeRunnerCancelRequestSchema = v.strictObject({
  * to a board by eye; recompute this from the room id instead.
  */
 export async function codeSandboxIdForRoom(syncRoomId: string): Promise<string> {
-  return `${SANDBOX_ID_PREFIX}${await sha256Hex(syncRoomId, SANDBOX_ID_DIGEST_CHARS)}`;
+  return `${SANDBOX_ID_PREFIX}${(await sha256Hex(syncRoomId)).slice(0, SANDBOX_ID_DIGEST_CHARS)}`;
 }
 
 /**
@@ -196,6 +196,6 @@ export async function codeSandboxIdForRoom(syncRoomId: string): Promise<string> 
  * caller started; anyone else's names a run that does not exist.
  */
 export async function codeRunnerRunIdFor(ownerKey: string, runId: string): Promise<string> {
-  const hex = await sha256Hex(`${ownerKey}\n${runId}`, 32);
+  const hex = (await sha256Hex(`${ownerKey}\n${runId}`)).slice(0, 32);
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }

@@ -16,24 +16,26 @@ import { SCHEDULED_MEETING_EARLY_JOIN_MS } from "@/modules/meetings/contract/con
 import { liveKitMeetingRoomName } from "@/modules/meetings/contract/livekit-room";
 import { joinMeetingSchema } from "@/modules/meetings/contract/schemas";
 import type { JoinMeetingResult, JoinResult } from "@/modules/meetings/contract/types";
-import { findMeetingWhiteboardDocument } from "@/modules/whiteboards/server/documents";
-import {
-  buildWhiteboardJoinAccessExtras,
-  whiteboardCapabilitiesForMeetingRole,
-  whiteboardRoleForMeetingIdentity,
-} from "@/modules/whiteboards/server/orchestration.server";
-import { resolveWhiteboardCapabilities } from "@/modules/whiteboards/server/meeting/grants";
 import { hashSessionToken, hmacSha256Hex } from "@/platform/crypto/tokens.server";
 import { browserNodeLatencies, currentNodeLatencies } from "@/platform/realtime/node-latency.server";
 import { getGuestCookieSecret, setGuestCookie } from "../access/guest-cookie.server";
 import { guestNetworkKey } from "../access/guest-network.server";
-import type { SubjectInput } from "../runtime/api";
+import type { JoinReply, SubjectInput } from "../runtime/api";
 import { callCoordinator, userSubject } from "../runtime/client.server";
 import { egressFields } from "../runtime/live.server";
 import { acquireMeetingOccurrence } from "./meeting-occurrence";
 import { appErrorToJoinMeetingResult, endedOccurrenceJoinError, waitingForApproval } from "./join-results";
 import { participantKeyOf } from "@/modules/meetings/contract/live-state";
 import { manageableSpaceTranscription } from "@/modules/spaces/server/transcription.server";
+
+type AdmittedParticipant = Extract<JoinReply, { kind: "admitted" }>["participant"];
+
+export type MeetingJoinSurfaceResolver = (params: {
+  db: Database;
+  env: Env;
+  meetingId: string;
+  participant: AdmittedParticipant;
+}) => Promise<Partial<JoinResult>>;
 
 function joined(result: JoinResult): JoinMeetingResult {
   return { state: "joined", result };
@@ -68,9 +70,11 @@ async function renewPermanentLink(
 export async function joinMeetingImpl({
   data,
   context: { env, db, user, clientIP },
+  resolveJoinSurface,
 }: {
   data: v.InferOutput<typeof joinMeetingSchema>;
   context: RequestFnContext;
+  resolveJoinSurface?: MeetingJoinSurfaceResolver;
 }) {
   try {
     const initialRow = await db
@@ -223,43 +227,13 @@ export async function joinMeetingImpl({
 
     const { participant } = reply;
     if (guestSecret && reply.newGuestAdmission) setGuestCookie(participant.admissionId, guestSecret, cookieOptions);
-    const grantPrincipal = participant.userId
-      ? { type: "user" as const, id: participant.userId }
-      : { type: "guest_admission" as const, id: participant.admissionId };
-    // An edit grant outlives a reconnect, so the join token must carry it like
-    // every other mint does. A role-only token here disagreed with the room's
-    // authority check, which answered "refresh" to every attempt it made.
-    //
     // These do not depend on one another, and each is a round trip to D1.
-    const [, whiteboardDocument, { capabilities: participantCapabilities }, spaceTranscription] = await Promise.all([
+    const [, surface, spaceTranscription] = await Promise.all([
       renewPermanentLink(db, meetingLink),
-      findMeetingWhiteboardDocument(db, meeting.id),
-      resolveWhiteboardCapabilities(db, {
-        meetingId: meeting.id,
-        principal: grantPrincipal,
-        base: whiteboardCapabilitiesForMeetingRole(participant.role),
-      }),
+      resolveJoinSurface ? resolveJoinSurface({ db, env, meetingId: meeting.id, participant }) : {},
       // A Space admin's switch in the meeting can also set the Space's default.
       user ? manageableSpaceTranscription(db, meetingLink.spaceId, user.id) : null,
     ]);
-    const surface = await buildWhiteboardJoinAccessExtras(env, {
-      meetingId: meeting.id,
-      mediaNodeId: participant.nodeId,
-      participantIdentity: participant.identity,
-      participantName: participant.displayName,
-      participantRole: whiteboardRoleForMeetingIdentity(participant.role, participant.identity),
-      participantCapabilities,
-      grantPrincipal,
-      connectionId: participant.attemptId,
-      whiteboardDocument: whiteboardDocument
-        ? {
-            whiteboardId: whiteboardDocument.whiteboardId,
-            syncRoomId: whiteboardDocument.syncRoomId,
-            title: whiteboardDocument.title,
-            surfaceOpen: whiteboardDocument.status === "active" && whiteboardDocument.surfaceOpen,
-          }
-        : undefined,
-    });
 
     const result: JoinResult = {
       token: reply.token,

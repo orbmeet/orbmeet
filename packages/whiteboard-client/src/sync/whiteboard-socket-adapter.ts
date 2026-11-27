@@ -4,6 +4,7 @@ import {
   type TLPersistentClientSocket,
   type TLSocketStatusChangeEvent,
 } from "@tldraw/sync-core";
+import { chunkMessage } from "@orbmeet/whiteboard-core/chunked-json";
 import { WHITEBOARD_CONFIG } from "@orbmeet/whiteboard-core/config";
 
 type SyncQuery = {
@@ -19,8 +20,6 @@ const MAX_RECONNECT_DELAY_MS = 5_000;
 // How long a socket asked to close may stay in CLOSING before we give up
 // waiting for its `close` event and reconnect anyway.
 const CLOSE_HANDSHAKE_GRACE_MS = 3_000;
-const MAX_BYTES_PER_CHAR = 4;
-const MAX_SAFE_MESSAGE_SIZE = WHITEBOARD_CONFIG.MAX_CLIENT_FRAME_BYTES / MAX_BYTES_PER_CHAR;
 const AUTH_PROTOCOL = "orbmeet-wb";
 const textEncoder = new TextEncoder();
 
@@ -62,40 +61,6 @@ export interface WhiteboardConnectAttempt {
 
 function httpToWs(url: string): string {
   return url.replace(/^http(s)?:/, "ws$1:");
-}
-
-function isLowSurrogate(codeUnit: number): boolean {
-  return codeUnit >= 0xdc00 && codeUnit <= 0xdfff;
-}
-
-/**
- * Split a message into `${chunksRemaining}_` prefixed parts, built from the tail
- * backwards so the prefix counts down to 0 on the final chunk (the wire format
- * the server's assembler reassembles).
- *
- * Boundaries are nudged off surrogate pairs. `slice` cuts at UTF-16 code-unit
- * offsets, so a pair straddling a boundary would be sent as two lone
- * surrogates — which the WebSocket text encoder replaces with U+FFFD, silently
- * corrupting emoji and other astral characters in large pushes. The pair is
- * kept whole in the earlier chunk instead, which only ever shrinks a chunk and
- * so cannot breach the size ceiling.
- */
-export function chunkMessage(message: string): string[] {
-  if (message.length < MAX_SAFE_MESSAGE_SIZE) return [message];
-  const chunks: string[] = [];
-  let chunkNumber = 0;
-  let offset = message.length;
-  while (offset > 0) {
-    const prefix = `${chunkNumber}_`;
-    let chunkSize = Math.max(Math.min(MAX_SAFE_MESSAGE_SIZE - prefix.length, offset), 1);
-    if (chunkSize > 1 && isLowSurrogate(message.charCodeAt(offset - chunkSize))) {
-      chunkSize -= 1;
-    }
-    chunks.unshift(prefix + message.slice(offset - chunkSize, offset));
-    offset -= chunkSize;
-    chunkNumber++;
-  }
-  return chunks;
 }
 
 /**

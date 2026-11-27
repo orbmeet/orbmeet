@@ -19,7 +19,7 @@ import { parseFile } from "../../../build/source-analysis/parse-source";
 const webRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const srcRoot = resolve(webRoot, "src");
 
-const SERVER_OWNED_DIR = /(^|\/)server\//;
+const SERVER_OWNED_DIR = /(^|\/)server\/|^platform\/|^app\/(?:adapters|durable-objects|jobs|serial)\//;
 const SERVER_OWNED_SUFFIX = /\.server\.tsx?$/;
 const CLIENT_OWNED = /(^|\/)client\//;
 

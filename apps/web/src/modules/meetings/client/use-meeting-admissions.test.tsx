@@ -15,7 +15,7 @@ const decideAdmission = vi.fn(async () => ({ success: true }));
 vi.mock("@/modules/meetings/server/runtime/live.functions", () => ({ listPendingAdmissions, decideAdmission }));
 
 const { useMeetingAdmissions } = await import("./use-meeting-admissions");
-const { queryKeys } = await import("@/app/query-client/query-keys");
+const { queryKeys } = await import("@/lib/query-keys");
 
 let root: Root | null = null;
 beforeAll(() => {

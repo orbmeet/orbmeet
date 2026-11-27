@@ -2,7 +2,7 @@ import { createFileRoute, notFound } from "@tanstack/react-router";
 import { resolveSessionGate } from "@/modules/identity/client/auth-gate";
 import { DeadEnd } from "@/app/shell/dead-end";
 import { SITE_NAME, createPageHead } from "@/lib/seo";
-import { invitePreviewQueryOptions } from "@/app/query-client/queries/spaces";
+import { invitePreviewQueryOptions } from "@/modules/spaces/client/spaces.queries";
 import { lazy } from "react";
 
 /**

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createJsonLdScript, createPageHead, buildPricingGraph } from "@/lib/seo";
 import { PricingPage } from "@/pages/pricing/pricing-page";
-import { planPricesQueryOptions } from "@/app/query-client/queries/plan-prices";
+import { planPricesQueryOptions } from "@/modules/billing/client/plan-prices.queries";
 
 export const Route = createFileRoute("/pricing")({
   // Render the visitor's own prices on the server rather than flashing USD

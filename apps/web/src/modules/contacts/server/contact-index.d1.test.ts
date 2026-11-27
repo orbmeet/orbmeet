@@ -183,7 +183,6 @@ spaceKind: "personal" as const,
       joinPolicy: "open",
       startedAt: createdAt,
       endedAt: new Date(createdAt.getTime() + 30 * 60_000),
-      retainUntil: new Date(createdAt.getTime() + 24 * 60 * 60_000),
       updatedAt: new Date(createdAt.getTime() + 30 * 60_000),
     });
     for (const [index, userId] of ["usr_owner", "usr_maruf"].entries()) {

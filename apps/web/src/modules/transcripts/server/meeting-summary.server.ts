@@ -11,7 +11,7 @@ import { canAccessMeetingHistory } from "@/modules/meetings/server/access/resour
 import { canManagePastMeeting } from "@/modules/meetings/server/access/access-assertions";
 import { deriveWhiteboardCaptureState } from "@/modules/whiteboards/server/meeting/capture";
 import { listTranscriptRowsPage } from "./query";
-import { summaryMatchesTranscriptSnapshot, type TranscriptSnapshot } from "@/modules/transcripts/server/generate-summary.server";
+import { summaryMatchesTranscriptSnapshot, type TranscriptSnapshot } from "./transcript-chunks";
 import { DEFAULT_TRANSCRIPT_PAGE_SIZE } from "../contract/page";
 import { isSummaryGenerationConfigured } from "@/modules/meetings/server/history/summary-generation-policy";
 import { bucketParticipantNames, selectParticipantDisplayNames } from "@/modules/meetings/server/history/meeting-list-enrichment";
@@ -65,7 +65,6 @@ async function resolveAccessibleMeeting(db: Database, userId: string, meetingId:
       title: meetings.title,
       startedAt: meetings.startedAt,
       endedAt: meetings.endedAt,
-      retainUntil: meetings.retainUntil,
       billingPlan: meetings.billingPlan,
       startedByUserId: meetings.startedByUserId,
       spaceId: meetings.spaceId,

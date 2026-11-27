@@ -14,7 +14,7 @@ import { DefaultVideoLayout, defaultLayoutIcons } from "@vidstack/react/player/l
 import "@vidstack/react/player/styles/default/theme.css";
 import "@vidstack/react/player/styles/default/layouts/video.css";
 import { downloadRecording } from "@/modules/meetings/client/components/recording-download";
-import { recordingPlaybackQueryOptions } from "@/app/query-client/queries/artifacts";
+import { recordingPlaybackQueryOptions } from "@/modules/meetings/client/meetings.queries";
 import { glass } from "@orbmeet/ui/tokens/wash.stylex";
 import { env } from "@orbmeet/ui/tokens/media.stylex";
 

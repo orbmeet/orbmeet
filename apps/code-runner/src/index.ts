@@ -68,6 +68,46 @@ declare global {
 
 const SECRET_HEADER = "X-Code-Runner-Secret";
 const NO_STORE = { "Cache-Control": "no-store" };
+const MAX_REQUEST_BYTES = 256 * 1024;
+
+async function readBoundedJson(request: Request): Promise<
+  | { ok: true; body: unknown }
+  | { ok: false; status: 400 | 413; error: string }
+> {
+  const declared = Number(request.headers.get("Content-Length"));
+  if (Number.isFinite(declared) && declared > MAX_REQUEST_BYTES) {
+    return { ok: false, status: 413, error: "Request body too large" };
+  }
+  const reader = request.body?.getReader();
+  if (!reader) return { ok: false, status: 400, error: "Invalid JSON" };
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_REQUEST_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        return { ok: false, status: 413, error: "Request body too large" };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return { ok: true, body: JSON.parse(new TextDecoder().decode(merged)) as unknown };
+  } catch {
+    return { ok: false, status: 400, error: "Invalid JSON" };
+  }
+}
 
 export default {
   async fetch(request: Request, env: CodeRunnerEnv, ctx: ExecutionContext): Promise<Response> {
@@ -90,12 +130,11 @@ export default {
       return new Response("Unauthorized", { status: 401 });
     }
 
-    let body: unknown;
-    try {
-      body = await request.json();
-    } catch {
-      return Response.json({ error: "Invalid JSON" }, { status: 400 });
+    const json = await readBoundedJson(request);
+    if (!json.ok) {
+      return Response.json({ error: json.error }, { status: json.status });
     }
+    const body = json.body;
 
     if (url.pathname === "/cancel") {
       const parsed = v.safeParse(codeRunnerCancelRequestSchema, body);

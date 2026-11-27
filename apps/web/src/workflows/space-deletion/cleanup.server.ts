@@ -18,10 +18,12 @@ import {
   createR2CleanupBudget,
   deleteMeetingR2Namespaces,
   purgeSpaceWhiteboardR2Objects,
+  R2CleanupBudgetExhaustedError,
   type R2CleanupBudget,
 } from "@/modules/assets/server/r2-cleanup.server";
 import { callCoordinator } from "@/modules/meetings/server/runtime/client.server";
 import { logError } from "@/lib/logger";
+import { settleAllOrThrow } from "@/lib/settle-all-or-throw";
 import { whiteboardCapturesSettled } from "@/modules/whiteboards/server/meeting/capture";
 import { purgeWhiteboardRoom } from "@/modules/whiteboards/server/purge.server";
 import { startJob, type Job, type JobStep } from "@/platform/jobs/jobs";
@@ -34,8 +36,8 @@ const DRAIN_GIVE_UP_MS = 7 * 24 * 60 * 60_000;
 function drainGiveUpCutoff(now: Date): Date {
   return new Date(now.getTime() - DRAIN_GIVE_UP_MS);
 }
-const ADMISSION_BATCH_LIMIT = 10;
-const SESSION_BATCH_LIMIT = 3;
+const ADMISSION_BATCH_LIMIT = 90;
+const SESSION_BATCH_LIMIT = 10;
 
 
 /** What one pass did: finished, removed something and can go on, or must wait. */
@@ -126,6 +128,23 @@ export async function cleanupArchivedSpace(
   spaceId: string,
 ): Promise<CleanupPass> {
   const r2Budget = createR2CleanupBudget();
+  try {
+    return await cleanupArchivedSpaceWithinBudget(db, env, spaceId, r2Budget);
+  } catch (error) {
+    // Exhausting the per-pass R2 budget means a large prefix saved its cursor
+    // and made progress; yield cleanly so the next Workflow step continues
+    // instead of burning retries.
+    if (error instanceof R2CleanupBudgetExhaustedError) return "progress";
+    throw error;
+  }
+}
+
+async function cleanupArchivedSpaceWithinBudget(
+  db: Database,
+  env: Env,
+  spaceId: string,
+  r2Budget: R2CleanupBudget,
+): Promise<CleanupPass> {
   const archived = await db.query.spaces.findFirst({
     where: { RAW: (row) => and(eq(row.id, spaceId), isNotNull(row.archivedAt))! },
     columns: { id: true },
@@ -301,12 +320,16 @@ export async function resumeStrandedSpacePurges(
     ))
     .orderBy(asc(spaces.archivedAt), asc(spaces.id))
     .limit(STRANDED_PURGE_BATCH_LIMIT);
-  for (const space of stranded) {
-    await startJob(env, {
-      kind: "purgeSpace",
-      spaceId: space.id,
-      requestedAt: space.archivedAt!.getTime(),
-    }, { restartFailed: true });
-  }
+  await settleAllOrThrow(
+    "Could not resume stranded space purges",
+    stranded.map((space) => ({
+      label: space.id,
+      promise: startJob(env, {
+        kind: "purgeSpace",
+        spaceId: space.id,
+        requestedAt: space.archivedAt!.getTime(),
+      }, { restartFailed: true }),
+    })),
+  );
   return stranded.length;
 }

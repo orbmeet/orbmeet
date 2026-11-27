@@ -58,35 +58,6 @@ const navigationOf = (room: Room) =>
     .find(({ state }) => state.id === ROOM_NAVIGATION_ID)?.state;
 
 describe("the room's navigation", () => {
-  it("adopts the spotlight a room kept in its metadata, once, as the navigation record", () => {
-    const roomId = "meet-legacy-spotlight" as WhiteboardRoomId;
-    const dir = dataDir();
-    const first = createTestRoom(roomId, dir);
-    const { setMeta } = first.document.store;
-    setMeta("spotlightPageId", "shape:page-2");
-    setMeta("spotlightPageNumber", "2");
-    setMeta("spotlightPageCount", "3");
-    setMeta("spotlightRev", "7");
-    setMeta("spotlightRect", JSON.stringify({ x: 0, y: 0, w: 1, h: 0.5 }));
-    setMeta("spotlightPresenterId", "manager-1");
-    setMeta("spotlightRoam", "true");
-    first.close();
-
-    const reopened = createTestRoom(roomId, dir);
-    expect(navigationOf(reopened)).toEqual({
-      id: ROOM_NAVIGATION_ID,
-      typeName: "orbmeet_navigation",
-      pageId: "shape:page-2",
-      pageNumber: 2,
-      presenterId: "manager-1",
-      roam: true,
-    });
-    for (const key of ["spotlightPageId", "spotlightRev", "spotlightRect", "spotlightRoam"]) {
-      expect(reopened.document.store.getMeta(key)).toBeNull();
-    }
-    reopened.close();
-  });
-
   it("releases an absent controller once a manager's move lands, and not for a refused one", () => {
     const roomId = "meet-nav-release" as WhiteboardRoomId;
     const dir = dataDir();

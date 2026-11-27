@@ -1,11 +1,9 @@
 import {
   useInfiniteQuery,
 } from "@tanstack/react-query";
-import {
-  spaceAuditEventsInfiniteQueryOptions,
-} from "@/app/query-client/queries/spaces";
+import { spaceAuditEventsInfiniteQueryOptions } from "@/modules/spaces/client/spaces.queries";
 import { Button } from "@orbmeet/ui/react";
-import { QueryErrorNotice } from "@/app/query-client/query-error-notice";
+import { QueryErrorNotice } from "@orbmeet/ui/react";
 import {
   History,
 } from "lucide-react";

@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { describeWhiteboardActivity } from "@/modules/whiteboards/client/whiteboard-activity";
 import { useSuspenseInfiniteQuery } from "@tanstack/react-query";
-import { spaceWhiteboardsQueryOptions } from "@/app/query-client/queries/spaces";
+import { spaceWhiteboardsQueryOptions } from "@/modules/whiteboards/client/whiteboards.queries";
 import { NewWhiteboardDialog } from "@/modules/whiteboards/client/components/new-whiteboard-dialog";
 import { List, ListGlyph, ListRow } from "@/app/shell/list";
-import { Section } from "@/app/shell/section";
+import { Section } from "@orbmeet/ui/react";
 import { Button, EmptyState } from "@orbmeet/ui/react";
 import { stack } from "@orbmeet/ui/styles/atoms";
 import { PenTool, Plus } from "lucide-react";

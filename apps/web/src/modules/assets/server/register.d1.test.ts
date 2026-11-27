@@ -151,7 +151,6 @@ spaceKind: "shared" as const,
       activeEgressId: null,
       startedAt: now,
       endedAt: null,
-      retainUntil: null,
       updatedAt: now,
     });
 

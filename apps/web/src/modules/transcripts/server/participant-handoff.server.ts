@@ -10,7 +10,7 @@ import { filterCapturedHandoutPageIds } from "@/modules/whiteboards/server/hando
 import { Errors } from "@/lib/app-errors";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { canAccessMeetingHistory, guestCanAccessMeetingHistory } from "@/modules/meetings/server/access/resource-access";
-import { getTranscriptSnapshot, summaryMatchesTranscriptSnapshot } from "@/modules/transcripts/server/generate-summary.server";
+import { getTranscriptSnapshot, summaryMatchesTranscriptSnapshot } from "./transcript-chunks";
 import type { RequestFnContext } from "@/app/bootstrap/middleware";
 import { getGuestCookieSecret } from "@/modules/meetings/server/access/guest-cookie.server";
 import { enforceRateLimit } from "@/platform/http/rate-limit.server";
@@ -110,7 +110,6 @@ export async function getParticipantHandoffSummaryImpl({
     columns: {
       id: true,
       status: true,
-      retainUntil: true,
       summaryStatus: true,
       summarySkipReason: true,
       endedAt: true,
@@ -138,7 +137,7 @@ export async function getParticipantHandoffSummaryImpl({
     .get();
 
   if (meeting.status !== "ended") {
-    return { status: "active" as const, summary: null, whiteboards, retainUntil: null };
+    return { status: "active" as const, summary: null, whiteboards };
   }
 
   // A summary written for an earlier transcript is not this meeting's
@@ -156,21 +155,19 @@ export async function getParticipantHandoffSummaryImpl({
       summarySkipReason: meeting.summarySkipReason,
       configured: isSummaryGenerationConfigured(env),
     });
-    const retainUntil = meeting.retainUntil?.toISOString() ?? null;
     // With no transcript there is nothing for the job to write, however long
     // it takes to settle. The grace is for final lines still being ingested.
     const nobodySpoke = transcript.segmentCount === 0
       && (state.status !== "pending"
         || Date.now() - (meeting.endedAt?.getTime() ?? 0) >= NO_SPEECH_GRACE_MS);
     if (state.status === "pending" && !nobodySpoke) {
-      return { status: "pending" as const, summary: null, whiteboards, retainUntil };
+      return { status: "pending" as const, summary: null, whiteboards };
     }
     return {
       status: "unavailable" as const,
       reason: unavailableReason(state, nobodySpoke),
       summary: null,
       whiteboards,
-      retainUntil,
     };
   }
 
@@ -178,7 +175,6 @@ export async function getParticipantHandoffSummaryImpl({
     status: "ready" as const,
     summary: projectParticipantHandoffSummary(current),
     whiteboards,
-    retainUntil: meeting.retainUntil?.toISOString() ?? null,
   };
 }
 

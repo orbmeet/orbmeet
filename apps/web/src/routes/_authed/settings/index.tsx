@@ -1,6 +1,6 @@
 import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
 import { sessionsListQueryOptions, linkedAccountsQueryOptions, passkeysQueryOptions, personalAccessTokensQueryOptions, storageUsageQueryOptions } from "@/app/query-client/queries/settings";
-import { myOrganizationsQueryOptions } from "@/app/query-client/queries/organizations";
+import { myOrganizationsQueryOptions } from "@/modules/organizations/client/organizations.queries";
 import { isSettingsTabId, settingsPageOf, type SettingsTabId } from "@/pages/settings/settings-tabs";
 import { optionalString } from "@/lib/search-params";
 import { createPageHead, SITE_NAME } from "@/lib/seo";

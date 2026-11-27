@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { evictSpaceQueryCache, primeSpaceDetailCache } from "./space-query-cache";
 
 describe("evictSpaceQueryCache", () => {

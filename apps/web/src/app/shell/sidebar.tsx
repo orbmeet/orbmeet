@@ -11,7 +11,7 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import { Plus, Search } from "lucide-react";
 
-import { mySpacesQueryOptions } from "@/app/query-client/queries/spaces";
+import { mySpacesQueryOptions } from "@/modules/spaces/client/spaces.queries";
 import { CreateSpaceDialog } from "@/modules/spaces/client/components/create-space-dialog";
 import { SpaceTile } from "@/modules/spaces/client/components/space-tile";
 import { mainNavItems } from "./nav-items";

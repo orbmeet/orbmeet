@@ -3,7 +3,7 @@
 // only the Worker-side glue that applies those values to a Response.
 import { HSTS_VALUE, buildSecurityHeaders, type SecurityHeadersConfig } from "./csp";
 import { REQUEST_ID_HEADER } from "./request-id";
-import { CSP_NONCE_PLACEHOLDER } from "./csp-nonce";
+import { CSP_NONCE_PLACEHOLDER } from "@/lib/csp-nonce";
 
 export type { SecurityHeadersConfig };
 

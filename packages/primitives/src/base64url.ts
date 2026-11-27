@@ -22,7 +22,7 @@ export function encodeBase64Url(bytes: Uint8Array): string {
  * all rejected. Decoders that feed signature or key bytes into WebCrypto
  * must fail closed rather than silently decode adjacent encodings.
  */
-export function decodeBase64Url(value: string): Uint8Array | null {
+export function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> | null {
   if (!/^[A-Za-z0-9_-]+$/.test(value) || value.length % 4 === 1) return null;
   try {
     const padded = value

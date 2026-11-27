@@ -1,7 +1,7 @@
 import { Activity, AlertTriangle, PenTool, PlugZap, RefreshCw, Video } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type { UptimeDataState } from "@/pages/status/server/status.functions";
-import { uptimeStatusQueryOptions } from "@/app/query-client/queries/status";
+import { uptimeStatusQueryOptions } from "@/pages/status/status.queries";
 import { UptimeBar } from "@/pages/status/components/uptime-bar";
 import type {
   RecentIncident,

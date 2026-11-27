@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { mySpacesQueryOptions } from "@/app/query-client/queries/spaces";
+import { mySpacesQueryOptions } from "@/modules/spaces/client/spaces.queries";
 import { Button, EmptyState, FilterInput } from "@orbmeet/ui/react";
 import { Page } from "@/app/shell/page";
 import { collection } from "@/app/shell/collection-styles";

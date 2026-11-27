@@ -3,7 +3,39 @@ import { WHITEBOARD_CONFIG } from "./config.ts";
 const CHUNK_RE = /^(\d+)_(.*)$/s;
 const MAX_MESSAGE_CHUNKS = 4096;
 const MAX_ASSEMBLED_BYTES = WHITEBOARD_CONFIG.MAX_CLIENT_MESSAGE_BYTES;
+const MAX_BYTES_PER_CHAR = 4;
+const MAX_SAFE_MESSAGE_SIZE = WHITEBOARD_CONFIG.MAX_CLIENT_FRAME_BYTES / MAX_BYTES_PER_CHAR;
 const UTF8_ENCODER = new TextEncoder();
+
+function isLowSurrogate(codeUnit: number): boolean {
+  return codeUnit >= 0xdc00 && codeUnit <= 0xdfff;
+}
+
+/**
+ * Split a serialized JSON message into `${chunksRemaining}_` prefixed frames,
+ * built from the tail backwards so the prefix counts down to 0 on the final
+ * chunk (matching {@link JsonMessageAssembler}).
+ *
+ * Boundaries are nudged off surrogate pairs so UTF-16 `slice` never splits an
+ * astral code point into lone surrogates.
+ */
+export function chunkMessage(message: string): string[] {
+  if (message.length < MAX_SAFE_MESSAGE_SIZE) return [message];
+  const chunks: string[] = [];
+  let chunkNumber = 0;
+  let offset = message.length;
+  while (offset > 0) {
+    const prefix = `${chunkNumber}_`;
+    let chunkSize = Math.max(Math.min(MAX_SAFE_MESSAGE_SIZE - prefix.length, offset), 1);
+    if (chunkSize > 1 && isLowSurrogate(message.charCodeAt(offset - chunkSize))) {
+      chunkSize -= 1;
+    }
+    chunks.unshift(prefix + message.slice(offset - chunkSize, offset));
+    offset -= chunkSize;
+    chunkNumber++;
+  }
+  return chunks;
+}
 
 /**
  * A chunked message outgrew the bytes it was allowed to assemble into.

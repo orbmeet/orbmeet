@@ -1,5 +1,5 @@
 import { createFileRoute, redirect, lazyRouteComponent } from "@tanstack/react-router";
-import { sessionQueryOptions } from "@/app/query-client/queries/session";
+import { sessionQueryOptions } from "@/modules/identity/client/session.queries";
 import { resolveAuthRedirect, sanitizeInternalRedirect } from "@/modules/identity/contract/safe-redirect";
 import { oneOf, optionalString } from "@/lib/search-params";
 import { createPageHead } from "@/lib/seo";

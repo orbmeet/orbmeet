@@ -35,8 +35,20 @@ const TYPE_STRICT = new Set(["lib", "platform"]);
 const LAYERS: Record<string, readonly string[]> = {
   lib: ["lib"],
   platform: ["lib", "platform"],
-  modules: ["lib", "platform", "modules", "app"],
+  modules: ["lib", "platform", "modules"],
+  pages: ["lib", "platform", "modules", "workflows", "app", "pages"],
 };
+
+/**
+ * The only app-layer bridges feature modules may reach into: request
+ * middleware (for server functions) and the serial-scope DO runner. Anything
+ * else (shell chrome, query-client, adapters, jobs) must live in lib/,
+ * platform/, @orbmeet/ui, or the owning module itself.
+ */
+const MODULE_ALLOWED_APP_PREFIXES = [
+  "app/bootstrap/middleware",
+  "app/serial/serial",
+];
 
 function collectSourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -47,16 +59,16 @@ function collectSourceFiles(dir: string): string[] {
   });
 }
 
-/** The top-level `src/` directory a specifier lands in, or null for packages. */
-function targetLayer(path: string, specifier: string): string | null {
+/** The `src/`-relative path a specifier lands on, or null for packages. */
+function targetRelative(path: string, specifier: string): string | null {
   const target = specifier.startsWith("@/")
     ? resolve(srcRoot, specifier.slice(2))
     : specifier.startsWith(".")
       ? resolve(dirname(path), specifier)
       : null;
   if (!target) return null;
-  const rel = relative(srcRoot, target);
-  return rel.startsWith("..") ? null : rel.split("/")[0];
+  const rel = relative(srcRoot, target).replace(/\\/g, "/");
+  return rel.startsWith("..") ? null : rel;
 }
 
 describe("layer dependency direction", () => {
@@ -69,8 +81,17 @@ describe("layer dependency direction", () => {
           ...getRuntimeDynamicImports(path),
         ]
           .filter((specifier) => {
-            const target = targetLayer(path, specifier);
-            return target !== null && !allowed.includes(target);
+            const rel = targetRelative(path, specifier);
+            if (!rel) return false;
+            const target = rel.split("/")[0];
+            if (allowed.includes(target)) return false;
+            if (
+              layer === "modules" &&
+              MODULE_ALLOWED_APP_PREFIXES.some((prefix) => rel === prefix || rel.startsWith(`${prefix}.`))
+            ) {
+              return false;
+            }
+            return true;
           })
           .map((specifier) => `${relative(srcRoot, path)} -> ${specifier}`),
       );

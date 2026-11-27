@@ -9,7 +9,7 @@ import {
   getTranscriptSnapshot,
   summaryMatchesTranscriptSnapshot,
   waitForTranscriptSettlement,
-} from "@/modules/transcripts/server/generate-summary.server";
+} from "@/modules/transcripts/server/transcript-chunks";
 
 async function seedMeeting(db: Database, baseTime: Date) {
   await db.insert(users).values({

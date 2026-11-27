@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import type { Database } from "@orbmeet/db";
 import {
@@ -12,16 +12,10 @@ import {
   users,
 } from "@orbmeet/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
-import { evictUserFromSpaceMeetings } from "./evict-space-meetings.server";
-import { refreshSpaceAuthorityInOpenMeetings } from "@/modules/meetings/server/runtime/revoke.server";
+import { evictUserFromSpaceMeetings, notifySpaceOpenMeetings } from "./evict-space-meetings.server";
 import { TEST_MEDIA_NODE } from "@/test/nodes";
 import { fakeCoordinatorEnv } from "@/test/coordinator";
 import { seedSubscription } from "@/test/billing";
-
-vi.mock("@/modules/meetings/server/runtime/client.server", async (original) => ({
-  ...(await original<object>()),
-  callCoordinator: (await import("@/test/coordinator")).recordCoordinatorRequest,
-}));
 
 let db: TestDb;
 const getAppDb = () => db;
@@ -274,7 +268,7 @@ describe("evictUserFromSpaceMeetings", () => {
   });
 });
 
-describe("refreshSpaceAuthorityInOpenMeetings", () => {
+describe("notifySpaceOpenMeetings", () => {
   function authorities(requests: ReturnType<typeof fakeCoordinatorEnv>["requests"]) {
     return requests.flatMap((request) =>
       request.kind === "command" && request.command.kind === "refreshAuthority"
@@ -288,14 +282,22 @@ describe("refreshSpaceAuthorityInOpenMeetings", () => {
     await db.update(spaceMembers).set({ role: "admin" }).where(eq(spaceMembers.id, "m_member"));
     const { env, requests } = fakeCoordinatorEnv();
 
-    await refreshSpaceAuthorityInOpenMeetings(getAppDb(), env, "member", "spc_1", "space_role_changed");
+    await notifySpaceOpenMeetings(getAppDb(), env, "member", "spc_1", {
+      kind: "refreshAuthority",
+      userId: "member",
+      reason: "space_role_changed",
+    });
     expect(authorities(requests)).toEqual([{ meetingId: "mtg_1", userId: "member" }]);
   });
 
   it("tells no meeting about someone it never admitted", async () => {
     await seed();
     const { env, requests } = fakeCoordinatorEnv();
-    await refreshSpaceAuthorityInOpenMeetings(getAppDb(), env, "owner", "spc_1", "space_role_changed");
+    await notifySpaceOpenMeetings(getAppDb(), env, "owner", "spc_1", {
+      kind: "refreshAuthority",
+      userId: "owner",
+      reason: "space_role_changed",
+    });
     expect(requests).toEqual([]);
   });
 });

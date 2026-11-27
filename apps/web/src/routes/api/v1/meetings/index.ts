@@ -1,6 +1,11 @@
+import * as v from "valibot";
 import { parseInput } from "@/lib/validation";
 import { createFileRoute } from "@tanstack/react-router";
-import { automationMeetingLookupSchema } from "@orbmeet/public-api-contract";
+import {
+  automationMeetingLookupSchema,
+  publicMeetingResponseSchema,
+  publicTranscriptSchema,
+} from "@orbmeet/public-api-contract";
 import { Errors } from "@/lib/app-errors";
 
 import { apiJson, handleAutomationApi } from "@/app/adapters/public-api/http";
@@ -29,6 +34,7 @@ export const Route = createFileRoute("/api/v1/meetings/")({
           if (cursorStartedAt === "" || cursorId === "") {
             throw Errors.VALIDATION("cursorStartedAt and cursorId must not be empty");
           }
+          const rawTranscriptLimit = url.searchParams.get("transcriptLimit");
           const parsed = parseInput(automationMeetingLookupSchema, {
             meetingId: url.searchParams.get("meetingId") || undefined,
             date: url.searchParams.get("date") || undefined,
@@ -40,18 +46,22 @@ export const Route = createFileRoute("/api/v1/meetings/")({
             transcriptCursor: cursorStartedAt && cursorId
               ? { startedAt: Number(cursorStartedAt), id: cursorId }
               : undefined,
-            transcriptLimit: url.searchParams.has("transcriptLimit")
-              ? Number(url.searchParams.get("transcriptLimit"))
-              : undefined,
+            transcriptLimit: rawTranscriptLimit === null
+              ? undefined
+              : rawTranscriptLimit === ""
+                ? Number.NaN
+                : Number(rawTranscriptLimit),
           });
-          return apiJson({
-            data: await retrieveAutomationMeeting(
-              principal.db,
-              env,
-              principal.user.id,
-              parsed,
-            ),
-          });
+          const data = await retrieveAutomationMeeting(
+            principal.db,
+            env,
+            principal.user.id,
+            parsed,
+          );
+          if (data.transcript !== undefined && data.transcript !== null) {
+            v.parse(publicTranscriptSchema, data.transcript);
+          }
+          return apiJson(v.parse(publicMeetingResponseSchema, { data }));
         }),
     },
   },

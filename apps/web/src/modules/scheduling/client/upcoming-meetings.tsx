@@ -6,7 +6,7 @@ import * as stylex from "@stylexjs/stylex";
 
 import { beginMeetingEntryFlow } from "@/modules/meetings/client/entry-metrics";
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
-import { myUpcomingMeetingSchedulesQueryOptions } from "@/app/query-client/queries/meetings";
+import { myUpcomingMeetingSchedulesQueryOptions } from "@/modules/scheduling/client/schedules.queries";
 import {
   CancelScheduledMeetingDialog,
   ScheduleMeetingDialog,
@@ -20,7 +20,7 @@ import { bp, env } from "@orbmeet/ui/tokens/media.stylex";
 import { radii } from "@orbmeet/ui/tokens/radii.stylex";
 import { space } from "@orbmeet/ui/tokens/space.stylex";
 import { leading, text, weight } from "@orbmeet/ui/tokens/typography.stylex";
-import { Section } from "@/app/shell/section";
+import { Section } from "@orbmeet/ui/react";
 
 const styles = stylex.create({
   list: { padding: space.s1, borderRadius: 20 },

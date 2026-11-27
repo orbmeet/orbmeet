@@ -1,11 +1,9 @@
 import type { Database } from "@orbmeet/db";
 import {
   meetings,
-  meetingWhiteboards,
   meetingWhiteboardSurfaces,
 } from "@orbmeet/db/schema";
 import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
-import { generateId } from "@/lib/ids";
 import type { MeetingEndReason } from "@orbmeet/domain-model";
 
 /**
@@ -17,15 +15,12 @@ import type { MeetingEndReason } from "@orbmeet/domain-model";
  *    flips the meeting to ended, recording why in the same statement.
  */
 
-/** Freeze selection and reserve one capture identity in the ending command's transaction. */
+/** Freeze presentation in the ending command's transaction. */
 export function beginMeetingCloseStatement(db: Database, meetingId: string, now: Date) {
-  return db.update(meetings).set({
-    closingAt: now,
-    closingCommandId: generateId("SYNC_COMMAND"),
-    closingWhiteboardId: sql`(select ${meetingWhiteboards.id} from ${meetingWhiteboards}
-      where ${meetingWhiteboards.meetingId} = ${meetingId}
-        and ${meetingWhiteboards.focusedAt} is not null limit 1)`,
-  }).where(and(eq(meetings.id, meetingId), eq(meetings.status, "open"), isNull(meetings.closingAt)));
+  return db
+    .update(meetings)
+    .set({ closingAt: now })
+    .where(and(eq(meetings.id, meetingId), eq(meetings.status, "open"), isNull(meetings.closingAt)));
 }
 
 /**
@@ -56,7 +51,6 @@ export async function finalizeMeetingEnd(
         updatedAt: sql`max(${meetings.updatedAt}, ${clampedToStart(nowSeconds)})`,
         activeEgressId: null,
         activeStreamEgressId: null,
-        retainUntil: null,
         summaryStatus: summaryOwed ? "pending" : null,
       })
       .where(meetingFilter)

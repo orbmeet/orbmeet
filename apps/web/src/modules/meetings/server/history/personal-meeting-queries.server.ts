@@ -46,7 +46,6 @@ export async function selectMyMeetings(
       status: meetings.status,
       startedAt: meetings.startedAt,
       endedAt: meetings.endedAt,
-      retainUntil: meetings.retainUntil,
       // Whether the viewer started it: who may end a live one from the list.
       startedByMe: sql<number>`${meetings.startedByUserId} = ${user.id}`,
       // The personal space is not addressable as a space in client payloads.
@@ -161,7 +160,6 @@ export async function selectMyMeetings(
       participantNames: participantNamesByMeeting.get(meeting.id) ?? [],
       startedAt: meeting.startedAt?.toISOString() ?? null,
       endedAt: meeting.endedAt?.toISOString() ?? null,
-      retainUntil: meeting.retainUntil?.toISOString() ?? null,
     })),
     nextCursor: rows.length > data.limit && last
       ? encodeKeysetCursor({ at: last.startedAt, id: last.id })

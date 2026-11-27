@@ -3,7 +3,7 @@ import { serverInput } from "@/lib/validation";
 import * as v from "valibot";
 import { idSchema } from "@orbmeet/public-api-contract/fields";
 import { authMiddleware } from "@/app/bootstrap/middleware";
-import { saveMeetingWhiteboardCopyImpl, getWhiteboardSnapshotImpl, getMeetingWhiteboardSnapshotsImpl, getMeetingWhiteboardHistoryImpl, getWhiteboardPdfDownloadUrlImpl } from "./export.server";
+import { saveMeetingWhiteboardCopyImpl, getWhiteboardSnapshotImpl, getMeetingWhiteboardSnapshotsImpl, getMeetingWhiteboardHistoryImpl } from "./export.server";
 
 const historyRequestSchema = v.object({
   meetingId: idSchema,
@@ -43,13 +43,6 @@ export const getMeetingWhiteboardHistory = createServerFn({ method: "POST" })
   .validator(serverInput(historyRequestSchema))
   .handler(async ({ data, context }) => {
     return getMeetingWhiteboardHistoryImpl({ data, context });
-  });
-
-export const getWhiteboardPdfDownloadUrl = createServerFn({ method: "POST" })
-  .middleware([authMiddleware])
-  .validator(serverInput(historyRequestSchema))
-  .handler(async ({ data, context }) => {
-    return getWhiteboardPdfDownloadUrlImpl({ data, context });
   });
 
 export type HistoryRequestInput = v.InferOutput<typeof historyRequestSchema>;

@@ -21,7 +21,7 @@ import {
   canAccessMeetingHistory,
   meetingHistoryAccessPredicate,
 } from "@/modules/meetings/server/access/resource-access";
-import { summaryMatchesTranscriptSnapshot, type TranscriptSnapshot } from "@/modules/transcripts/server/generate-summary.server";
+import { summaryMatchesTranscriptSnapshot, type TranscriptSnapshot } from "@/modules/transcripts/server/transcript-chunks";
 import { listTranscriptRowsPage } from "@/modules/transcripts/server/query";
 import { signDownloadUrl } from "@/modules/assets/server/signed-urls.server";
 import { utcBoundsForLocalDate } from "@/lib/local-date-bounds";
@@ -46,7 +46,6 @@ export async function resolveAutomationMeeting(
       title: meetings.title,
       startedAt: meetings.startedAt,
       endedAt: meetings.endedAt,
-      retainUntil: meetings.retainUntil,
       startedByUserId: meetings.startedByUserId,
       spaceId: meetings.spaceId,
       // The personal space is not addressable as a space in client payloads.
@@ -203,7 +202,6 @@ export async function retrieveAutomationMeeting(
       title: meeting.title,
       startedAt: meeting.startedAt.toISOString(),
       endedAt: meeting.endedAt?.toISOString() ?? null,
-      retainUntil: meeting.retainUntil?.toISOString() ?? null,
       spaceName: meeting.spaceName,
       participants: meeting.participantNames,
     },
@@ -223,16 +221,16 @@ export async function retrieveAutomationMeeting(
     });
     response.transcript = {
       segments: page.transcripts.map((segment) => ({
-        ...segment,
+        participantName: segment.participantName,
+        text: segment.text,
+        language: segment.language,
         startedAt: segment.startedAt.toISOString(),
-        updatedAt: segment.updatedAt.toISOString(),
       })),
       nextCursor: page.nextCursor,
     };
   }
   if (included(lookup.include, "recordings")) {
     response.recordings = await Promise.all(accessibleRecordings.map(async (artifact) => ({
-      id: artifact.id,
       filename: artifact.filename,
       mimeType: artifact.mimeType,
       size: artifact.size,
@@ -243,7 +241,6 @@ export async function retrieveAutomationMeeting(
   if (included(lookup.include, "whiteboard_pdf")) {
     response.whiteboardPdf = whiteboardPdf
       ? {
-          id: whiteboardPdf.id,
           filename: whiteboardPdf.filename,
           mimeType: whiteboardPdf.mimeType,
           size: whiteboardPdf.size,

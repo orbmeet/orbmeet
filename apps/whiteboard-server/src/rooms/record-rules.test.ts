@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSafeExternalBrowserUrl } from "@orbmeet/whiteboard-core/public-host";
+import { isSafeExternalBrowserUrl } from "@orbmeet/primitives/public-host";
 import { describeAssetSources, hasUnsafeUrl, isAllowedAsset, isPageFrameRecord } from "./record-rules.ts";
 
 const BOARD = "whiteboard_1";

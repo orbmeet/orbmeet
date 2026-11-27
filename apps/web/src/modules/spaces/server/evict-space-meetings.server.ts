@@ -1,12 +1,46 @@
 import "@tanstack/react-start/server-only";
 
-import { spaces, spaceMembers, spaceMemberRemovals, meetingScheduleAttendees, meetingSchedules, users } from "@orbmeet/db/schema";
+import { spaces, spaceMembers, spaceMemberRemovals, meetingAdmissions, meetingScheduleAttendees, meetingSchedules, meetings, users } from "@orbmeet/db/schema";
 import { eq, and, inArray, or, sql } from "drizzle-orm";
 import type { Database } from "@orbmeet/db";
 
+import { logError } from "@/lib/logger";
 import { getRunChanges } from "@/platform/database/db-utils";
-import { revokeFromOpenMeetings } from "@/modules/meetings/server/runtime/revoke.server";
+import { sendMeetingRoomRpc } from "@/platform/realtime/meeting-room-rpc.server";
 import { anotherSpaceManagerRemainsSql, isSpaceOwnerMembershipSql, retainsSpaceManagerSql } from "./helpers";
+
+/**
+ * Push a Space membership change to every open meeting in `spaceId` where
+ * `userId` holds a live admission. Best-effort per meeting: coordinators also
+ * re-read Space authority on heartbeat.
+ */
+export async function notifySpaceOpenMeetings(
+  db: Database,
+  env: Env,
+  userId: string,
+  spaceId: string,
+  command:
+    | { kind: "revoke"; userId: string; reason: string }
+    | { kind: "refreshAuthority"; userId: string; reason: string },
+): Promise<void> {
+  const rows = await db
+    .selectDistinct({ meetingId: meetings.id })
+    .from(meetingAdmissions)
+    .innerJoin(meetings, eq(meetings.id, meetingAdmissions.meetingId))
+    .where(and(
+      eq(meetingAdmissions.subjectUserId, userId),
+      inArray(meetingAdmissions.admissionStatus, ["pending", "approved"]),
+      eq(meetings.status, "open"),
+      eq(meetings.spaceId, spaceId),
+    ));
+  await Promise.all(rows.map(async ({ meetingId }) => {
+    try {
+      await sendMeetingRoomRpc(env, { kind: "command", meetingId, command });
+    } catch (error) {
+      logError(`[spaces] Could not push ${command.kind} to open meeting`, { userId, meetingId, spaceId }, error);
+    }
+  }));
+}
 
 /**
  * Atomically remove a user's space membership, then have every open meeting
@@ -119,6 +153,10 @@ export async function evictUserFromSpaceMeetings(
 
   // The coordinator also rechecks membership on the user's next heartbeat, so
   // a revoke that fails to arrive here still lands within one interval.
-  await revokeFromOpenMeetings(db, env, userId, "space_membership_removed", { spaceId });
+  await notifySpaceOpenMeetings(db, env, userId, spaceId, {
+    kind: "revoke",
+    userId,
+    reason: "space_membership_removed",
+  });
   return true;
 }

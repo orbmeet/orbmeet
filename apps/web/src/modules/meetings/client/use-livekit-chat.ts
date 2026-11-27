@@ -5,7 +5,7 @@ import { logError, logInfo } from "@/lib/logger";
 import { MESSAGE_LIMITS, LIVEKIT_TOPICS } from "@/modules/meetings/contract/constants";
 import { isExpectedClosedPublishError } from "@/modules/meetings/contract/livekit-helpers";
 import { participantKeyOfAttributes } from "@/modules/meetings/contract/live-state";
-import { ReceiverRateLimiter } from "@/platform/realtime/receiver-rate-limiter";
+import { ReceiverRateLimiter } from "@/lib/receiver-rate-limiter";
 import { useTokenBucket } from "./use-token-bucket";
 import type { MeetingConversation } from "./meeting-conversation";
 

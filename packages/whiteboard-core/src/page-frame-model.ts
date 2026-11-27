@@ -77,6 +77,12 @@ export function comparePageFrames<T extends { id: string; y: number; index?: unk
   return compareCodeUnitStrings(a.id, b.id);
 }
 
+export function sortPageFrames<T extends { id: string; y: number; index?: unknown }>(
+  frames: readonly T[],
+): T[] {
+  return [...frames].sort(comparePageFrames);
+}
+
 export function isPageRecord(record: TLRecord): record is TLPage {
   return record.typeName === "page";
 }

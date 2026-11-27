@@ -1,8 +1,8 @@
 /**
  * Whiteboard revision lifecycle: pinning the shared state a Meeting is
- * showing, duplicating a document, capturing Meeting-end revisions, and
- * recording restore points. Restoring itself lives in `./restores`; document
- * creation, lookup, and access predicates in `./documents`.
+ * showing, capturing Meeting-end revisions, and recording restore points.
+ * Duplication & presentation live in `./document-copy`; restoring lives in
+ * `./restores`; document creation, lookup, and access predicates in `./documents`.
  *
  * The sync server owns every stored whiteboard snapshot — it writes and reads
  * the bytes; this module never touches them. Each flow here asks the sync
@@ -12,114 +12,42 @@
 import type { Database } from "@orbmeet/db";
 import {
   meetingWhiteboards,
-  whiteboardAssetReferences,
-  whiteboardRevisionAssetReferences,
   whiteboardRevisions,
   whiteboards,
 } from "@orbmeet/db/schema";
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
-import type { SnapshotMeta, SyncCommandRequest } from "@orbmeet/whiteboard-core/sync-commands";
+import type { SnapshotMeta } from "@orbmeet/whiteboard-core/sync-commands";
 import { toWhiteboardRoomId } from "@orbmeet/whiteboard-core/whiteboard-room-id";
 import {
   internalMeetingWhiteboardCaptureKey,
   whiteboardRevisionKey,
 } from "@orbmeet/whiteboard-core/document-keys";
-import {
-  extractWhiteboardDocumentAssetIdentity,
-} from "@orbmeet/whiteboard-core/whiteboard-asset-key";
 import { boundedStatements } from "@/platform/database/db-batching";
 import { Errors } from "@/lib/app-errors";
 import { generateId } from "@/lib/ids";
 import { getRunChanges, withD1Retry } from "@/platform/database/db-utils";
-import { logError, logWarn } from "@/lib/logger";
-import { commitRevisionWhiteboardAssets } from "./assets";
-import { runSerially } from "@/app/serial/serial";
+import { logWarn } from "@/lib/logger";
 import {
   enqueueR2ObjectCleanup,
   keepR2ObjectStatement,
   r2KeyBeingDeletedSql,
   r2ObjectCleanupStatements,
 } from "@/modules/assets/server/r2-cleanup.server";
-import { mapWithConcurrency } from "@orbmeet/primitives";
-import {
-  attachExistingWhiteboardToMeeting,
-  cleanupFailedWhiteboardCopy,
-  insertDurableWhiteboard,
-  type MeetingWhiteboardDocument,
-} from "./documents";
 import { loadSpaceEntitlement } from "@/modules/billing/server/entitlements.server";
-import { expectSyncCommand, newCommandId, runSyncCommand, sendSyncCommand } from "./sync-commands.server";
-import type { NodeLatencies } from "@orbmeet/nodes";
-import { nodeForNewBoard, placeBoard } from "./board-placement.server";
-import type { WhiteboardNode } from "./config.server";
+import { expectSyncCommand, runSyncCommand, sendSyncCommand } from "./sync-commands.server";
+import {
+  insertPreparedRevisionAssetReferences,
+  prepareStoredRevision,
+  preparedRevisionSelectColumns,
+  type PreparedWhiteboardRevision,
+} from "./revision-assets";
 
-/**
- * A snapshot may retain assets owned by this document or by a document it was
- * legitimately copied from. Never let snapshot bytes create that ownership:
- * foreign keys must already be authorized by a durable reference row.
- */
-async function filterAuthorizedWhiteboardAssetKeys(
-  db: Database,
-  whiteboardId: string,
-  r2Keys: readonly string[],
-): Promise<string[]> {
-  const foreignKeys = r2Keys.filter((r2Key) => {
-    const identity = extractWhiteboardDocumentAssetIdentity(r2Key);
-    return identity && identity.whiteboardId !== whiteboardId;
-  });
-  const authorized = new Set<string>();
-  const lookups = boundedStatements([...new Set(foreignKeys)], (keys) =>
-    db
-      .select({
-        r2Key: whiteboardAssetReferences.r2Key,
-        sourceWhiteboardId: whiteboardAssetReferences.sourceWhiteboardId,
-      })
-      .from(whiteboardAssetReferences)
-      .where(
-        and(
-          eq(whiteboardAssetReferences.whiteboardId, whiteboardId),
-          inArray(whiteboardAssetReferences.r2Key, keys),
-        ),
-      ));
-  for (const lookup of lookups) {
-    for (const row of await lookup) {
-      if (
-        extractWhiteboardDocumentAssetIdentity(row.r2Key)?.whiteboardId === row.sourceWhiteboardId
-      ) {
-        authorized.add(row.r2Key);
-      }
-    }
-  }
-  return r2Keys.filter((r2Key) => {
-    const identity = extractWhiteboardDocumentAssetIdentity(r2Key);
-    return identity !== null && (identity.whiteboardId === whiteboardId || authorized.has(r2Key));
-  });
-}
-
-/**
- * Insert a board's asset reference rows, only while the board row exists, so
- * they can share a batch with the board's own guarded insert. Chunked under
- * D1's bound-parameter limit.
- */
-function insertAssetReferencesForBoard(
-  db: Database,
-  whiteboardId: string,
-  rows: ReadonlyArray<typeof whiteboardAssetReferences.$inferInsert>,
-) {
-  return boundedStatements(rows, (chunk) => db.run(sql`
-    insert into ${whiteboardAssetReferences} (id, whiteboard_id, source_whiteboard_id, r2_key, created_at)
-    select column1, column2, column3, column4, column5
-    from (values ${sql.join(
-      chunk.map((row) => sql`(${row.id}, ${row.whiteboardId}, ${row.sourceWhiteboardId}, ${row.r2Key}, ${
-        Math.floor((row.createdAt ?? new Date()).getTime() / 1000)
-      })`),
-      sql`, `,
-    )})
-    where exists (select 1 from ${whiteboards} where ${whiteboards.id} = ${whiteboardId})
-      and not ${r2KeyBeingDeletedSql(sql`column4`)}
-    on conflict do nothing
-  `));
-}
+export {
+  copyWhiteboard,
+  duplicateWhiteboard,
+  presentWhiteboardInMeeting,
+  type DuplicateWhiteboardInput,
+} from "./document-copy";
 
 /**
  * Pin what a Meeting shared of one presented Whiteboard.
@@ -220,195 +148,12 @@ export async function pinMeetingWhiteboardSharedState(
   ]);
 }
 
-/**
- * Duplicates a Whiteboard inside its Space, or into another one. The copy is
- * an ordinary durable document — no Meeting is involved and nothing is
- * presented.
- *
- * The source is the board's current state (its room's latest, edits
- * included) or one of its revisions. The sync server seeds the new board's
- * room with it.
- */
-export interface DuplicateWhiteboardInput {
-  whiteboardId: string;
-  userId: string;
-  revisionId?: string;
-  destinationSpaceId?: string;
-  title?: string;
-  /** Each node's latency for whoever asked for the copy: a copy of a revision is created on a node fast for them. */
-  nodeLatencies?: NodeLatencies;
-}
-
-/**
- * The source state, its asset manifest, and reference publication are one
- * lifecycle operation, so a copy runs in the source board's serial scope,
- * where the board's purge runs too.
- */
-export function duplicateWhiteboard(
-  env: Pick<Env, "SERIAL_SCOPES">,
-  input: DuplicateWhiteboardInput,
-): Promise<{ whiteboardId: string; title: string }> {
-  return runSerially(env, { kind: "duplicateWhiteboard", ...input }, { callerWaits: true });
-}
-
-/** One copy of a board; runs in the source board's serial scope. */
-export async function copyWhiteboard(
-  db: Database,
-  env: Env,
-  input: DuplicateWhiteboardInput,
-): Promise<{ whiteboardId: string; title: string }> {
-  const board = await db.query.whiteboards.findFirst({
-    where: input.revisionId ? { id: input.whiteboardId } : { id: input.whiteboardId, status: "active" },
-    columns: { id: true, spaceId: true, title: true, syncRoomId: true },
-  });
-  if (!board) throw Errors.NOT_FOUND("Whiteboard");
-
-  let source: SyncCommandRequest<"seed">["source"];
-  // The copy is created where it is seeded from: a live board's own node,
-  // which reads its current state there.
-  let node: WhiteboardNode;
-  if (input.revisionId) {
-    const revision = await db.query.whiteboardRevisions.findFirst({
-      where: { id: input.revisionId, whiteboardId: board.id },
-      columns: { snapshotR2Key: true },
-    });
-    if (!revision) throw Errors.NOT_FOUND("Whiteboard");
-    source = { key: revision.snapshotR2Key };
-    node = await nodeForNewBoard(db, env, input.nodeLatencies ?? {}, `${board.id}/${input.revisionId}`);
-  } else {
-    const placement = await placeBoard(db, env, board.syncRoomId, { kind: "service" });
-    if (!placement) throw Errors.NOT_FOUND("Whiteboard");
-    source = {
-      whiteboardRoomId: toWhiteboardRoomId(board.syncRoomId),
-      whiteboardId: board.id,
-      generation: placement.generation,
-    };
-    node = placement.node;
-  }
-  const copyPlacement = { node, generation: 1 };
-
-  const whiteboardId = generateId("WHITEBOARD");
-  const title = (input.title ?? `Copy of ${board.title}`).slice(0, 200);
-  const destinationSpaceId = input.destinationSpaceId ?? board.spaceId;
-  const now = new Date();
-
-  // The source board's serial scope keeps a board purge from deleting a live
-  // source mid-seed. A purge of some other namespace that removes what the
-  // seed reads fails the seed, which reports the content as unreadable.
-  let assetKeys: string[];
-  try {
-    ({ assetKeys } = await runSyncCommand(env, "seed", {
-      whiteboardRoomId: toWhiteboardRoomId(whiteboardId),
-      whiteboardId,
-      commandId: newCommandId(),
-      source,
-    }, { target: copyPlacement }));
-  } catch (error) {
-    // The seed may have created the new board's room before failing.
-    await cleanupFailedWhiteboardCopy(db, env, whiteboardId);
-    if (error instanceof Error && "statusCode" in error && error.statusCode === 409) {
-      throw Errors.CONFLICT(
-        "This Whiteboard's saved content cannot be read, so it cannot be duplicated.",
-      );
-    }
-    throw error;
-  }
-  const sourceAssetKeys = await filterAuthorizedWhiteboardAssetKeys(db, board.id, assetKeys);
-  const referenceRows = sourceAssetKeys.flatMap((r2Key) => {
-    const identity = extractWhiteboardDocumentAssetIdentity(r2Key);
-    if (!identity || identity.whiteboardId === whiteboardId) return [];
-    return [
-      {
-        id: generateId("WHITEBOARD_ASSET"),
-        whiteboardId,
-        sourceWhiteboardId: identity.whiteboardId,
-        r2Key,
-        createdAt: now,
-      } satisfies typeof whiteboardAssetReferences.$inferInsert,
-    ];
-  });
-  const sourceObjectsExist = async () =>
-    (await mapWithConcurrency(sourceAssetKeys, 8, (r2Key) => env.R2_BUCKET.head(r2Key)))
-      .every((object) => object !== null);
-  try {
-    if (!(await sourceObjectsExist())) {
-      throw Errors.CONFLICT("Whiteboard assets changed while the copy was being prepared");
-    }
-    // The copy displays the foreign assets these rows authorize, and a source
-    // board's purge keeps exactly what they reference: the board and its
-    // references commit together or not at all. A reference to an object the
-    // cleanup queue is deleting is refused, and every object is checked again
-    // once the references hold it (see r2KeyBeingDeletedSql).
-    await insertDurableWhiteboard(
-      db,
-      {
-        id: whiteboardId,
-        syncRoomId: whiteboardId,
-        syncNodeId: copyPlacement.node.id,
-        syncGeneration: copyPlacement.generation,
-        spaceId: destinationSpaceId,
-        title,
-        status: "active",
-        createdByUserId: input.userId,
-        createdAt: now,
-        updatedAt: now,
-      },
-      { alongside: () => insertAssetReferencesForBoard(db, whiteboardId, referenceRows) },
-    );
-    const held = await db.$count(whiteboardAssetReferences, eq(whiteboardAssetReferences.whiteboardId, whiteboardId));
-    if (held !== referenceRows.length || !(await sourceObjectsExist())) {
-      throw Errors.CONFLICT("Whiteboard assets changed while the copy was being prepared");
-    }
-  } catch (error) {
-    await cleanupFailedWhiteboardCopy(db, env, whiteboardId);
-    throw error;
-  }
-  return { whiteboardId, title };
-}
-
-interface PreparedWhiteboardRevision {
-  revisionId: string;
-  snapshotR2Key: string;
-  assetKeys: string[];
-  values: Omit<typeof whiteboardRevisions.$inferInsert, "revisionNumber">;
-}
-
-function nextWhiteboardRevisionNumber(whiteboardId: string) {
-  return sql<number>`(
-    SELECT COALESCE(MAX(existing.revision_number), 0) + 1
-    FROM ${whiteboardRevisions} AS existing
-    WHERE existing.whiteboard_id = ${whiteboardId}
-  )`;
-}
-
 // A revision a Meeting captured is Meeting history, outside the rolling undo budget.
 function unpinnedRestorePointSql() {
   return sql`not exists (
     select 1 from ${meetingWhiteboards}
     where ${meetingWhiteboards.capturedRevisionId} = ${whiteboardRevisions.id}
   )`;
-}
-
-function preparedRevisionSelectColumns(prepared: PreparedWhiteboardRevision) {
-  const values = prepared.values;
-  const createdAtSeconds = Math.floor((values.createdAt ?? new Date()).getTime() / 1000);
-  return {
-    id: sql<string>`${values.id}`.as("id"),
-    whiteboardId: sql<string>`${values.whiteboardId}`.as("whiteboard_id"),
-    spaceId: sql<string>`${values.spaceId}`.as("space_id"),
-    revisionNumber: nextWhiteboardRevisionNumber(values.whiteboardId).as("revision_number"),
-    kind: sql<typeof values.kind>`${values.kind}`.as("kind"),
-    sourceMeetingId: sql<string | null>`${values.sourceMeetingId ?? null}`.as("source_meeting_id"),
-    snapshotR2Key: sql<string>`${values.snapshotR2Key}`.as("snapshot_r2_key"),
-    snapshotHash: sql<string | null>`${values.snapshotHash ?? null}`.as("snapshot_hash"),
-    assetManifest: sql<string | null>`${values.assetManifest ?? null}`.as("asset_manifest"),
-    documentClock: sql<number | null>`${values.documentClock ?? null}`.as("document_clock"),
-    snapshotSize: sql<number>`${values.snapshotSize}`.as("snapshot_size"),
-    createdByUserId: sql<string | null>`${values.createdByUserId ?? null}`.as(
-      "created_by_user_id",
-    ),
-    createdAt: sql<number>`${createdAtSeconds}`.as("created_at"),
-  };
 }
 
 function insertPreparedWhiteboardRevision(
@@ -466,93 +211,6 @@ function insertPreparedMeetingWhiteboardRevision(
         ),
       ),
   );
-}
-
-function insertPreparedRevisionAssetReferences(db: Database, prepared: PreparedWhiteboardRevision) {
-  const createdAt = prepared.values.createdAt ?? new Date();
-  return boundedStatements([...new Set(prepared.assetKeys)], (keys) =>
-    db
-      .insert(whiteboardRevisionAssetReferences)
-      .values(keys.map((r2Key) => ({ revisionId: prepared.revisionId, r2Key, createdAt })))
-      .onConflictDoNothing());
-}
-
-/**
- * Turn a snapshot the sync server has stored at a revision key into the rows
- * that record it: reconcile the assets it references, and build the revision
- * row the caller inserts.
- *
- * Deliberately stops short of the D1 write. Meeting capture commits its row in
- * the same batch as the `meeting_whiteboards` update it belongs to, and a
- * restore point commits alongside its history pruning — so callers own the
- * write and its rollback.
- */
-async function prepareStoredRevision(
-  db: Database,
-  env: Env,
-  input: {
-    revisionId: string;
-    whiteboardId: string;
-    spaceId: string;
-    stored: SnapshotMeta;
-    kind: "meeting_end" | "pre_restore";
-    sourceMeetingId: string | null;
-    createdByUserId: string | null;
-    now: Date;
-  },
-): Promise<PreparedWhiteboardRevision> {
-  const referencedAssetKeys = await filterAuthorizedWhiteboardAssetKeys(
-    db,
-    input.whiteboardId,
-    input.stored.assetKeys,
-  );
-  const { committedKeys, missingKeys } = await commitRevisionWhiteboardAssets(db, env, {
-    whiteboardId: input.whiteboardId,
-    spaceId: input.spaceId,
-    r2Keys: referencedAssetKeys,
-    now: input.now,
-  });
-  if (missingKeys.length > 0) {
-    // Capture proceeds without them. The manifest is the authorization list for
-    // reading a revision's assets, so recording a key with no object behind it
-    // would authorize a 404; dropping it keeps the manifest describing what is
-    // actually retrievable.
-    logError(
-      `[whiteboard-capture] ${missingKeys.length} referenced asset object(s) missing for whiteboard ${input.whiteboardId}; capturing without them:`,
-      missingKeys.slice(0, 10),
-    );
-  }
-  // Inherited document keys are not owned by this document, so the
-  // commit helper does not register them. Their existing reference authority
-  // was checked above; carry it into both the read manifest and the revision's
-  // durable GC pins.
-  const retainedAssetKeys = [
-    ...new Set([
-      ...committedKeys,
-      ...referencedAssetKeys.filter(
-        (key) => extractWhiteboardDocumentAssetIdentity(key)?.whiteboardId !== input.whiteboardId,
-      ),
-    ]),
-  ].sort();
-  return {
-    revisionId: input.revisionId,
-    snapshotR2Key: input.stored.key,
-    assetKeys: retainedAssetKeys,
-    values: {
-      id: input.revisionId,
-      whiteboardId: input.whiteboardId,
-      spaceId: input.spaceId,
-      kind: input.kind,
-      sourceMeetingId: input.sourceMeetingId,
-      snapshotR2Key: input.stored.key,
-      snapshotHash: input.stored.hash,
-      assetManifest: JSON.stringify(retainedAssetKeys),
-      documentClock: input.stored.documentClock,
-      snapshotSize: input.stored.size,
-      createdByUserId: input.createdByUserId,
-      createdAt: input.now,
-    },
-  };
 }
 
 /**
@@ -807,54 +465,4 @@ export async function captureMeetingWhiteboardUsageRevision(
   // The revision holds its own copy; the slot's capture is now garbage.
   await enqueueR2ObjectCleanup(db, [capturedSnapshotR2Key], now);
   return prepared.revisionId;
-}
-
-/**
- * Presents a Whiteboard in an open Meeting. Space boundaries are ownership
- * boundaries: a source from another Space is copied into the Meeting's Space,
- * then the independent copy is attached. The copy is removed if attachment
- * loses a race with Meeting finalization.
- */
-export async function presentWhiteboardInMeeting(
-  db: Database,
-  env: Env,
-  input: { meetingId: string; whiteboardId: string; presentedByUserId: string },
-): Promise<MeetingWhiteboardDocument & { copiedFromWhiteboardId: string | null }> {
-  const meeting = await db.query.meetings.findFirst({
-    where: { id: input.meetingId, status: "open" },
-    columns: { id: true, spaceId: true },
-  });
-  const source = await db.query.whiteboards.findFirst({
-    where: { id: input.whiteboardId, status: "active" },
-    columns: { id: true, spaceId: true, title: true },
-  });
-  if (!meeting || !source) throw Errors.NOT_FOUND("Whiteboard");
-  const canPresent = await db.query.spaceMembers.findFirst({
-    where: { spaceId: source.spaceId, userId: input.presentedByUserId },
-    columns: { id: true },
-  });
-  if (!canPresent) throw Errors.NOT_FOUND("Whiteboard");
-
-  let copiedWhiteboardId: string | null = null;
-  try {
-    if (source.spaceId !== meeting.spaceId) {
-      const copy = await duplicateWhiteboard(env, {
-        whiteboardId: source.id,
-        userId: input.presentedByUserId,
-        destinationSpaceId: meeting.spaceId,
-        title: source.title,
-      });
-      copiedWhiteboardId = copy.whiteboardId;
-    }
-    const document = await attachExistingWhiteboardToMeeting(db, {
-      ...input,
-      whiteboardId: copiedWhiteboardId ?? source.id,
-    });
-    return { ...document, copiedFromWhiteboardId: copiedWhiteboardId ? source.id : null };
-  } catch (error) {
-    if (copiedWhiteboardId) {
-      await cleanupFailedWhiteboardCopy(db, env, copiedWhiteboardId);
-    }
-    throw error;
-  }
 }

@@ -5,13 +5,12 @@
  */
 
 import type { Database } from "@orbmeet/db";
-import { meetingLinks, meetingWhiteboardPages, meetingWhiteboards, meetings, whiteboardRevisions, whiteboards } from "@orbmeet/db/schema";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { meetingWhiteboardPages, meetingWhiteboards, whiteboardRevisions, whiteboards } from "@orbmeet/db/schema";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { Errors } from "@/lib/app-errors";
 import { boundedStatements } from "@/platform/database/db-batching";
 import type { TLStoreSnapshot } from "tldraw";
 import { canAccessMeetingHistory } from "@/modules/meetings/server/access/resource-access";
-import { buildAttachmentContentDisposition } from "@/modules/assets/server/content-disposition";
 import { readStoredSnapshot } from "@/modules/whiteboards/server/sync-commands.server";
 import { duplicateWhiteboard } from "@/modules/whiteboards/server/document-revisions";
 import { currentNodeLatencies } from "@/platform/realtime/node-latency.server";
@@ -21,7 +20,6 @@ import type { SaveMeetingCopyInput } from "./export.functions";
 import type { HistoryRequestInput } from "./export.functions";
 import type { GetMeetingWhiteboardSnapshotsInput } from "./export.functions";
 import { ensurePersonalSpace } from "@/modules/spaces/server/personal";
-import { buildR2Client } from "@/modules/assets/server/r2-client.server";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
@@ -266,42 +264,4 @@ export async function getMeetingWhiteboardHistoryImpl({
     // former name — it says only whether this Meeting captured anything.
     hasCapturedWhiteboards: true,
   };
-}
-
-export async function getWhiteboardPdfDownloadUrlImpl({
-  data,
-  context: { user, db, env },
-}: {
-  data: HistoryRequestInput;
-  context: AuthFnContext;
-}) {
-  await assertExportAccess(db, data.meetingId, user.id);
-
-  const artifact = await db.query.meetingArtifacts.findFirst({
-    where: {
-      RAW: (row) => and(eq(row.meetingId, data.meetingId), eq(row.type, "whiteboard_pdf"))!,
-    },
-    columns: { r2Key: true },
-    orderBy: (row) => [desc(row.createdAt), desc(row.id)],
-  });
-  const meeting = await db
-    .select({ title: meetings.title, code: meetingLinks.code })
-    .from(meetings)
-    .innerJoin(meetingLinks, eq(meetings.meetingLinkId, meetingLinks.id))
-    .where(eq(meetings.id, data.meetingId))
-    .get();
-  if (!artifact || !meeting) throw Errors.NOT_FOUND("Whiteboard PDF");
-  if (!env.R2_BUCKET_NAME) throw Errors.CONFIG_ERROR("Storage not configured");
-
-  const { r2, endpoint } = buildR2Client(env);
-  const url = new URL(`/${env.R2_BUCKET_NAME}/${artifact.r2Key}`, endpoint);
-  url.searchParams.set("X-Amz-Expires", "300");
-  url.searchParams.set(
-    "response-content-disposition",
-    buildAttachmentContentDisposition(`whiteboard-${meeting.title ?? meeting.code}.pdf`),
-  );
-  const signed = await r2.sign(new Request(url.toString(), { method: "GET" }), {
-    aws: { signQuery: true },
-  });
-  return { downloadUrl: signed.url };
 }

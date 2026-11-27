@@ -27,7 +27,7 @@ vi.mock("@/modules/whiteboards/server/board-placement.server", () => ({
 // The cookie helper transitively imports the web app's auth helpers (which reach
 // `@/modules/identity/server/crypto` — not resolvable in the whiteboard test env). It is also
 // a no-op outside a response context, so stubbing it loses nothing here.
-vi.mock("@/modules/whiteboards/server/cookies", () => ({
+vi.mock("@/platform/http/whiteboard-cookies.server", () => ({
   setWhiteboardAssetCookies: vi.fn(),
   clearWhiteboardAssetCookie: vi.fn(),
 }));

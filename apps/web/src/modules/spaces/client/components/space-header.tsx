@@ -2,10 +2,10 @@ import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { leaveSpace } from "@/modules/spaces/server/membership.functions";
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { evictSpaceQueryCache } from "@/modules/spaces/client/space-query-cache";
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
-import { beginMeetingEntryFlow } from "@/modules/meetings/client/entry-metrics";
+import { beginMeetingEntryFlow } from "@/lib/telemetry/meeting-entry-flow";
 import { SpaceTile } from "./space-tile";
 import {
   Button,

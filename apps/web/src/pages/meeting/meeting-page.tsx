@@ -20,10 +20,10 @@ import {
   buildMeetingRoomOptions,
   reportMeetingMediaDeviceFailure,
   useMeetingEntry,
-} from "@/modules/meetings/client/use-meeting-entry";
+} from "./use-meeting-entry";
 import { clearReconnectAdmissionId, loadReconnectAdmissionId } from "@/modules/meetings/client/reconnect-storage";
 import { meetingHistoryPath } from "@/modules/meetings/client/urls";
-import { sessionQueryOptions } from "@/app/query-client/queries/session";
+import { sessionQueryOptions } from "@/modules/identity/client/session.queries";
 import { SITE_NAME } from "@/lib/seo";
 import { ToastProvider } from "@orbmeet/ui/react";
 import { TooltipProvider } from "@orbmeet/ui/react";

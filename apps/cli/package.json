@@ -30,6 +30,7 @@
     "prepublishOnly": "pnpm build"
   },
   "devDependencies": {
+    "@orbmeet/primitives": "workspace:*",
     "@orbmeet/public-api-contract": "workspace:*",
     "@types/node": "catalog:",
     "esbuild": "0.28.2",

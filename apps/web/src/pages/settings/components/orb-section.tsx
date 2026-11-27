@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Switch } from "@orbmeet/ui/react";
 import * as stylex from "@stylexjs/stylex";
 
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { useSpaceTranscriptionDefault } from "@/modules/spaces/client/use-space-transcription";
 import { getPersonalSpaceTranscription } from "@/modules/spaces/server/transcription.functions";
 import { settings } from "../settings-styles";

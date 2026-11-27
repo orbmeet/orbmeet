@@ -39,6 +39,7 @@ interface Anchor {
  */
 export class AudioTimeline {
   private readonly chunks: RecordedChunk[] = [];
+  private chunkHead = 0;
   private readonly anchors: Anchor[] = [];
   private lastRecorded: RecordedChunk | null = null;
   private streamDurationMs = 0;
@@ -70,13 +71,20 @@ export class AudioTimeline {
     this.lastRecorded = recorded;
 
     const oldestUsefulOffset = this.streamDurationMs - MAX_TIMELINE_HISTORY_MS;
-    while (this.chunks.length > 1 && this.chunks[1].streamEndMs < oldestUsefulOffset) {
-      this.chunks.shift();
+    while (
+      this.chunks.length - this.chunkHead > 1 &&
+      this.chunks[this.chunkHead + 1].streamEndMs < oldestUsefulOffset
+    ) {
+      this.chunkHead += 1;
+    }
+    if (this.chunkHead >= 512 && this.chunkHead * 2 >= this.chunks.length) {
+      this.chunks.splice(0, this.chunkHead);
+      this.chunkHead = 0;
     }
     // Keep only the last anchor before the retained chunks plus those inside
     // them: enough to place a delayed result without growing for the life of
     // the connection.
-    const earliestChunkOffset = this.chunks[0]?.streamStartMs ?? streamStartMs;
+    const earliestChunkOffset = this.chunks[this.chunkHead]?.streamStartMs ?? streamStartMs;
     let firstAnchorToKeep = 0;
     while (
       firstAnchorToKeep + 1 < this.anchors.length &&
@@ -89,8 +97,8 @@ export class AudioTimeline {
 
   /** The capture time and track of a stream offset, or null when no audio was sent there. */
   at(streamOffsetMs: number): CapturePoint | null {
-    if (!Number.isFinite(streamOffsetMs) || this.chunks.length === 0) return null;
-    if (streamOffsetMs < this.chunks[0].streamStartMs) {
+    if (!Number.isFinite(streamOffsetMs) || this.chunkHead >= this.chunks.length) return null;
+    if (streamOffsetMs < this.chunks[this.chunkHead].streamStartMs) {
       let anchor = this.anchors[0];
       if (!anchor || streamOffsetMs < anchor.streamOffsetMs) return null;
       for (const candidate of this.anchors) {
@@ -103,7 +111,7 @@ export class AudioTimeline {
       };
     }
 
-    let low = 0;
+    let low = this.chunkHead;
     let high = this.chunks.length - 1;
     let match = -1;
     while (low <= high) {

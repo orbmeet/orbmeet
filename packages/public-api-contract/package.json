@@ -8,7 +8,6 @@
     ".": "./src/index.ts",
     "./responses": "./src/responses.ts",
     "./fields": "./src/fields.ts",
-    "./time-zone": "./src/time-zone.ts",
     "./search-pattern": "./src/search-pattern.ts"
   },
   "scripts": {
@@ -17,6 +16,7 @@
   },
   "dependencies": {
     "@orbmeet/domain-model": "workspace:*",
+    "@orbmeet/primitives": "workspace:*",
     "valibot": "catalog:"
   },
   "devDependencies": {

@@ -87,7 +87,6 @@ spaceKind: "shared" as const,
     activeStreamEgressId: null,
     startedAt: now,
     endedAt: null,
-    retainUntil: null,
     updatedAt: now,
   });
 }

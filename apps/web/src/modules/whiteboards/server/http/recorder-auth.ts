@@ -8,7 +8,7 @@ import { createWhiteboardJWT } from "@orbmeet/whiteboard-core/whiteboard-jwt";
 import { toWhiteboardRoomId } from "@orbmeet/whiteboard-core/whiteboard-room-id";
 import { verifyRecorderBootstrapToken } from "@/modules/whiteboards/server/recorder-bootstrap-token";
 import { canAccessWhiteboardAsRecorder } from "@/modules/whiteboards/server/meeting/access";
-import { createWhiteboardAssetCookieString } from "@/modules/whiteboards/server/cookies";
+import { createWhiteboardAssetCookieString } from "@/platform/http/whiteboard-cookies.server";
 import { findMeetingWhiteboardDocument } from "@/modules/whiteboards/server/documents";
 import { placeBoard } from "@/modules/whiteboards/server/board-placement.server";
 import { isWhiteboardConfigured } from "@/modules/whiteboards/server/config.server";

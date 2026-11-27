@@ -263,9 +263,16 @@ export function createR2CleanupBudget(operations = DEFAULT_R2_CLEANUP_OPERATIONS
   return { remainingOperations: operations };
 }
 
+export class R2CleanupBudgetExhaustedError extends Error {
+  constructor() {
+    super("R2 cleanup operation budget exhausted; retry cleanup in a new invocation");
+    this.name = "R2CleanupBudgetExhaustedError";
+  }
+}
+
 export function consumeR2CleanupOperation(budget: R2CleanupBudget): void {
   if (budget.remainingOperations <= 0) {
-    throw new Error("R2 cleanup operation budget exhausted; retry cleanup in a new invocation");
+    throw new R2CleanupBudgetExhaustedError();
   }
   budget.remainingOperations -= 1;
 }

@@ -2,7 +2,7 @@ import { Combobox } from "@base-ui/react/combobox";
 import * as stylex from "@stylexjs/stylex";
 import { Check, ChevronDown, Search } from "lucide-react";
 import * as React from "react";
-import { currentTimeZoneName } from "@orbmeet/public-api-contract/time-zone";
+import { currentTimeZoneName } from "@orbmeet/primitives/time-zone";
 
 import { layout, motion } from "../styles/atoms";
 import { control, listbox } from "../styles/controls";

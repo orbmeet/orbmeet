@@ -9,7 +9,7 @@ import {
   WHITEBOARD_SYNC_ROUTES,
   whiteboardSyncUrl,
 } from "@orbmeet/whiteboard-core/protocol";
-import { isSafeExternalBrowserUrl } from "@orbmeet/whiteboard-core/public-host";
+import { isSafeExternalBrowserUrl } from "@orbmeet/primitives/public-host";
 import { registerPageFrameProtection } from "../shapes/page/protect-page-frames";
 import { registerMathTextPaste } from "../shapes/math/math-text-shapes";
 import { configureCoalescedPointerEvents } from "./disable-coalesced-pointer-events";

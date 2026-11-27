@@ -8,6 +8,7 @@ import type { ErrorComponentProps } from "@tanstack/react-router";
 import { useQueryClient, useQueryErrorResetBoundary } from "@tanstack/react-query";
 import { logout } from "@/modules/identity/server/login.functions";
 import { resetAuthQueryCache } from "@/modules/identity/client/auth-query-cache";
+import { logError } from "@/lib/logger";
 import { reportBoundaryError } from "@/lib/telemetry/client-errors";
 import { Sidebar } from "@/app/shell/sidebar";
 import { MobileNav } from "@/app/shell/mobile-nav";
@@ -234,7 +235,7 @@ function AuthedLayoutContent() {
       await router.navigate({ to: "/" });
       await router.invalidate();
     } catch (error) {
-      console.error("Logout navigation failed:", error);
+      logError("[auth] Logout navigation failed", error);
       window.location.href = "/";
     } finally {
       isLoggingOutRef.current = false;

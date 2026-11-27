@@ -72,7 +72,6 @@ export const meetings = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date()),
     endedAt: integer("ended_at", { mode: "timestamp" }),
-    retainUntil: integer("retain_until", { mode: "timestamp" }),
     // Immutable billing snapshot: the subscription principal whose limits this
     // occurrence consumes (not necessarily the starter) and the entitlement
     // tier captured at start.
@@ -98,8 +97,6 @@ export const meetings = sqliteTable(
     drainedAt: integer("drained_at", { mode: "timestamp" }),
     // Closing freezes presentation before any network capture starts.
     closingAt: integer("closing_at", { mode: "timestamp" }),
-    closingWhiteboardId: text("closing_whiteboard_id"),
-    closingCommandId: text("closing_command_id"),
     // Null when no Summary was owed at the end (summaries not configured).
     // Written by the end and by the meeting's summary jobs; see
     // MEETING_SUMMARY_STATUSES.
@@ -154,7 +151,6 @@ export const meetings = sqliteTable(
       table.status,
     ),
     index("meetings_status_started_at_idx").on(table.status, table.startedAt),
-    index("meetings_retain_until_idx").on(table.retainUntil),
     // The egress-ended webhook has no meeting id and resolves the meeting solely
     // by activeStreamEgressId. Partial so the index only carries rows for the
     // handful of meetings with a live web stream, not the whole retained history.
@@ -198,10 +194,6 @@ export const meetings = sqliteTable(
     check(
       "meetings_ended_after_started_check",
       sql`${table.endedAt} IS NULL OR ${table.endedAt} >= ${table.startedAt}`,
-    ),
-    check(
-      "meetings_retain_after_end_check",
-      sql`${table.retainUntil} IS NULL OR (${table.endedAt} IS NOT NULL AND ${table.retainUntil} >= ${table.endedAt})`,
     ),
     check(
       "meetings_updated_after_started_check",
@@ -328,12 +320,14 @@ export const meetingAdmissions = sqliteTable(
         OR (
           ${table.admissionStatus} IN ('denied', 'revoked', 'expired')
           AND ${table.screenShareGranted} = 0
+          AND ${table.whiteboardEditGranted} = 0
           AND ${table.meetingModerator} = 0
           AND ${table.decidedAt} IS NOT NULL
         )
         OR (
           ${table.admissionStatus} = 'pending'
           AND ${table.screenShareGranted} = 0
+          AND ${table.whiteboardEditGranted} = 0
           AND ${table.meetingModerator} = 0
           AND ${table.decisionReason} IS NULL
           AND ${table.decidedByUserId} IS NULL

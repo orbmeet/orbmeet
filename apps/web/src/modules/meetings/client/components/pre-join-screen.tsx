@@ -576,6 +576,14 @@ export function PreJoinScreen({
     saveSpokenLanguage(captionLanguage);
   }, [captionLanguage]);
 
+  // Release the synchronous double-submit lock if the join failed or returned
+  // to idle so the user can retry without reloading the page.
+  React.useEffect(() => {
+    if (!isJoining && !waitingForHost) {
+      submissionLockedRef.current = false;
+    }
+  }, [isJoining, waitingForHost]);
+
   const handleJoin = () => {
     // This is a synchronous ownership gate, not just button styling. React can
     // receive multiple key events before the parent has rendered `isJoining`;

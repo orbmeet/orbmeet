@@ -1,6 +1,6 @@
 import { createFileRoute, lazyRouteComponent } from "@tanstack/react-router";
-import { mySpacesQueryOptions } from "@/app/query-client/queries/spaces";
-import { myOrganizationsQueryOptions } from "@/app/query-client/queries/organizations";
+import { mySpacesQueryOptions } from "@/modules/spaces/client/spaces.queries";
+import { myOrganizationsQueryOptions } from "@/modules/organizations/client/organizations.queries";
 import { RouteError, RoutePending } from "@/app/shell/route-state";
 import { createPageHead, SITE_NAME } from "@/lib/seo";
 

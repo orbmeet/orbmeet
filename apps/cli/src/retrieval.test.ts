@@ -40,7 +40,6 @@ function envelope(transcript: unknown) {
         title: "Standup",
         startedAt: "2026-07-21T14:00:00.000Z",
         endedAt: null,
-        retainUntil: null,
         spaceName: null,
         participants: [],
       },
@@ -76,7 +75,6 @@ describe("retrieveMeeting", () => {
           title: null,
           startedAt: "2026-07-21T14:00:00.000Z",
           endedAt: null,
-          retainUntil: null,
           spaceName: null,
           participants: [],
         },
@@ -86,7 +84,12 @@ describe("retrieveMeeting", () => {
           recordings: false,
           whiteboardPdf: false,
         },
-        summary: "hi",
+        summary: {
+          summary: "hi",
+          durationSeconds: 300,
+          participantCount: 2,
+          createdAt: "2026-07-21T15:30:00.000Z",
+        },
       },
     };
     const { request, calls } = fakeRequest([initial]);

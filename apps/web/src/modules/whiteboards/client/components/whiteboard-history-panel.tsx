@@ -150,7 +150,7 @@ const styles = stylex.create({
     color: accent.a700,
   },
 });
-import { queryKeys } from "@/app/query-client/query-keys";
+import { queryKeys } from "@/lib/query-keys";
 import { listWhiteboardSnapshots, restoreWhiteboardSnapshot } from "@/modules/whiteboards/server/api.functions";
 
 type Snapshot = Awaited<

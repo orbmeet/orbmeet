@@ -13,7 +13,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import { prerenderedDocumentPaths, publicDocumentPaths } from "../src/lib/public-routes.ts";
-import { CSP_NONCE_PLACEHOLDER } from "../src/platform/http/csp-nonce.ts";
+import { CSP_NONCE_PLACEHOLDER } from "../src/lib/csp-nonce.ts";
 
 const root = resolve(import.meta.dirname, "../../..");
 // The Vite plugin emits the Build Output API tree: static assets (documents,
