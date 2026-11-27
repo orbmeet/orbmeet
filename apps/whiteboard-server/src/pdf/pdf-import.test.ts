@@ -1,5 +1,5 @@
 import { TEST_CALLBACK_KEYRING } from "../http/test-keyrings.ts";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -85,7 +85,7 @@ function until(condition: () => boolean) {
 }
 
 async function finished(id: string, userId = currentUser) {
-  return vi.waitFor(async () => {
+  const status = await vi.waitFor(async () => {
     const status = handlePdfImportStatus(id, grantFor(userId)).json as {
       state: string;
       placedCount: number;
@@ -95,6 +95,13 @@ async function finished(id: string, userId = currentUser) {
     if (status.state === "importing") throw new Error("still importing");
     return status;
   });
+  // The status turns final before the import's cleanup runs: the release, then
+  // its scratch directory, then its capacity, in that order and synchronously
+  // after the directory goes. Wait for all of it, so no test races cleanup.
+  await vi.waitFor(() => {
+    if (existsSync(join(TMP_DIR, id))) throw new Error("still cleaning up");
+  });
+  return status;
 }
 
 beforeAll(async () => {
