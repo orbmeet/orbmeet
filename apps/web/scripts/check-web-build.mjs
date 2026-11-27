@@ -28,6 +28,24 @@ function fail(scope, failures) {
   if (failures.length > 0) throw new Error(`[${scope}] failed:\n${failures.join("\n")}`);
 }
 
+// Relative static imports and re-exports in Rolldown's output, minified or not;
+// dynamic `import(...)` calls are left out because they load on demand.
+const STATIC_IMPORT = /(?:^|[;\n}])\s*(?:import|export)\s*(?:[^'"`;()]*?from\s*)?["'](\.{1,2}\/[^"']+)["']/g;
+
+/** Every module evaluated with `entryPath`: it and its static imports, transitively. */
+function staticImportClosure(entryPath) {
+  const seen = new Set();
+  const visit = (path) => {
+    if (seen.has(path)) return;
+    seen.add(path);
+    for (const match of readFileSync(path, "utf8").matchAll(STATIC_IMPORT)) {
+      visit(resolve(path, "..", match[1]));
+    }
+  };
+  visit(entryPath);
+  return seen;
+}
+
 function listFiles(dir, predicate) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const fullPath = join(dir, entry.name);
@@ -131,6 +149,22 @@ function checkWorkerBundle() {
   const entryBytes = readFileSync(entryPath).byteLength;
   if (entryBytes > MAX_ENTRY_BYTES) {
     failures.push(`${rel(entryPath)} is ${entryBytes} bytes, exceeding the ${MAX_ENTRY_BYTES}-byte entry budget. Move route implementations behind dynamic imports.`);
+  }
+  // The entry's own size says nothing about the chunks it imports statically,
+  // which are evaluated with it: one top-level import of a server graph from a
+  // Durable Object class would load that whole graph on every cold start.
+  const MAX_ENTRY_CLOSURE_BYTES = 96 * 1024;
+  const closure = staticImportClosure(entryPath);
+  const closureBytes = [...closure].reduce((sum, path) => sum + statSync(path).size, 0);
+  if (closureBytes > MAX_ENTRY_CLOSURE_BYTES) {
+    const largest = [...closure]
+      .map((path) => [statSync(path).size, rel(path)])
+      .sort((a, b) => b[0] - a[0])
+      .slice(0, 5)
+      .map(([size, path]) => `  ${path} (${size} bytes)`);
+    failures.push(
+      `${rel(entryPath)} statically loads ${closure.size} modules (${closureBytes} bytes), exceeding the ${MAX_ENTRY_CLOSURE_BYTES}-byte cold-start budget. Move the heavy import behind a dynamic import(). Largest:\n${largest.join("\n")}`,
+    );
   }
 
   let totalJsBytes = 0;

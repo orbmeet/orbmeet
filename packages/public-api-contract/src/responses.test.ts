@@ -160,6 +160,19 @@ describe("public meeting responses", () => {
       data: {
         meeting: baseMeeting,
         available: { ...baseAvailable, summary: true },
+        summary: {
+          summary: "Key decisions.",
+          durationSeconds: null,
+          participantCount: null,
+          createdAt: "2026-08-22T10:30:00.000Z",
+        },
+      },
+    }).success).toBe(true);
+
+    expect(v.safeParse(publicMeetingResponseSchema, {
+      data: {
+        meeting: baseMeeting,
+        available: { ...baseAvailable, summary: true },
         summary: "unstructured text",
       },
     }).success).toBe(false);

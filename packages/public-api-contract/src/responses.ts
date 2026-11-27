@@ -167,7 +167,8 @@ export const publicMeetingTranscriptPageResponseSchema = v.looseObject({
 export const publicMeetingSummarySchema = v.looseObject({
   summary: v.string(),
   durationSeconds: v.nullable(integer),
-  participantCount: count,
+  // Nullable in D1: summaries written before the count was recorded have none.
+  participantCount: v.nullable(count),
   createdAt: v.string(),
 });
 

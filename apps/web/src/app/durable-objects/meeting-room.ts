@@ -4,7 +4,6 @@ import { rpcResultOf, type RpcResult } from "@/platform/runtime/rpc-result";
 import type { CoordinatorReply, CoordinatorRequest } from "@/modules/meetings/server/runtime/api";
 import { SlottedMeetingStore } from "@/modules/meetings/server/runtime/meeting-store";
 import type { MeetingRoomHost } from "@/modules/meetings/server/runtime/room.server";
-import { meetingWhiteboardEffects } from "@/app/adapters/meeting-whiteboard.server";
 
 export type RoomResult = RpcResult<CoordinatorReply>;
 
@@ -40,7 +39,10 @@ export class MeetingRoom extends DurableObject<Env> {
 
   private hostFor(meetingId: string): Promise<MeetingRoomHost> {
     this.host ??= (async () => {
-      const { MeetingRoomHost } = await import("@/modules/meetings/server/runtime/room.server");
+      const [{ MeetingRoomHost }, { meetingWhiteboardEffects }] = await Promise.all([
+        import("@/modules/meetings/server/runtime/room.server"),
+        import("@/app/adapters/meeting-whiteboard.server"),
+      ]);
       const storage = this.ctx.storage;
       // The meeting's id is kept with its state, for the alarm: an object whose
       // meeting was refused on first contact keeps nothing at all.

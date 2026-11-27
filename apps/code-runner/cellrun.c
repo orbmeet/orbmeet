@@ -372,7 +372,10 @@ static int run_helper(const struct slot *slot, int as_slot, const char *const *a
   if (pid < 0) return -1;
   if (pid == 0) {
     restore_signals();
-    int null_fd = open("/dev/null", O_RDWR | O_CLOEXEC);
+    /* No O_CLOEXEC: after write_report() closes stdout, /dev/null lands on fd 1
+     * itself, dup2(1, 1) leaves the flag set, and the helper would run with no
+     * stdout. The descriptor is closed below unless it is one of the targets. */
+    int null_fd = open("/dev/null", O_RDWR);
     if (null_fd >= 0) {
       dup2(null_fd, STDIN_FILENO);
       dup2(null_fd, STDOUT_FILENO);
@@ -757,7 +760,12 @@ static void confine_syscalls(void) {
   }
 }
 
+/* Lowers a limit, never raises it: raising a hard limit needs CAP_SYS_RESOURCE,
+ * and a container started with a lower one would otherwise fail every run. */
 static void set_limit(int resource, rlim_t value) {
+  struct rlimit current;
+  if (getrlimit(resource, &current) != 0) jail_fail("getrlimit");
+  if (current.rlim_max != RLIM_INFINITY && current.rlim_max < value) value = current.rlim_max;
   struct rlimit limit = {value, value};
   if (setrlimit(resource, &limit) != 0) jail_fail("setrlimit");
 }
@@ -767,7 +775,9 @@ static void exec_phase(const struct slot *slot, const struct language *language,
                        const char *const *argv, int out, int err) {
   restore_signals();
   if (dup2(out, STDOUT_FILENO) < 0 || dup2(err, STDERR_FILENO) < 0) jail_fail("redirect output");
-  int null_fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
+  /* No O_CLOEXEC, as in run_helper(): if fd 0 was free this lands on it, and
+   * dup2(0, 0) would leave the flag set and the phase without a stdin. */
+  int null_fd = open("/dev/null", O_RDONLY);
   if (null_fd < 0 || dup2(null_fd, STDIN_FILENO) < 0) jail_fail("close stdin");
   if (null_fd != STDIN_FILENO) close(null_fd);
   if (chdir(slot->dir) != 0) jail_fail("enter run directory");
